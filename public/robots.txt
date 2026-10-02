@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://tjansn.github.io/pi-os-mac/sitemap.xml

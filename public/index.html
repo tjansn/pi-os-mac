@@ -1,0 +1,627 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta
+      name="description"
+      content="pi-os for Mac. A quiet, native AI layer for the window you're working in. Try the interactive, model-free Whisper demo."
+    />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'; worker-src 'none'"
+    />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta
+      property="og:title"
+      content="pi-os for Mac — A little closer to your work."
+    />
+    <meta
+      property="og:description"
+      content="One shortcut. The window you're working in. A quiet place to ask. Explore the interactive mock demo."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://tjansn.github.io/pi-os-mac/" />
+    <meta
+      property="og:image"
+      content="https://tjansn.github.io/pi-os-mac/assets/social.png"
+    />
+    <link rel="canonical" href="https://tjansn.github.io/pi-os-mac/" />
+    <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./styles.css" />
+    <script type="module" src="./demo.js"></script>
+    <title>pi-os for Mac — A little closer to your work.</title>
+  </head>
+  <body>
+    <a class="skip-link" href="#demo">Skip to the interactive demo</a>
+    <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <symbol id="i-up" viewBox="0 0 24 24">
+        <path d="M12 19V5m-6 6 6-6 6 6" />
+      </symbol>
+      <symbol id="i-close" viewBox="0 0 24 24">
+        <path d="m7 7 10 10M7 17 17 7" />
+      </symbol>
+      <symbol id="i-chevron" viewBox="0 0 24 24">
+        <path d="m8 10 4 4 4-4" />
+      </symbol>
+      <symbol id="i-arrow" viewBox="0 0 24 24">
+        <path d="M5 12h14m-5-5 5 5-5 5" />
+      </symbol>
+      <symbol id="i-check" viewBox="0 0 24 24">
+        <path d="m5 12 4 4L19 6" />
+      </symbol>
+      <symbol id="i-notes" viewBox="0 0 24 24">
+        <rect x="5" y="3.5" width="14" height="17" rx="3" />
+        <path d="M5 8h14M9 12h6m-6 4h6" />
+      </symbol>
+      <symbol id="i-mail" viewBox="0 0 24 24">
+        <rect x="3" y="5" width="18" height="14" rx="3" />
+        <path d="m4 7 8 6 8-6" />
+      </symbol>
+      <symbol id="i-code" viewBox="0 0 24 24">
+        <path d="m8 6-6 6 6 6m8-12 6 6-6 6m-3-16-2 20" />
+      </symbol>
+      <symbol id="i-pin" viewBox="0 0 24 24">
+        <path d="m15 3 6 6-4 1-3 4v3l-7-7h3l4-3 1-4ZM9 15l-5 5" />
+      </symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24">
+        <rect x="8" y="8" width="12" height="12" rx="2.5" />
+        <path d="M15 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3" />
+      </symbol>
+      <symbol id="i-stop" viewBox="0 0 24 24">
+        <rect x="7" y="7" width="10" height="10" rx="2" />
+      </symbol>
+      <symbol id="i-hide" viewBox="0 0 24 24"><path d="M6 12h12" /></symbol>
+      <symbol id="i-spark" viewBox="0 0 24 24">
+        <path
+          d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"
+        />
+      </symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24">
+        <path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6l8-3Z" />
+        <path d="m8 12 3 3 5-6" />
+      </symbol>
+      <symbol id="i-window" viewBox="0 0 24 24">
+        <rect x="3" y="4" width="18" height="16" rx="3" />
+        <path d="M3 9h18m-13-3h.1m2.9 0h.1" />
+      </symbol>
+    </svg>
+
+    <header class="site-header wrap">
+      <a class="brand" href="./" aria-label="pi-os for Mac home"
+        ><span class="brand-icon">π</span
+        ><span>pi-os <span class="brand-platform">for Mac</span></span></a
+      >
+      <nav aria-label="Main navigation">
+        <a href="#demo">Demo</a
+        ><a href="#how-it-works" class="nav-details">How it works</a
+        ><a
+          class="source-link"
+          href="https://github.com/tjansn/pi-os-mac/tree/feat/macos-native-host"
+          target="_blank"
+          rel="noopener noreferrer"
+          >Source <span aria-hidden="true">↗</span></a
+        >
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero wrap" aria-labelledby="hero-title">
+        <p class="eyebrow">
+          <span class="status-dot"></span>Native macOS · Open-source preview
+        </p>
+        <h1 id="hero-title">A little closer<br />to your work.</h1>
+        <p class="hero-description">
+          One shortcut. The window you’re working in.<br />A quiet place to ask,
+          without starting over.
+        </p>
+        <div class="hero-actions">
+          <a class="button primary" href="#demo"
+            >Try the demo
+            <svg aria-hidden="true"><use href="#i-arrow" /></svg></a
+          ><a
+            class="button secondary"
+            href="https://github.com/tjansn/pi-os-mac/blob/feat/macos-native-host/host-macos/README.md"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Build the Mac preview <span aria-hidden="true">↗</span></a
+          >
+        </div>
+        <p class="hero-caption">
+          The demo is scripted. No AI, accounts or app access required.
+        </p>
+      </section>
+
+      <section class="demo-section wrap" id="demo" aria-labelledby="demo-title">
+        <div class="demo-topline">
+          <div>
+            <h2 id="demo-title">Meet Whisper.</h2>
+            <p>The small bar with the whole window in mind.</p>
+          </div>
+          <span class="mock-badge">Interactive mock · No LLM</span>
+        </div>
+        <div class="demo-card">
+          <div class="demo-toolbar">
+            <div
+              class="example-picker"
+              role="group"
+              aria-label="Start a new demo example"
+            >
+              <button type="button" data-example="notes" aria-pressed="true">
+                <svg aria-hidden="true"><use href="#i-notes" /></svg>Notes
+              </button>
+              <button type="button" data-example="mail" aria-pressed="false">
+                <svg aria-hidden="true"><use href="#i-mail" /></svg>Mail
+              </button>
+              <button type="button" data-example="code" aria-pressed="false">
+                <svg aria-hidden="true"><use href="#i-code" /></svg>Code
+              </button>
+            </div>
+            <div class="demo-settings">
+              <label class="theme-label" for="theme">Appearance</label
+              ><select id="theme" aria-label="Demo appearance">
+                <option value="system">System</option>
+                <option value="clear">Clear</option>
+                <option value="frost">Frost</option>
+                <option value="graphite">Graphite</option>
+                <option value="warm">Warm</option>
+                <option value="contrast">Contrast</option></select
+              ><button type="button" class="reset-button" id="reset-demo">
+                Reset demo
+              </button>
+            </div>
+          </div>
+
+          <div
+            class="desktop"
+            id="desktop"
+            data-state="ready"
+            data-theme="clear"
+            tabindex="-1"
+            aria-label="Simulated Mac desktop. Everything inside is a mock."
+          >
+            <div class="desktop-menu" aria-hidden="true">
+              <span class="menu-brand">π</span
+              ><strong id="menu-app">Notes</strong><span>File</span
+              ><span>Edit</span><span>View</span
+              ><span class="menu-right">Demo desktop</span>
+            </div>
+            <article class="mock-window" aria-label="Editable demo window">
+              <header class="window-toolbar">
+                <span class="traffic" aria-hidden="true"
+                  ><i></i><i></i><i></i></span
+                ><span id="window-app">Notes</span
+                ><span class="window-tag">Mock</span>
+              </header>
+              <div class="document-heading">
+                <span class="document-kicker" id="document-kicker"
+                  >A NOTE TO YOURSELF</span
+                >
+                <h3 id="document-title">A weekend, unhurried.</h3>
+              </div>
+              <label class="sr-only" for="document-text"
+                >Edit the example document. Changes stay in this demo.</label
+              >
+              <textarea
+                id="document-text"
+                maxlength="6000"
+                spellcheck="false"
+                autocomplete="off"
+              ></textarea>
+              <div class="window-footer">
+                <span>Editable example · not your real app</span
+                ><span id="document-count"></span>
+              </div>
+            </article>
+
+            <div class="assistant-anchor" id="assistant-anchor">
+              <section
+                class="response-panel material"
+                id="response"
+                aria-label="Scripted demo answer"
+                hidden
+              >
+                <header class="response-toolbar">
+                  <span class="response-source"
+                    ><svg id="source-icon" aria-hidden="true">
+                      <use href="#i-notes" /></svg
+                    ><span id="response-source"
+                      >Notes · Weekend plans</span
+                    ></span
+                  >
+                  <div>
+                    <button
+                      type="button"
+                      class="icon-button"
+                      id="copy-answer"
+                      aria-label="Copy mock answer"
+                      title="Copy mock answer"
+                    >
+                      <svg aria-hidden="true">
+                        <use href="#i-copy" />
+                      </svg></button
+                    ><button
+                      type="button"
+                      class="icon-button"
+                      id="close-conversation"
+                      aria-label="Close conversation"
+                      title="Close conversation (Escape)"
+                    >
+                      <svg aria-hidden="true"><use href="#i-close" /></svg>
+                    </button>
+                  </div>
+                </header>
+                <div
+                  class="response-content"
+                  id="response-content"
+                  tabindex="0"
+                  aria-label="Scrollable mock answer"
+                >
+                  <p class="question" id="question"></p>
+                  <h3 id="answer-title"></h3>
+                  <div id="answer-body"></div>
+                  <button
+                    type="button"
+                    class="apply-button"
+                    id="apply-change"
+                    hidden
+                  >
+                    Apply to demo window
+                    <svg aria-hidden="true"><use href="#i-arrow" /></svg>
+                  </button>
+                </div>
+                <footer class="response-footer">
+                  <span id="answer-status"
+                    >Scripted answer · Ready for a follow-up</span
+                  ><span id="turn-count">Turn 1</span>
+                </footer>
+              </section>
+
+              <aside
+                class="appearance-popover material"
+                id="appearance"
+                role="dialog"
+                aria-labelledby="appearance-title"
+                hidden
+              >
+                <header class="popover-title">
+                  <strong id="appearance-title"
+                    >Pinned window & appearance</strong
+                  ><button
+                    type="button"
+                    class="icon-button"
+                    id="close-appearance"
+                    aria-label="Close appearance options"
+                  >
+                    <svg aria-hidden="true"><use href="#i-close" /></svg>
+                  </button>
+                </header>
+                <div class="pin-summary">
+                  <svg aria-hidden="true"><use href="#i-pin" /></svg>
+                  <div>
+                    <strong id="pinned-app">Notes</strong
+                    ><span id="pinned-title">Weekend plans</span>
+                  </div>
+                  <span class="small-badge">Mock</span>
+                </div>
+                <p class="popover-caption">
+                  This example stays pinned for the conversation. Themes change
+                  appearance, not the target.
+                </p>
+                <label class="setting-row" for="popover-theme"
+                  ><span>Preset</span
+                  ><select id="popover-theme">
+                    <option value="system">System</option>
+                    <option value="clear">Clear</option>
+                    <option value="frost">Frost</option>
+                    <option value="graphite">Graphite</option>
+                    <option value="warm">Warm</option>
+                    <option value="contrast">Contrast</option>
+                  </select></label
+                >
+                <label class="setting-row" for="large-text"
+                  ><span>Larger text</span
+                  ><input type="checkbox" id="large-text" role="switch"
+                /></label>
+                <label class="setting-row" for="solid-material"
+                  ><span>Reduce transparency</span
+                  ><input type="checkbox" id="solid-material" role="switch"
+                /></label>
+                <label class="setting-row" for="edge-gap"
+                  ><span>Lower-edge spacing</span
+                  ><select id="edge-gap">
+                    <option value="20">20 pt</option>
+                    <option value="32" selected>32 pt</option>
+                    <option value="48">48 pt</option>
+                  </select></label
+                >
+                <p class="popover-caption last">
+                  HTML approximates the material. The native app uses Apple
+                  glass with accessibility fallbacks.
+                </p>
+              </aside>
+
+              <section
+                class="command-shell material"
+                aria-label="Whisper command bar"
+              >
+                <form id="composer" autocomplete="off">
+                  <button
+                    type="button"
+                    class="identity-button"
+                    id="context-button"
+                    aria-label="Pinned mock window and appearance"
+                    aria-controls="appearance"
+                    aria-expanded="false"
+                    title="Pinned mock window & appearance"
+                  >
+                    <span class="pi-mark">π</span
+                    ><svg aria-hidden="true"><use href="#i-chevron" /></svg>
+                  </button>
+                  <label class="sr-only" for="prompt"
+                    >Ask about the demo window</label
+                  ><textarea
+                    id="prompt"
+                    rows="1"
+                    maxlength="2000"
+                    placeholder="Ask about this window…"
+                    spellcheck="false"
+                  ></textarea>
+                  <button
+                    class="send-button"
+                    type="submit"
+                    id="send"
+                    aria-label="Run mock prompt"
+                    title="Run mock prompt (Return)"
+                    disabled
+                  >
+                    <svg aria-hidden="true"><use href="#i-up" /></svg>
+                  </button>
+                </form>
+                <div class="working-row" id="working-row" hidden>
+                  <span class="spinner" aria-hidden="true"></span
+                  ><span id="activity">Reading the example…</span
+                  ><button
+                    type="button"
+                    class="icon-button"
+                    id="hide-task"
+                    aria-label="Continue mock in background"
+                    title="Continue mock in background"
+                  >
+                    <svg aria-hidden="true"><use href="#i-hide" /></svg></button
+                  ><button
+                    type="button"
+                    class="icon-button"
+                    id="cancel-task"
+                    aria-label="Cancel mock task"
+                    title="Cancel mock task"
+                  >
+                    <svg aria-hidden="true"><use href="#i-stop" /></svg>
+                  </button>
+                </div>
+                <div class="closed-row" id="closed-row" hidden>
+                  <span class="pi-mark">π</span
+                  ><span id="closed-message">Conversation closed</span
+                  ><button type="button" class="text-button" id="restore">
+                    Start again <span aria-hidden="true">↵</span>
+                  </button>
+                </div>
+              </section>
+            </div>
+            <span class="desktop-watermark"
+              >SIMULATED DESKTOP · LOCAL MOCK ONLY</span
+            >
+          </div>
+          <div class="suggestions" aria-label="Suggested mock prompts">
+            <span>Try asking</span>
+            <div id="suggestion-buttons"></div>
+          </div>
+        </div>
+        <div class="demo-caption">
+          <p>
+            <kbd>Return</kbd> to ask · <kbd>Shift Return</kbd> for a new line ·
+            <kbd>Esc</kbd> to close
+          </p>
+          <p>
+            Prompts stay in this tab. No model calls, tracking or real app
+            control.
+          </p>
+        </div>
+        <noscript
+          ><p class="noscript-notice">
+            The interactive mock needs JavaScript. The product information and
+            source links work without it.
+          </p></noscript
+        >
+      </section>
+
+      <section
+        class="principles wrap"
+        id="how-it-works"
+        aria-labelledby="principles-title"
+      >
+        <div class="section-heading">
+          <p class="eyebrow">NATIVE BY DESIGN</p>
+          <h2 id="principles-title">Stay where the work is.</h2>
+          <p>No new workspace to set up. No context to rebuild.</p>
+        </div>
+        <div class="principle-grid">
+          <article>
+            <span class="feature-icon"
+              ><svg aria-hidden="true"><use href="#i-window" /></svg
+            ></span>
+            <h3>Your window, first.</h3>
+            <p>
+              The native shortcut captures the target before the bar opens. Ask
+              about what’s in front of you, not an empty chat.
+            </p>
+          </article>
+          <article>
+            <span class="feature-icon"
+              ><svg aria-hidden="true"><use href="#i-spark" /></svg
+            ></span>
+            <h3>Small until you need more.</h3>
+            <p>
+              A single-line bar near the bottom of your display. Answers grow
+              upward. Follow-ups keep the conversation together.
+            </p>
+          </article>
+          <article>
+            <span class="feature-icon"
+              ><svg aria-hidden="true"><use href="#i-shield" /></svg
+            ></span>
+            <h3>Boundaries, not guesswork.</h3>
+            <p>
+              Pinned identity, explicit permissions and no automatic replay of
+              uncertain input. Visual presets never change authority.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="native-section wrap" aria-labelledby="native-title">
+        <div class="native-copy">
+          <p class="eyebrow">A MAC APP. NOT A WEB WRAPPER.</p>
+          <h2 id="native-title">Feels at home.<br />Leaves room for you.</h2>
+          <p>
+            Swift and AppKit. System type, native editing and Apple glass where
+            supported. Clear, Frost, Graphite, Warm and Contrast — or just
+            follow your Mac.
+          </p>
+          <p>
+            Reduce Transparency, Increase Contrast and Reduce Motion take
+            priority. The interface stays quiet.
+          </p>
+        </div>
+        <div class="native-specs">
+          <div>
+            <span>Native shortcut</span
+            ><strong class="shortcut"
+              ><kbd>⌃</kbd><kbd>⌥</kbd><kbd>⌘</kbd><kbd>Space</kbd></strong
+            >
+          </div>
+          <div><span>Minimum macOS</span><strong>14 Sonoma</strong></div>
+          <div>
+            <span>Apple glass</span
+            ><strong>26+ · native material fallback</strong>
+          </div>
+          <div>
+            <span>Architecture</span
+            ><strong>Native host + existing pi SDK</strong>
+          </div>
+          <p>
+            The browser demo uses HTML, not the native material. Don’t use the
+            native shortcut for this web demo.
+          </p>
+        </div>
+      </section>
+
+      <section
+        class="preview-section wrap"
+        id="preview"
+        aria-labelledby="preview-title"
+      >
+        <div>
+          <p class="eyebrow">OPEN SOURCE · STILL IN PREVIEW</p>
+          <h2 id="preview-title">Try the idea.<br />Build the real thing.</h2>
+          <p>
+            The Mac port is available as source. A self-contained notarized
+            installer isn’t published yet. The upstream contribution is a draft,
+            with acceptance limits documented.
+          </p>
+          <div class="hero-actions">
+            <a
+              class="button primary"
+              href="https://github.com/tjansn/pi-os-mac/blob/feat/macos-native-host/host-macos/README.md"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Build instructions
+              <svg aria-hidden="true"><use href="#i-arrow" /></svg></a
+            ><a
+              class="inline-link"
+              href="https://github.com/PriNova/pi-os/pull/2"
+              target="_blank"
+              rel="noopener noreferrer"
+              >Upstream draft <span aria-hidden="true">↗</span></a
+            >
+          </div>
+        </div>
+        <div class="faq">
+          <details>
+            <summary>Is this demo actually using AI?</summary>
+            <p>
+              No. It uses deterministic scripts for summaries, checklists, a
+              sample email rewrite and a code explanation. Unknown prompts get
+              an honest fallback. Nothing connects to an LLM.
+            </p>
+          </details>
+          <details>
+            <summary>Can it access my files or apps?</summary>
+            <p>
+              Not this website. The three windows are editable examples inside
+              the page. Apply changes only to that example. The native app
+              separately requires signing, OS permissions and deliberate
+              configuration.
+            </p>
+          </details>
+          <details>
+            <summary>What stays private in the demo?</summary>
+            <p>
+              Prompt and document text stay in this tab’s memory, not storage or
+              the URL. No analytics, third-party assets or inference endpoints.
+              GitHub hosts the static site. Copy writes only after you
+              explicitly click Copy.
+            </p>
+          </details>
+          <details>
+            <summary>How does the native app handle safety?</summary>
+            <p>
+              Native actions validate the original target, focus, ownership,
+              geometry and live permissions. Credential input defaults off.
+              Deletion checks are defense in depth, not a filesystem sandbox;
+              trusted extensions are arbitrary code. Full accessibility,
+              live-model and distribution acceptance are still pending.
+            </p>
+          </details>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer wrap">
+      <a class="brand" href="./"
+        ><span class="brand-icon">π</span
+        ><span>pi-os <span class="brand-platform">for Mac</span></span></a
+      >
+      <p>
+        The Mac fork by
+        <a
+          href="https://github.com/tjansn"
+          target="_blank"
+          rel="noopener noreferrer"
+          >Tom</a
+        >
+        · Based on
+        <a
+          href="https://github.com/PriNova/pi-os"
+          target="_blank"
+          rel="noopener noreferrer"
+          >PriNova/pi-os</a
+        >
+      </p>
+      <a
+        href="https://github.com/tjansn/pi-os-mac/tree/gh-pages"
+        target="_blank"
+        rel="noopener noreferrer"
+        >Website source <span aria-hidden="true">↗</span></a
+      >
+    </footer>
+    <div
+      class="sr-only"
+      id="announcement"
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+    ></div>
+  </body>
+</html>

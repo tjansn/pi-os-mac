@@ -1,0 +1,13 @@
+{
+  "name": "pi-os-mac-website",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/mock.test.mjs tests/static.test.mjs",
+    "check": "node --check public/demo.js && node --check public/mock.js",
+    "test:browser": "node tests/browser.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
