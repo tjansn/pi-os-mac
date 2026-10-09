@@ -186,13 +186,12 @@ public actor VoiceJournal: VoiceJournaling {
         var info = stat()
         guard fstat(fd, &info) == 0, info.st_uid == geteuid() else { throw Self.unavailable }
         if info.st_mode & 0o7777 != mode { guard fchmod(fd, mode) == 0 else { throw Self.unavailable } }
-        // A fresh URL each time: URL instances cache resource values.
+        // Set on every write rather than read-then-set: the system may still report a just-cleared exclusion as set
+        // (seen on a loaded CI runner), and setting it costs only an attribute write.
         var url = URL(fileURLWithPath: directory.path, isDirectory: true)
-        if (try? url.resourceValues(forKeys: [.isExcludedFromBackupKey]))?.isExcludedFromBackup != true {
-            var values = URLResourceValues()
-            values.isExcludedFromBackup = true
-            do { try url.setResourceValues(values) } catch { throw Self.unavailable }
-        }
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        do { try url.setResourceValues(values) } catch { throw Self.unavailable }
     }
 
     // MARK: Scan and repair
