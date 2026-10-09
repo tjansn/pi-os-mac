@@ -69,8 +69,9 @@ final class VoiceJournalTests: XCTestCase {
     }
 
     private func excludedFromBackup(_ path: String) throws -> Bool {
-        // A fresh URL: URL instances cache resource values.
-        try URL(fileURLWithPath: path).resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup ?? false
+        // The on-disk mark isExcludedFromBackup writes and clears. Reading the resource value instead can return a
+        // just-changed value stale (a cache below URL; seen on a loaded macOS 26 CI runner).
+        getxattr(path, "com.apple.metadata:com_apple_backup_excludeItem", nil, 0, 0, XATTR_NOFOLLOW) >= 0
     }
 
     private func age(_ name: String, by seconds: TimeInterval) throws {
