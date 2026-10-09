@@ -1,0 +1,288 @@
+{"id":"A001","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open pages.","finalMs":37.1,"locale":"en-US"}
+{"id":"A002","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open keynote.","finalMs":34.6,"locale":"en-US"}
+{"id":"A003","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open numbers.","finalMs":33.5,"locale":"en-US"}
+{"id":"A004","variant":"tail","source":"parakeet-v3","role":"primary","text":"Launch Figma.","finalMs":34.2,"locale":"en-US"}
+{"id":"A005","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open Brave","finalMs":36.6,"locale":"en-US"}
+{"id":"A006","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open motion","finalMs":31.6,"locale":"en-US"}
+{"id":"A007","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open VS Code","finalMs":37.3,"locale":"en-US"}
+{"id":"A008","variant":"tail","source":"parakeet-v3","role":"primary","text":"OpenScode.","finalMs":34.6,"locale":"en-US"}
+{"id":"A009","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open Ray Cast.","finalMs":34.2,"locale":"en-US"}
+{"id":"A010","variant":"tail","source":"parakeet-v3","role":"primary","text":"Start Spotify.","finalMs":33.6,"locale":"en-US"}
+{"id":"A011","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open orca.","finalMs":34.8,"locale":"en-US"}
+{"id":"A012","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open system settings.","finalMs":37.3,"locale":"en-US"}
+{"id":"A013","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open calendar.","finalMs":34.3,"locale":"en-US"}
+{"id":"A014","variant":"tail","source":"parakeet-v3","role":"primary","text":"Switch to safari.","finalMs":37.1,"locale":"en-US"}
+{"id":"A015","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open telegram.","finalMs":32.4,"locale":"en-US"}
+{"id":"A016","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open Ghosty","finalMs":32.9,"locale":"en-US"}
+{"id":"A017","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open chat GPT","finalMs":34.5,"locale":"en-US"}
+{"id":"A018","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open Z.","finalMs":31.9,"locale":"en-US"}
+{"id":"A019","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open Ocean Calendar","finalMs":33.8,"locale":"en-US"}
+{"id":"A020","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open activity monitor","finalMs":34.7,"locale":"en-US"}
+{"id":"A021","variant":"tail","source":"parakeet-v3","role":"primary","text":"What is 17 times 23?","finalMs":38.6,"locale":"en-US"}
+{"id":"A022","variant":"tail","source":"parakeet-v3","role":"primary","text":"What is 15% of 240?","finalMs":39.9,"locale":"en-US"}
+{"id":"A023","variant":"tail","source":"parakeet-v3","role":"primary","text":"Convert 5 miles to kilometers.","finalMs":37.8,"locale":"en-US"}
+{"id":"A024","variant":"tail","source":"parakeet-v3","role":"primary","text":"How much is 100 dollars in euros?","finalMs":36.4,"locale":"en-US"}
+{"id":"A025","variant":"tail","source":"parakeet-v3","role":"primary","text":"What time is it in Tokyo?","finalMs":35.6,"locale":"en-US"}
+{"id":"A026","variant":"tail","source":"parakeet-v3","role":"primary","text":"Square root of 144.","finalMs":36.4,"locale":"en-US"}
+{"id":"A027","variant":"tail","source":"parakeet-v3","role":"primary","text":"250 divided by 8.","finalMs":34,"locale":"en-US"}
+{"id":"A028","variant":"tail","source":"parakeet-v3","role":"primary","text":"Search the web for best pizza in Berlin.","finalMs":38.1,"locale":"en-US"}
+{"id":"A029","variant":"tail","source":"parakeet-v3","role":"primary","text":"Google flights to Lisbon","finalMs":33.6,"locale":"en-US"}
+{"id":"A030","variant":"tail","source":"parakeet-v3","role":"primary","text":"Find my invoice from March.","finalMs":36.2,"locale":"en-US"}
+{"id":"A031","variant":"tail","source":"parakeet-v3","role":"primary","text":"Search my computer for tax return 2025.","finalMs":41.7,"locale":"en-US"}
+{"id":"A032","variant":"tail","source":"parakeet-v3","role":"primary","text":"Turn the volume down.","finalMs":33.9,"locale":"en-US"}
+{"id":"A033","variant":"tail","source":"parakeet-v3","role":"primary","text":"Set volume to fifty percent.","finalMs":40.1,"locale":"en-US"}
+{"id":"A034","variant":"tail","source":"parakeet-v3","role":"primary","text":"OpenGithub.com","finalMs":33.7,"locale":"en-US"}
+{"id":"A035","variant":"tail","source":"parakeet-v3","role":"primary","text":"What is the weather tomorrow?","finalMs":34.3,"locale":"en-US"}
+{"id":"A036","variant":"tail","source":"parakeet-v3","role":"primary","text":"How do I take a screenshot on a Mac?","finalMs":40.9,"locale":"en-US"}
+{"id":"A037","variant":"tail","source":"parakeet-v3","role":"primary","text":"Summarize this page.","finalMs":35.6,"locale":"en-US"}
+{"id":"A038","variant":"tail","source":"parakeet-v3","role":"primary","text":"Reply to this email and say I will be late.","finalMs":40.2,"locale":"en-US"}
+{"id":"A039","variant":"tail","source":"parakeet-v3","role":"primary","text":"What is on my calendar today?","finalMs":37.5,"locale":"en-US"}
+{"id":"A040","variant":"tail","source":"parakeet-v3","role":"primary","text":"Play some jazz on Spotify.","finalMs":38.2,"locale":"en-US"}
+{"id":"A041","variant":"tail","source":"parakeet-v3","role":"primary","text":"Remind me to call Anna at 5 p.m.","finalMs":39.3,"locale":"en-US"}
+{"id":"A042","variant":"tail","source":"parakeet-v3","role":"primary","text":"How many days until Christmas?","finalMs":37,"locale":"en-US"}
+{"id":"A043","variant":"tail","source":"parakeet-v3","role":"primary","text":"Translate good morning into Japanese.","finalMs":36.7,"locale":"en-US"}
+{"id":"A044","variant":"tail","source":"parakeet-v3","role":"primary","text":"Close all finder windows.","finalMs":34.6,"locale":"en-US"}
+{"id":"B001","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open targets.","finalMs":32.4,"locale":"en-US"}
+{"id":"B002","variant":"tail","source":"parakeet-v3","role":"primary","text":"Orden Kine order.","finalMs":35.9,"locale":"en-US"}
+{"id":"B003","variant":"tail","source":"parakeet-v3","role":"primary","text":"Oh and nobus.","finalMs":39,"locale":"en-US"}
+{"id":"B004","variant":"tail","source":"parakeet-v3","role":"primary","text":"Loud Sigma.","finalMs":37.3,"locale":"en-US"}
+{"id":"B005","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open bath.","finalMs":35.2,"locale":"en-US"}
+{"id":"B006","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open notion.","finalMs":34,"locale":"en-US"}
+{"id":"B007","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open VS-Code","finalMs":34.8,"locale":"en-US"}
+{"id":"B008","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open Spody.","finalMs":39.1,"locale":"en-US"}
+{"id":"B009","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open my cast.","finalMs":34.2,"locale":"en-US"}
+{"id":"B010","variant":"tail","source":"parakeet-v3","role":"primary","text":"Stout Sport Efe.","finalMs":36.1,"locale":"en-US"}
+{"id":"B011","variant":"tail","source":"parakeet-v3","role":"primary","text":"Oh the noika.","finalMs":33.8,"locale":"en-US"}
+{"id":"B012","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open the same zettings.","finalMs":35.1,"locale":"en-US"}
+{"id":"B013","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open calendar.","finalMs":32.9,"locale":"en-US"}
+{"id":"B014","variant":"tail","source":"parakeet-v3","role":"primary","text":"Switched Hosefari.","finalMs":35.4,"locale":"en-US"}
+{"id":"B015","variant":"tail","source":"parakeet-v3","role":"primary","text":"OpenCADK PT.","finalMs":36.7,"locale":"en-US"}
+{"id":"B016","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open Activity Monitor","finalMs":34,"locale":"en-US"}
+{"id":"B017","variant":"tail","source":"parakeet-v3","role":"primary","text":"What is seven day and t mist twenty-the-","finalMs":48.7,"locale":"en-US"}
+{"id":"B018","variant":"tail","source":"parakeet-v3","role":"primary","text":"Komfeld 4 for meer is 2 kilometers.","finalMs":43.3,"locale":"en-US"}
+{"id":"B019","variant":"tail","source":"parakeet-v3","role":"primary","text":"Vladimir is eat in Tokyo.","finalMs":43.7,"locale":"en-US"}
+{"id":"B020","variant":"tail","source":"parakeet-v3","role":"primary","text":"The Osh TV for best pizza in Berlin.","finalMs":41.4,"locale":"en-US"}
+{"id":"B021","variant":"tail","source":"parakeet-v3","role":"primary","text":"Pent me invoice for my.","finalMs":42,"locale":"en-US"}
+{"id":"B022","variant":"tail","source":"parakeet-v3","role":"primary","text":"The ich me computer for tax8 on 2020 FIFA.","finalMs":54.4,"locale":"en-US"}
+{"id":"B023","variant":"tail","source":"parakeet-v3","role":"primary","text":"Ton table.","finalMs":37.2,"locale":"en-US"}
+{"id":"B024","variant":"tail","source":"parakeet-v3","role":"primary","text":"openbtop.com","finalMs":36.6,"locale":"en-US"}
+{"id":"B025","variant":"tail","source":"parakeet-v3","role":"primary","text":"What is the weather tomorrow?","finalMs":36.8,"locale":"en-US"}
+{"id":"B026","variant":"tail","source":"parakeet-v3","role":"primary","text":"Hold it a k as claims or ton a lick.","finalMs":46.9,"locale":"en-US"}
+{"id":"B027","variant":"tail","source":"parakeet-v3","role":"primary","text":"The Marie said he's pag.","finalMs":41.6,"locale":"en-US"}
+{"id":"B028","variant":"tail","source":"parakeet-v3","role":"primary","text":"What is only calendar to the.","finalMs":42.4,"locale":"en-US"}
+{"id":"B029","variant":"tail","source":"parakeet-v3","role":"primary","text":"Lizo with just own spot e fee.","finalMs":39.8,"locale":"en-US"}
+{"id":"B030","variant":"tail","source":"parakeet-v3","role":"primary","text":"Payment made ho calama outfit for KM.","finalMs":53.1,"locale":"en-US"}
+{"id":"B031","variant":"tail","source":"parakeet-v3","role":"primary","text":"Oh money dies until Christmas.","finalMs":37.1,"locale":"en-US"}
+{"id":"B032","variant":"tail","source":"parakeet-v3","role":"primary","text":"Close Alfender Windows.","finalMs":42.6,"locale":"en-US"}
+{"id":"C001","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne pages.","finalMs":35.7,"locale":"de-DE"}
+{"id":"C002","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne keinote.","finalMs":37.5,"locale":"de-DE"}
+{"id":"C003","variant":"tail","source":"parakeet-v3","role":"primary","text":"Stoute Sport Easy.","finalMs":37.2,"locale":"en-US"}
+{"id":"C004","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne die Systemeinstellungen.","finalMs":36.7,"locale":"de-DE"}
+{"id":"C005","variant":"tail","source":"parakeet-v3","role":"primary","text":"Person and in calendar","finalMs":36.2,"locale":"en-US"}
+{"id":"C006","variant":"tail","source":"parakeet-v3","role":"primary","text":"Uthna Zafari.","finalMs":34.3,"locale":"en-US"}
+{"id":"C007","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne Notion.","finalMs":32.9,"locale":"de-DE"}
+{"id":"C008","variant":"tail","source":"parakeet-v3","role":"primary","text":"Uh snipasa.","finalMs":36.6,"locale":"en-US"}
+{"id":"C009","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne the photos.","finalMs":35.8,"locale":"de-DE"}
+{"id":"C010","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne die Erinnerungen.","finalMs":34,"locale":"de-DE"}
+{"id":"C011","variant":"tail","source":"parakeet-v3","role":"primary","text":"Was ist 17 mal 23?","finalMs":34.8,"locale":"de-DE"}
+{"id":"C012","variant":"tail","source":"parakeet-v3","role":"primary","text":"Was sind 15% von 240?","finalMs":35.7,"locale":"de-DE"}
+{"id":"C013","variant":"tail","source":"parakeet-v3","role":"primary","text":"The thousand hundred dollar in Euro","finalMs":36.7,"locale":"en-US"}
+{"id":"C014","variant":"tail","source":"parakeet-v3","role":"primary","text":"Krishna five mile and kilometer um.","finalMs":41.6,"locale":"en-US"}
+{"id":"C015","variant":"tail","source":"parakeet-v3","role":"primary","text":"Wie spät ist es in Tokio?","finalMs":36.3,"locale":"de-DE"}
+{"id":"C016","variant":"tail","source":"parakeet-v3","role":"primary","text":"Wurzel aus 144","finalMs":40,"locale":"de-DE"}
+{"id":"C017","variant":"tail","source":"parakeet-v3","role":"primary","text":"Such im Internet nach Pizza in Berlin.","finalMs":37.1,"locale":"de-DE"}
+{"id":"C018","variant":"tail","source":"parakeet-v3","role":"primary","text":"Suche nach Rechnung mehrz.","finalMs":37.1,"locale":"de-DE"}
+{"id":"C019","variant":"tail","source":"parakeet-v3","role":"primary","text":"Finde meine Steuererklärung.","finalMs":34,"locale":"de-DE"}
+{"id":"C020","variant":"tail","source":"parakeet-v3","role":"primary","text":"Mach lauter.","finalMs":32.7,"locale":"de-DE"}
+{"id":"C021","variant":"tail","source":"parakeet-v3","role":"primary","text":"Stell die Lautstärke auf 50%.","finalMs":38,"locale":"de-DE"}
+{"id":"C022","variant":"tail","source":"parakeet-v3","role":"primary","text":"Liza bitter.","finalMs":34.5,"locale":"de-DE"}
+{"id":"C023","variant":"tail","source":"parakeet-v3","role":"primary","text":"Vivia does Vit Award.","finalMs":39.8,"locale":"en-US"}
+{"id":"C024","variant":"tail","source":"parakeet-v3","role":"primary","text":"Passe diese Seite zusammen.","finalMs":35.1,"locale":"de-DE"}
+{"id":"C025","variant":"tail","source":"parakeet-v3","role":"primary","text":"Was steht heute in meinem Kalender?","finalMs":36.1,"locale":"de-DE"}
+{"id":"C026","variant":"tail","source":"parakeet-v3","role":"primary","text":"Erinnere mich morgen um 9 an den Zahnarzt.","finalMs":40,"locale":"de-DE"}
+{"id":"C027","variant":"tail","source":"parakeet-v3","role":"primary","text":"Wie viele Tage sind es bis Weihnachten?","finalMs":36.2,"locale":"de-DE"}
+{"id":"C028","variant":"tail","source":"parakeet-v3","role":"primary","text":"Schreibt eine Mail an Thomas.","finalMs":36,"locale":"de-DE"}
+{"id":"C029","variant":"tail","source":"parakeet-v3","role":"primary","text":"Übersetze guten Wagen ins Englische.","finalMs":42.4,"locale":"de-DE"}
+{"id":"C030","variant":"tail","source":"parakeet-v3","role":"primary","text":"Zeik mir meine Tovenu was.","finalMs":38.8,"locale":"de-DE"}
+{"id":"C031","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne die Aktivitätsanzeige.","finalMs":37.7,"locale":"de-DE"}
+{"id":"C032","variant":"tail","source":"parakeet-v3","role":"primary","text":"The spit is as","finalMs":33.7,"locale":"en-US"}
+{"id":"D001","variant":"tail","source":"parakeet-v3","role":"primary","text":"Uh no pie cheese.","finalMs":36.4,"locale":"en-US"}
+{"id":"D002","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open targets data.","finalMs":34.2,"locale":"en-US"}
+{"id":"D003","variant":"tail","source":"parakeet-v3","role":"primary","text":"Mach Sigma auf.","finalMs":31.9,"locale":"de-DE"}
+{"id":"D004","variant":"tail","source":"parakeet-v3","role":"primary","text":"Se eu me computer vorrechnung mehr.","finalMs":38.1,"locale":"de-DE"}
+{"id":"D005","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne VS Code.","finalMs":36.6,"locale":"en-US"}
+{"id":"D006","variant":"tail","source":"parakeet-v3","role":"primary","text":"Uath Navy S Code.","finalMs":36.8,"locale":"en-US"}
+{"id":"D007","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne X Court.","finalMs":34.6,"locale":"de-DE"}
+{"id":"D008","variant":"tail","source":"parakeet-v3","role":"primary","text":"Urs I kested.","finalMs":34.9,"locale":"en-US"}
+{"id":"D009","variant":"tail","source":"parakeet-v3","role":"primary","text":"Earth neorka.","finalMs":37.2,"locale":"en-US"}
+{"id":"D010","variant":"tail","source":"parakeet-v3","role":"primary","text":"Started in Live Browser.","finalMs":38.8,"locale":"en-US"}
+{"id":"D011","variant":"tail","source":"parakeet-v3","role":"primary","text":"Must puttify off.","finalMs":37.4,"locale":"en-US"}
+{"id":"D012","variant":"tail","source":"parakeet-v3","role":"primary","text":"Kannst du Kinu öffnen.","finalMs":37,"locale":"de-DE"}
+{"id":"D013","variant":"tail","source":"parakeet-v3","role":"primary","text":"Uh no bit anomalus.","finalMs":38.6,"locale":"en-US"}
+{"id":"D014","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open Notion bitte.","finalMs":33.5,"locale":"de-DE"}
+{"id":"D015","variant":"tail","source":"parakeet-v3","role":"primary","text":"Suche die Kinute-Präsentation vom Montag.","finalMs":39,"locale":"de-DE"}
+{"id":"D016","variant":"tail","source":"parakeet-v3","role":"primary","text":"Win T PDF no full t licole.","finalMs":40.9,"locale":"en-US"}
+{"id":"D017","variant":"tail","source":"parakeet-v3","role":"primary","text":"Cold the letter armbook.","finalMs":34.8,"locale":"en-US"}
+{"id":"D018","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open the Einstellungen.","finalMs":36.2,"locale":"de-DE"}
+{"id":"D019","variant":"tail","source":"parakeet-v3","role":"primary","text":"Was ist 20% von 80 Euro?","finalMs":37.1,"locale":"de-DE"}
+{"id":"D020","variant":"tail","source":"parakeet-v3","role":"primary","text":"Of the WhatsApp.","finalMs":33.4,"locale":"en-US"}
+{"id":"D021","variant":"tail","source":"parakeet-v3","role":"primary","text":"Usna telecom","finalMs":34.4,"locale":"en-US"}
+{"id":"D022","variant":"tail","source":"parakeet-v3","role":"primary","text":"Uh Nagosti","finalMs":32.1,"locale":"en-US"}
+{"id":"D023","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne das Terminal.","finalMs":33.3,"locale":"de-DE"}
+{"id":"D024","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open fender bitter.","finalMs":34,"locale":"de-DE"}
+{"id":"D025","variant":"tail","source":"parakeet-v3","role":"primary","text":"Wechsel zu prior.","finalMs":33.5,"locale":"de-DE"}
+{"id":"D026","variant":"tail","source":"parakeet-v3","role":"primary","text":"Uh the chat gpte.","finalMs":36,"locale":"en-US"}
+{"id":"D027","variant":"tail","source":"parakeet-v3","role":"primary","text":"Earth Namus and Calendar.","finalMs":39.4,"locale":"en-US"}
+{"id":"D028","variant":"tail","source":"parakeet-v3","role":"primary","text":"Spotify pause.","finalMs":33.6,"locale":"en-US"}
+{"id":"E001","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open Pi Cheese.","finalMs":33.3,"locale":"en-US"}
+{"id":"E002","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open kinot.","finalMs":36,"locale":"en-US"}
+{"id":"E003","variant":"tail","source":"parakeet-v3","role":"primary","text":"Ooh and novels.","finalMs":34.5,"locale":"en-US"}
+{"id":"E004","variant":"tail","source":"parakeet-v3","role":"primary","text":"Lunch Sigma.","finalMs":33.4,"locale":"en-US"}
+{"id":"E005","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open the dial.","finalMs":36.3,"locale":"en-US"}
+{"id":"E006","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open motion.","finalMs":35.6,"locale":"en-US"}
+{"id":"E007","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open VS Code.","finalMs":33.8,"locale":"en-US"}
+{"id":"E008","variant":"tail","source":"parakeet-v3","role":"primary","text":"Or an excoat.","finalMs":33.7,"locale":"en-US"}
+{"id":"E009","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open Reakist.","finalMs":34.5,"locale":"en-US"}
+{"id":"E010","variant":"tail","source":"parakeet-v3","role":"primary","text":"Start Spotify.","finalMs":33.8,"locale":"en-US"}
+{"id":"E011","variant":"tail","source":"parakeet-v3","role":"primary","text":"Ooh and okay.","finalMs":36,"locale":"en-US"}
+{"id":"E012","variant":"tail","source":"parakeet-v3","role":"primary","text":"Oopsist of Zettis.","finalMs":37.3,"locale":"en-US"}
+{"id":"E013","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open calendar.","finalMs":34.9,"locale":"en-US"}
+{"id":"E014","variant":"tail","source":"parakeet-v3","role":"primary","text":"Sished to zafari.","finalMs":36.8,"locale":"en-US"}
+{"id":"E015","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open chat GPT","finalMs":32.4,"locale":"en-US"}
+{"id":"E016","variant":"tail","source":"parakeet-v3","role":"primary","text":"Vogue C vente and times twenty sea.","finalMs":43.3,"locale":"en-US"}
+{"id":"E017","variant":"tail","source":"parakeet-v3","role":"primary","text":"Convert 5 miles to kilometers.","finalMs":35.4,"locale":"en-US"}
+{"id":"E018","variant":"tail","source":"parakeet-v3","role":"primary","text":"What time is it in Tokyo?","finalMs":37,"locale":"en-US"}
+{"id":"E019","variant":"tail","source":"parakeet-v3","role":"primary","text":"Search the web for best pizza in Berlin.","finalMs":40.4,"locale":"en-US"}
+{"id":"E020","variant":"tail","source":"parakeet-v3","role":"primary","text":"Point my invoice for much.","finalMs":36.9,"locale":"en-US"}
+{"id":"E021","variant":"tail","source":"parakeet-v3","role":"primary","text":"Turn the volume down.","finalMs":34,"locale":"en-US"}
+{"id":"E022","variant":"tail","source":"parakeet-v3","role":"primary","text":"What ye save is a tomorrow?","finalMs":40.3,"locale":"en-US"}
+{"id":"E023","variant":"tail","source":"parakeet-v3","role":"primary","text":"How do I take a screenshot on a mic?","finalMs":39.4,"locale":"en-US"}
+{"id":"E024","variant":"tail","source":"parakeet-v3","role":"primary","text":"Zumagise Spitch.","finalMs":39,"locale":"de-DE"}
+{"id":"E025","variant":"tail","source":"parakeet-v3","role":"primary","text":"What is on my calendar today?","finalMs":36.7,"locale":"en-US"}
+{"id":"E026","variant":"tail","source":"parakeet-v3","role":"primary","text":"Cliza Mujes on Spotify.","finalMs":37.1,"locale":"en-US"}
+{"id":"E027","variant":"tail","source":"parakeet-v3","role":"primary","text":"Remind me to call Anna at 5 p.m.","finalMs":42.7,"locale":"en-US"}
+{"id":"E028","variant":"tail","source":"parakeet-v3","role":"primary","text":"How many dice until Christmas?","finalMs":34.8,"locale":"en-US"}
+{"id":"E029","variant":"tail","source":"parakeet-v3","role":"primary","text":"Close all finder windows.","finalMs":34.9,"locale":"en-US"}
+{"id":"E030","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open GitHub.com","finalMs":34.6,"locale":"en-US"}
+{"id":"F001","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open pages.","finalMs":33.6,"locale":"en-US"}
+{"id":"F002","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open Keynote.","finalMs":32.3,"locale":"en-US"}
+{"id":"F003","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open numbers.","finalMs":33.4,"locale":"en-US"}
+{"id":"F004","variant":"tail","source":"parakeet-v3","role":"primary","text":"Launch Fishma","finalMs":32.2,"locale":"en-US"}
+{"id":"F005","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open Brief.","finalMs":31.6,"locale":"en-US"}
+{"id":"F006","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open Notion.","finalMs":31.6,"locale":"en-US"}
+{"id":"F007","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open VS-Code","finalMs":34.9,"locale":"en-US"}
+{"id":"F008","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open X-Code.","finalMs":35.1,"locale":"en-US"}
+{"id":"F009","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open RaiCast","finalMs":36.4,"locale":"en-US"}
+{"id":"F010","variant":"tail","source":"parakeet-v3","role":"primary","text":"Start Spotify.","finalMs":35.1,"locale":"en-US"}
+{"id":"F011","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open Alka.","finalMs":31.9,"locale":"en-US"}
+{"id":"F012","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open system settings.","finalMs":34.1,"locale":"en-US"}
+{"id":"F013","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open calendar.","finalMs":34.6,"locale":"en-US"}
+{"id":"F014","variant":"tail","source":"parakeet-v3","role":"primary","text":"Twitch to Zafari.","finalMs":35.1,"locale":"en-US"}
+{"id":"F015","variant":"tail","source":"parakeet-v3","role":"primary","text":"OpenChat GPT.","finalMs":33.2,"locale":"en-US"}
+{"id":"F016","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open Activity Monitor","finalMs":34,"locale":"en-US"}
+{"id":"F017","variant":"tail","source":"parakeet-v3","role":"primary","text":"What is 17 times 23?","finalMs":37.5,"locale":"en-US"}
+{"id":"F018","variant":"tail","source":"parakeet-v3","role":"primary","text":"Convert Viva Miles to Kilometers.","finalMs":41,"locale":"en-US"}
+{"id":"F019","variant":"tail","source":"parakeet-v3","role":"primary","text":"What time is it in Tokyo?","finalMs":35.3,"locale":"en-US"}
+{"id":"F020","variant":"tail","source":"parakeet-v3","role":"primary","text":"Search the web for best pizza in Berlin.","finalMs":36.8,"locale":"en-US"}
+{"id":"F021","variant":"tail","source":"parakeet-v3","role":"primary","text":"Find my invoice frohmarch.","finalMs":37.9,"locale":"en-US"}
+{"id":"F022","variant":"tail","source":"parakeet-v3","role":"primary","text":"Search my computer for text return 2020 FIVE.","finalMs":41.6,"locale":"en-US"}
+{"id":"F023","variant":"tail","source":"parakeet-v3","role":"primary","text":"Turn the volume down.","finalMs":33.6,"locale":"en-US"}
+{"id":"F024","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open GitHub.com","finalMs":33.6,"locale":"en-US"}
+{"id":"F025","variant":"tail","source":"parakeet-v3","role":"primary","text":"What is the weather tomorrow?","finalMs":36.9,"locale":"en-US"}
+{"id":"F026","variant":"tail","source":"parakeet-v3","role":"primary","text":"How do it take our screenshot on our mech?","finalMs":38.3,"locale":"en-US"}
+{"id":"F027","variant":"tail","source":"parakeet-v3","role":"primary","text":"So Marita Despage.","finalMs":35.3,"locale":"en-US"}
+{"id":"F028","variant":"tail","source":"parakeet-v3","role":"primary","text":"What is on my calendar today?","finalMs":35.2,"locale":"en-US"}
+{"id":"F029","variant":"tail","source":"parakeet-v3","role":"primary","text":"Place and less on Spotify.","finalMs":38.6,"locale":"en-US"}
+{"id":"F030","variant":"tail","source":"parakeet-v3","role":"primary","text":"Remint me to call anna et fever p.m.","finalMs":41.3,"locale":"en-US"}
+{"id":"F031","variant":"tail","source":"parakeet-v3","role":"primary","text":"How many days until Christmas?","finalMs":39.9,"locale":"en-US"}
+{"id":"F032","variant":"tail","source":"parakeet-v3","role":"primary","text":"Close All Finder Windows.","finalMs":34.6,"locale":"en-US"}
+{"id":"G001","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open Pitches.","finalMs":34.2,"locale":"en-US"}
+{"id":"G002","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open Keynote.","finalMs":34.7,"locale":"en-US"}
+{"id":"G003","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open numbers.","finalMs":34,"locale":"en-US"}
+{"id":"G004","variant":"tail","source":"parakeet-v3","role":"primary","text":"Lunch Fichma","finalMs":33.2,"locale":"en-US"}
+{"id":"G005","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open Brive.","finalMs":35,"locale":"en-US"}
+{"id":"G006","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open notion.","finalMs":31.4,"locale":"en-US"}
+{"id":"G007","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open wie es gut.","finalMs":32.3,"locale":"de-DE"}
+{"id":"G008","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open X Code.","finalMs":34.1,"locale":"en-US"}
+{"id":"G009","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open Reakist.","finalMs":32.5,"locale":"en-US"}
+{"id":"G010","variant":"tail","source":"parakeet-v3","role":"primary","text":"Start Spotify.","finalMs":32.8,"locale":"en-US"}
+{"id":"G011","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open or car.","finalMs":34.2,"locale":"en-US"}
+{"id":"G012","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open system settings.","finalMs":35.9,"locale":"en-US"}
+{"id":"G013","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open calendar","finalMs":31.3,"locale":"en-US"}
+{"id":"G014","variant":"tail","source":"parakeet-v3","role":"primary","text":"Switch to Zafari.","finalMs":33.6,"locale":"en-US"}
+{"id":"G015","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open Chet Sheepai Thai.","finalMs":37.9,"locale":"en-US"}
+{"id":"G016","variant":"tail","source":"parakeet-v3","role":"primary","text":"What is 17 times 23?","finalMs":35.5,"locale":"en-US"}
+{"id":"G017","variant":"tail","source":"parakeet-v3","role":"primary","text":"Convert 5 miles to kilometers.","finalMs":34.8,"locale":"en-US"}
+{"id":"G018","variant":"tail","source":"parakeet-v3","role":"primary","text":"What time is it in Tokyo?","finalMs":38,"locale":"en-US"}
+{"id":"G019","variant":"tail","source":"parakeet-v3","role":"primary","text":"Sorge See weg for Best Pizza in Berlin.","finalMs":37.8,"locale":"de-DE"}
+{"id":"G020","variant":"tail","source":"parakeet-v3","role":"primary","text":"Find my info is from Arch.","finalMs":34,"locale":"en-US"}
+{"id":"G021","variant":"tail","source":"parakeet-v3","role":"primary","text":"Turn Z volume down.","finalMs":33.9,"locale":"en-US"}
+{"id":"G022","variant":"tail","source":"parakeet-v3","role":"primary","text":"What is the besser tomorrow?","finalMs":39.1,"locale":"en-US"}
+{"id":"G023","variant":"tail","source":"parakeet-v3","role":"primary","text":"How do I take a screenshot on a make?","finalMs":37.1,"locale":"en-US"}
+{"id":"G024","variant":"tail","source":"parakeet-v3","role":"primary","text":"Zummerisis Page.","finalMs":35.8,"locale":"de-DE"}
+{"id":"G025","variant":"tail","source":"parakeet-v3","role":"primary","text":"What is on my calendar to die?","finalMs":36.4,"locale":"en-US"}
+{"id":"G026","variant":"tail","source":"parakeet-v3","role":"primary","text":"Ply some chess on Spotify.","finalMs":37.4,"locale":"en-US"}
+{"id":"G027","variant":"tail","source":"parakeet-v3","role":"primary","text":"Remind me to call Anna at 5 p.m.","finalMs":36.9,"locale":"en-US"}
+{"id":"G028","variant":"tail","source":"parakeet-v3","role":"primary","text":"How many days until Christmas?","finalMs":35.9,"locale":"en-US"}
+{"id":"G029","variant":"tail","source":"parakeet-v3","role":"primary","text":"Close all Finder Windows.","finalMs":34.4,"locale":"en-US"}
+{"id":"G030","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open github.com","finalMs":34.4,"locale":"en-US"}
+{"id":"H001","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne page this.","finalMs":35.3,"locale":"en-US"}
+{"id":"H002","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne Keynote.","finalMs":35.9,"locale":"de-DE"}
+{"id":"H003","variant":"tail","source":"parakeet-v3","role":"primary","text":"Start Spotify.","finalMs":34.5,"locale":"en-US"}
+{"id":"H004","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne die Systemeinstellungen.","finalMs":37.4,"locale":"de-DE"}
+{"id":"H005","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne den Kalender.","finalMs":35.7,"locale":"de-DE"}
+{"id":"H006","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne Safari.","finalMs":32.9,"locale":"de-DE"}
+{"id":"H007","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne Notion.","finalMs":35,"locale":"de-DE"}
+{"id":"H008","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne Brief.","finalMs":35.2,"locale":"de-DE"}
+{"id":"H009","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne die Fotos.","finalMs":32.8,"locale":"de-DE"}
+{"id":"H010","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne die Erinnerungen.","finalMs":35.6,"locale":"de-DE"}
+{"id":"H011","variant":"tail","source":"parakeet-v3","role":"primary","text":"Was ist 17 mal 23?","finalMs":33.7,"locale":"de-DE"}
+{"id":"H012","variant":"tail","source":"parakeet-v3","role":"primary","text":"Was sind 15% von 240?","finalMs":36,"locale":"de-DE"}
+{"id":"H013","variant":"tail","source":"parakeet-v3","role":"primary","text":"Wie viel sind 100 Dollar in Euro?","finalMs":36.8,"locale":"de-DE"}
+{"id":"H014","variant":"tail","source":"parakeet-v3","role":"primary","text":"Rechne 5 Meilen in Kilometer um.","finalMs":36.3,"locale":"de-DE"}
+{"id":"H015","variant":"tail","source":"parakeet-v3","role":"primary","text":"Wie spät ist es in Tokio?","finalMs":33.8,"locale":"de-DE"}
+{"id":"H016","variant":"tail","source":"parakeet-v3","role":"primary","text":"Wurzel aus 144","finalMs":32.9,"locale":"de-DE"}
+{"id":"H017","variant":"tail","source":"parakeet-v3","role":"primary","text":"Such im Internet nach Pizza in Berlin.","finalMs":35.3,"locale":"de-DE"}
+{"id":"H018","variant":"tail","source":"parakeet-v3","role":"primary","text":"Suche nach Rechnung März.","finalMs":37.3,"locale":"de-DE"}
+{"id":"H019","variant":"tail","source":"parakeet-v3","role":"primary","text":"Finde meine Steuererklärung.","finalMs":33.1,"locale":"de-DE"}
+{"id":"H020","variant":"tail","source":"parakeet-v3","role":"primary","text":"Mach lauter.","finalMs":33.7,"locale":"de-DE"}
+{"id":"H021","variant":"tail","source":"parakeet-v3","role":"primary","text":"Stell die Lautstärke auf 50%.","finalMs":36.7,"locale":"de-DE"}
+{"id":"H022","variant":"tail","source":"parakeet-v3","role":"primary","text":"Leiser bitte.","finalMs":31.7,"locale":"de-DE"}
+{"id":"H023","variant":"tail","source":"parakeet-v3","role":"primary","text":"Wie wird das Wetter morgen?","finalMs":32.8,"locale":"de-DE"}
+{"id":"H024","variant":"tail","source":"parakeet-v3","role":"primary","text":"Fasse diese Seite zusammen.","finalMs":35.4,"locale":"de-DE"}
+{"id":"H025","variant":"tail","source":"parakeet-v3","role":"primary","text":"Was steht heute in meinem Kalender?","finalMs":36.3,"locale":"de-DE"}
+{"id":"H026","variant":"tail","source":"parakeet-v3","role":"primary","text":"Erinnere mich morgen um neun an den Zahnarzt.","finalMs":37.2,"locale":"de-DE"}
+{"id":"H027","variant":"tail","source":"parakeet-v3","role":"primary","text":"Wie viele Tage sind es bis Weihnachten?","finalMs":36.1,"locale":"de-DE"}
+{"id":"H028","variant":"tail","source":"parakeet-v3","role":"primary","text":"Schreibt eine Mail an Thomas.","finalMs":38,"locale":"de-DE"}
+{"id":"H029","variant":"tail","source":"parakeet-v3","role":"primary","text":"Übersetze guten Morgen ins Englische.","finalMs":39,"locale":"de-DE"}
+{"id":"H030","variant":"tail","source":"parakeet-v3","role":"primary","text":"Zeig mir meine Downloads.","finalMs":36.3,"locale":"de-DE"}
+{"id":"H031","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne die Aktivitätsanzeige.","finalMs":40.4,"locale":"de-DE"}
+{"id":"H032","variant":"tail","source":"parakeet-v3","role":"primary","text":"Wie spät ist es?","finalMs":31.7,"locale":"de-DE"}
+{"id":"I001","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne Palsches.","finalMs":33,"locale":"de-DE"}
+{"id":"I002","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open pages bitte.","finalMs":36,"locale":"de-DE"}
+{"id":"I003","variant":"tail","source":"parakeet-v3","role":"primary","text":"Mach fich mal auf.","finalMs":33.8,"locale":"de-DE"}
+{"id":"I004","variant":"tail","source":"parakeet-v3","role":"primary","text":"Search my computer vor Rechnung März.","finalMs":47.6,"locale":"de-DE"}
+{"id":"I005","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne VS-Code.","finalMs":36.9,"locale":"de-DE"}
+{"id":"I006","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne wir es gut.","finalMs":33.9,"locale":"de-DE"}
+{"id":"I007","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne Excode.","finalMs":33.9,"locale":"de-DE"}
+{"id":"I008","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffnere Kest.","finalMs":36.1,"locale":"de-DE"}
+{"id":"I009","variant":"tail","source":"parakeet-v3","role":"primary","text":"Ufno Alka","finalMs":37,"locale":"en-US"}
+{"id":"I010","variant":"tail","source":"parakeet-v3","role":"primary","text":"Starte den Breifbrowser.","finalMs":40.5,"locale":"de-DE"}
+{"id":"I011","variant":"tail","source":"parakeet-v3","role":"primary","text":"Mach Spotify auf.","finalMs":37.4,"locale":"de-DE"}
+{"id":"I012","variant":"tail","source":"parakeet-v3","role":"primary","text":"Kannst du KeyNote öffnen.","finalMs":43.9,"locale":"de-DE"}
+{"id":"I013","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne bitte Numbers.","finalMs":37.4,"locale":"de-DE"}
+{"id":"I014","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open Notion bitte.","finalMs":34.9,"locale":"de-DE"}
+{"id":"I015","variant":"tail","source":"parakeet-v3","role":"primary","text":"Suche die Kehnot-Präsentation vom Montag.","finalMs":38,"locale":"de-DE"}
+{"id":"I016","variant":"tail","source":"parakeet-v3","role":"primary","text":"Find the pdf-rechnung from telekom.","finalMs":42.9,"locale":"en-US"}
+{"id":"I017","variant":"tail","source":"parakeet-v3","role":"primary","text":"Google-Wetter Hamburg","finalMs":33.4,"locale":"de-DE"}
+{"id":"I018","variant":"tail","source":"parakeet-v3","role":"primary","text":"Open die Einstellungen.","finalMs":33.5,"locale":"de-DE"}
+{"id":"I019","variant":"tail","source":"parakeet-v3","role":"primary","text":"Was ist 20% von 80 Euro?","finalMs":37.9,"locale":"de-DE"}
+{"id":"I020","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne WhatsApp.","finalMs":34.7,"locale":"de-DE"}
+{"id":"I021","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne Telegram.","finalMs":32.5,"locale":"de-DE"}
+{"id":"I022","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne Ghost K.","finalMs":34,"locale":"de-DE"}
+{"id":"I023","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne das Terminal.","finalMs":35.4,"locale":"de-DE"}
+{"id":"I024","variant":"tail","source":"parakeet-v3","role":"primary","text":"OpenFinder bitte.","finalMs":33,"locale":"de-DE"}
+{"id":"I025","variant":"tail","source":"parakeet-v3","role":"primary","text":"Wechsel zu Breif","finalMs":33.3,"locale":"de-DE"}
+{"id":"I026","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffnet Chat GPT","finalMs":37.5,"locale":"de-DE"}
+{"id":"I027","variant":"tail","source":"parakeet-v3","role":"primary","text":"Öffne Notion Kalender.","finalMs":36.8,"locale":"de-DE"}
+{"id":"I028","variant":"tail","source":"parakeet-v3","role":"primary","text":"Spotify Pause.","finalMs":34.9,"locale":"en-US"}

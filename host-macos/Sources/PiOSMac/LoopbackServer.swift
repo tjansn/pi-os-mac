@@ -21,9 +21,9 @@ public final class LoopbackServer {
         listener = try NWListener(using: parameters)
         self.handler = handler; self.cancelsOnDisconnect = cancelsOnDisconnect
     }
-    /// Launcher reads (file search, app list): abandoned searches must not hold the serial queue.
+    /// Launcher reads (file search, app list, visible items): abandoned searches must not hold the serial queue.
     public static let launcherReads: @Sendable (HTTPRequest) -> Bool = { request in
-        request.method == "POST" && LauncherRoutes.name(forPath: request.path).map(LauncherRoutes.readNames.contains) == true
+        request.method == "POST" && LauncherRoutes.name(forPath: request.path).map(LauncherRoutes.servedReadNames.contains) == true
     }
 
     public func start(ready: @escaping () -> Void) {

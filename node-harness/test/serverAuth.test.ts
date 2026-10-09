@@ -13,14 +13,22 @@ test("harness health is public; invoke/status/settings all enforce missing/wrong
     assert.equal((await fetch(base + "/health")).status, 200);
     for (const token of [undefined, "wrong"]) {
       const headers: Record<string, string> = token ? { "X-Harness-Token": token } : {};
-      for (const [method, path] of [["POST", "/invoke"], ["GET", "/invocations/id"], ["POST", "/invocations/id/cancel"], ["POST", "/invocations/id/followup"], ["POST", "/invocations/id/close"], ["GET", "/models"], ["POST", "/settings/model"]]) {
-        assert.equal((await fetch(base + path, { method, headers, ...(method === "POST" ? { body: "{}" } : {}) })).status, 401);
+      for (const [method, path] of [["POST", "/invoke"], ["GET", "/invocations/id"], ["POST", "/invocations/id/cancel"], ["POST", "/invocations/id/followup"], ["POST", "/invocations/id/close"], ["GET", "/models"], ["POST", "/settings/model"],
+        ["POST", "/instant"], ["GET", "/dictionary"], ["POST", "/dictionary/learn"], ["POST", "/dictionary/edit"], ["GET", "/dictionary/recognizer-terms?max=5"], ["GET", "/dictionary/unknown"]]) {
+        assert.equal((await fetch(base + path, { method, headers, ...(method === "POST" ? { body: "{}" } : {}) })).status, 401, `${method} ${path}`);
       }
+    }
+    // A browser page can never drive the dictionary (CSRF), even with a token it cannot have.
+    for (const [method, path] of [["GET", "/dictionary"], ["POST", "/dictionary/learn"], ["POST", "/dictionary/edit"]]) {
+      const browser = { "X-Harness-Token": "correct", "Content-Type": "application/json", Origin: "https://evil.example" };
+      assert.equal((await fetch(base + path, { method, headers: browser, ...(method === "POST" ? { body: "{}" } : {}) })).status, 403, `${method} ${path}`);
     }
     const headers = { "X-Harness-Token": "correct", "Content-Type": "application/json" };
     assert.equal((await fetch(base + "/invoke", { method: "POST", headers, body: "{" })).status, 400);
     assert.equal((await fetch(base + "/settings/model", { method: "POST", headers, body: "{}" })).status, 400);
     assert.equal((await fetch(base + "/invocations/missing", { headers })).status, 404);
+    assert.equal((await fetch(base + "/dictionary", { headers })).status, 200);
+    assert.equal((await fetch(base + "/dictionary/learn", { method: "POST", headers, body: "{}" })).status, 400);
     assert.equal((await fetch(base + "/invoke", { method: "POST", headers, body: JSON.stringify({ contextId: "ctx-test", prompt: "test" }) })).status, 202);
   } finally { await server.close(); }
 });

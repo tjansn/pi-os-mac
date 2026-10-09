@@ -1,0 +1,18 @@
+{
+  "text": "open recast",
+  "phase": "final",
+  "seq": 7,
+  "takeId": "take-42",
+  "inputMode": "voice",
+  "accept": [
+    "suggest",
+    "suggest",
+    "suggest",
+    "suggest",
+    "suggest",
+    "suggest",
+    "suggest",
+    "suggest",
+    "suggest"
+  ]
+}

@@ -2,43 +2,40 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { timingSafeEqual } from "node:crypto";
 import { dirname, join } from "node:path";
 import { loadConfig, type HarnessConfig } from "./config.js";
-import { HostClient, type DesktopContextSnapshot, type ScreenshotRef, type ToolOutcome } from "./hostClient.js";
+import { HostClient, LauncherRouteError, type DesktopContextSnapshot, type ScreenshotRef, type ToolOutcome } from "./hostClient.js";
 import { InvocationStore, TERMINAL_STATES, type InvocationRecord } from "./invocations.js";
-import {
-  abortError, attachesScreenshot, contextRecord, createLiveSession, PAGE_DIGEST_TIMEOUT_MS, planTurn, promptFirst, promptFollowup,
-  releasePulledWindow, seedScreenshot, sessionSetupKey, threadIsGeneral, toolEnginesFrom,
-  type AgentRunOptions, type AgentServices, type BrowserPageProvider, type InvokeInput, type LiveAgentSession, type SessionObserver,
-  type TurnPlan,
+// Types only: the agent stack itself is imported after listen() (importAgentModules).
+import type {
+  AgentRunOptions, AgentServices, BrowserPageProvider, InvokeInput, LiveAgentSession, SessionObserver, TurnPlan,
 } from "./agent/agentRunner.js";
-import { USE_ACTIVE_WINDOW_TOOL } from "./agent/computerUseExtension.js";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
-import { createModelCatalogContext, listAvailableModels } from "./agent/modelCatalog.js";
+import type { RouteEvent } from "./agent/routing/autoModel.js";
+import type { LatencyStats } from "./agent/routing/latencyStats.js";
 import { AgentModelSettings, type ModelSelection } from "./agent/modelSettings.js";
 import { AgentResourceSettings, TRUST_WARNING } from "./agent/resourceSettings.js";
-import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
-import {
-  AUTO_MODEL_ID, AUTO_PROVIDER, AUTO_THINKING_LEVELS, classifyProviderError, biasForThinkingLevel, buildRoutingCatalog, classifyUtterance, contextScope,
-  DEFAULT_STATS_FILE, HEALTH_PENALTY_MS,
-  isAutoSelection, LatencyStats, RoutingSettingsStore, thinkingLevelForBias, validateRoutingPatch, validateTierOverrides,
-  type RouteEvent,
-} from "./agent/routing/index.js";
+import { classifyUtterance } from "./agent/routing/heuristics.js";
+import { contextScope, rulesContextScorer, warmContextScope } from "./agent/routing/contextScope.js";
+import { RoutingSettingsStore, validateRoutingPatch, validateTierOverrides } from "./agent/routing/settings.js";
 import {
   createClassifier, type ClassifierFactoryDeps, type ManagedClassifier,
 } from "./classifier/factory.js";
 import { ClassifierSettingsStore, parseClassifierSettings, resolveLayaLaunch, type LayaLaunchReason } from "./classifier/settings.js";
 import {
-  AppIndexCache, createFendLoader, createInstantDispatcher, EcbRateStore, MAX_INSTANT_TEXT,
-  type InstantDispatcher, type InstantDispatcherDeps,
+  AppIndexCache, createFendLoader, createInstantDispatcher, EcbRateStore, FileFrecencyStore, VisibleItemsCache,
+  type FrecencyStore, type InstantDispatcher, type InstantDispatcherDeps,
 } from "./instant/index.js";
-import type { ClassifierHints, InstantPhase, InstantRequest, InstantResponse, IntentClassifier } from "./contracts/instant.js";
+import { DictionaryStore, nonCountingLookup } from "./instant/dictionary.js";
+import { appRecords, applyEdit, createLearnLane, displayName, learnFromGesture, outcomeFields, type LearnLane } from "./instant/learned.js";
+import { InMemoryTakeMemo, takeDetailsOf, takeRecordFor } from "./instant/takeMemo.js";
+import { isCommonWord } from "./instant/lexicon.js";
+import { parseInstantRequest, type ClassifierHints, type InstantResponse, type IntentClassifier } from "./contracts/instant.js";
+import { DICTIONARY_LIMITS, parseEditRequest, parseLearnRequest, parseRecognizerTermsMax } from "./contracts/dictionary.js";
+import type { AppRecord } from "./contracts/launcher.js";
 import { HOST_ACTION_TYPES } from "./contracts/actions.js";
 import { attachmentStats, parseAttachments, summarizeAttachments, type Attachment, type AttachmentIssue } from "./contracts/attachments.js";
 import { NO_CONTEXT_SCORER, parseContext, requestedContextRecord, SCOPE_THRESHOLDS, scopeBand, type ContextWire } from "./contracts/context.js";
-import { canReadPage, readPage } from "./browser/axTransport.js";
 import type { CardSpec } from "./contracts/cards.js";
 import { cardToText } from "./ui/text.js";
-import { validateCard } from "./ui/validate.js";
-import { SHOW_RESULT_TOOL } from "./ui/showResult.js";
 import { perfLog, Stopwatch, type PerfFields } from "./telemetry.js";
 import { supportDirectory } from "./platformPaths.js";
 
@@ -46,16 +43,58 @@ import { supportDirectory } from "./platformPaths.js";
  * Node agent harness HTTP surface per shared/protocol/protocol.md:
  * - GET  /health
  * - POST /instant                   (deterministic instant lane; synchronous)
+ * - /dictionary, /dictionary/{learn,edit,recognizer-terms} (personal dictionary; synchronous)
  * - POST /invocations/prepare       (202; pre-builds the agent session for a take)
  * - POST /invoke                    (202, async processing)
  * - GET  /invocations/{id}          (execution status; polling)
  * - GET  /invocations/{id}/events   (SSE: the record on every change)
  * - settings: /models, /settings/{model,resources,routing,classifier}
  *
+ * Instant-first (DESIGN4 §7 item 5): the agent stack (pi-coding-agent, pi-ai, the model catalog and the
+ * Auto router, ~380 ms of imports) is not imported before listen(). It loads by dynamic import() in the
+ * warm-up that follows the first response (normally the host's /health probe), so /health, /instant and
+ * /dictionary/* serve at once; every route that needs it awaits the same promise (starting it if the
+ * warm-up has not), and an import that fails answers 503 `harness_unreachable`.
+ *
  * Bound to loopback only. All non-health routes require X-Harness-Token.
  * Logs carry ids, kinds, counts, durations and model ids only: never prompts,
- * transcripts, typed text, file names or classifier inputs.
+ * transcripts, typed text, file names, dictionary entries or classifier inputs.
  */
+
+/** The agent stack's modules, imported together after listen() (tests wrap it to hold the import back). */
+export async function importAgentModules() {
+  const [runner, catalog, autoModel, latency, profiles, piAi, computerUse, showResult, axTransport] = await Promise.all([
+    import("./agent/agentRunner.js"),
+    import("./agent/modelCatalog.js"),
+    import("./agent/routing/autoModel.js"),
+    import("./agent/routing/latencyStats.js"),
+    import("./agent/routing/profiles.js"),
+    import("@earendil-works/pi-ai"),
+    import("./agent/computerUseExtension.js"),
+    import("./ui/showResult.js"),
+    import("./browser/axTransport.js"),
+  ]);
+  return {
+    runner, catalog, autoModel, latency, profiles, axTransport,
+    getSupportedThinkingLevels: piAi.getSupportedThinkingLevels,
+    USE_ACTIVE_WINDOW_TOOL: computerUse.USE_ACTIVE_WINDOW_TOOL,
+    SHOW_RESULT_TOOL: showResult.SHOW_RESULT_TOOL,
+  };
+}
+export type AgentModules = Awaited<ReturnType<typeof importAgentModules>>;
+
+/** The loaded agent stack: its modules plus what is built from them once. */
+interface AgentStack {
+  modules: AgentModules;
+  stats: LatencyStats;
+  services: AgentServices;
+}
+
+/**
+ * The instant dispatcher's dependencies, including what the voice pipeline reads: the personal dictionary
+ * (DictionaryLookup, DESIGN4 §6.3) and the take memo ("No, I meant X").
+ */
+type LaneDeps = InstantDispatcherDeps;
 
 class RequestError extends Error {
   constructor(readonly status: number, message: string, readonly code?: string) { super(message); }
@@ -110,6 +149,14 @@ export interface HarnessServerOptions {
   prepareTtlMs?: number;
   /** Host platform for per-host defaults (default process.platform; tests inject it): Auto is the default on macOS only. */
   platform?: NodeJS.Platform;
+  /** The personal dictionary (default `<support>/dictionary.json`, loaded at construction). */
+  dictionary?: DictionaryStore;
+  /** The take memo (default in memory: 20 takes, 2 minutes). */
+  takeMemo?: InMemoryTakeMemo;
+  /** App frecency (default `<support>/instant-usage.json`): ranks app matches and recognizer terms. */
+  frecency?: FrecencyStore & { load?(): Promise<void> };
+  /** Tests: replaces the agent stack import (e.g. to hold it back or fail it). */
+  loadAgentModules?: () => Promise<AgentModules>;
 }
 
 /** Bookkeeping for one in-flight invocation (A.3: cancel + timeout). */
@@ -157,6 +204,15 @@ const MAX_TAKE_HINTS = 32;
 const HINTS_TTL_MS = 60_000;
 const MAX_INSTANT_BODY = 4_096;
 const MAX_SETTINGS_BODY = 16_384;
+/** recognizer-terms waits this long for the host's app index when none is cached yet (hosts ask at launch and on a new
+ * revision, never on the hotkey path; right after launch the host's index can take ≈ 0.5–1 s). */
+const TERMS_APPS_WAIT_MS = 1_500;
+/** A learn (a user gesture is waiting) waits this long for the app index. */
+const LEARN_APPS_WAIT_MS = 300;
+/** A learn's lane resolve (corrected text) never takes longer than the instant budget. */
+const LEARN_RESOLVE_MS = 250;
+/** Warm-up starts after the first response (the host's readiness probe), or after this long without one. */
+const WARM_UP_FALLBACK_MS = 1_000;
 /** Longest prefix of a prompt the telemetry rules score reads. */
 const MAX_SCORED_CHARS = 4_000;
 /** A 400 lists at most this many attachment issues (paths and codes only). */
@@ -166,7 +222,6 @@ const LOCALE = /^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{1,8}){0,3}$/;
 const ENGINE = /^[\w.-]{1,64}$/;
 const INPUT_TOOLS = ["window.focus", "input.click", "input.typeText", "input.pressKey", "input.keyChord", "input.scroll"];
 const LAUNCHER_READ_ROUTES = ["launcher.searchFiles", "launcher.listApps"];
-const PHASES: readonly InstantPhase[] = ["typing", "partial", "final"];
 
 /** Strict validation of POST /invoke `input`; never echoes values. */
 function parseInvokeInput(value: unknown): { ok: true; input?: InvokeInput } | { ok: false; error: string } {
@@ -236,32 +291,25 @@ function windowlessSnapshot(contextId: string, app: string | undefined): Desktop
   };
 }
 
-/** Strict validation of POST /instant bodies (protocol.md "Instant lane"). */
-function parseInstantBody(value: unknown): { ok: true; request: InstantRequest } | { ok: false; error: string } {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return { ok: false, error: "Body must be a JSON object" };
-  const v = value as Record<string, unknown>;
-  if (typeof v.text !== "string" || v.text.length > MAX_INSTANT_TEXT) return { ok: false, error: `text (string, at most ${MAX_INSTANT_TEXT} characters) is required` };
-  if (!PHASES.includes(v.phase as InstantPhase)) return { ok: false, error: "phase must be typing, partial or final" };
-  if (typeof v.seq !== "number" || !Number.isSafeInteger(v.seq) || v.seq < 0) return { ok: false, error: "seq must be a non-negative integer" };
-  const request: InstantRequest = { text: v.text, phase: v.phase as InstantPhase, seq: v.seq };
-  for (const key of ["takeId", "contextId"] as const) {
-    if (v[key] === undefined) continue;
-    if (typeof v[key] !== "string" || !ID.test(v[key])) return { ok: false, error: `Invalid ${key}` };
-    request[key] = v[key];
-  }
-  if (v.locale !== undefined) {
-    if (typeof v.locale !== "string" || !LOCALE.test(v.locale)) return { ok: false, error: "locale must be a BCP 47 tag" };
-    request.locale = v.locale;
-  }
-  if (v.inputMode !== undefined) {
-    if (v.inputMode !== "text" && v.inputMode !== "voice") return { ok: false, error: "inputMode must be text or voice" };
-    request.inputMode = v.inputMode;
-  }
-  if (v.silenceMs !== undefined) {
-    if (typeof v.silenceMs !== "number" || !Number.isFinite(v.silenceMs) || v.silenceMs < 0) return { ok: false, error: "silenceMs must be a non-negative number" };
-    request.silenceMs = v.silenceMs;
-  }
-  return { ok: true, request };
+/**
+ * The host's apps as recognizer strings: the short spoken name first ("Pages" for "Pages Creator Studio"),
+ * then the full name. The measured DictationTranscriber gain (asr.md §5) used names plus their aliases;
+ * the full name alone would never bias toward what Tom says ("open Pages").
+ */
+function spokenAppNames(apps: readonly AppRecord[]): { name: string; bundleId: string }[] {
+  return apps.flatMap((app) => {
+    const short = displayName(app);
+    return short === app.name.trim() ? [{ name: app.name, bundleId: app.bundleId }] : [{ name: short, bundleId: app.bundleId }, { name: app.name, bundleId: app.bundleId }];
+  });
+}
+
+/** A promise that settles with `promise`, or with undefined once `ms` passed (never rejects). */
+function within<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(undefined), ms);
+    timer.unref?.();
+    promise.then((value) => { clearTimeout(timer); resolve(value); }, () => { clearTimeout(timer); resolve(undefined); });
+  });
 }
 
 export class HarnessServer {
@@ -281,18 +329,32 @@ export class HarnessServer {
   private readonly modelSettings: AgentModelSettings;
   private readonly resourceSettings: AgentResourceSettings;
   private readonly routing: RoutingSettingsStore;
-  private readonly stats: LatencyStats;
   private statsDirty = false;
   private readonly classifierSettings: ClassifierSettingsStore;
   private classifier: ManagedClassifier;
   private classifierRuntime?: Promise<ModelRuntime>;
-  private readonly instantDeps: InstantDispatcherDeps;
+  private readonly instantDeps: LaneDeps;
   /** /instant: may consult the advisory classifier on a grammar miss (≤ 250 ms). */
   private readonly instant: InstantDispatcher;
   /** /invoke: same engines, never waits on a classifier (agent hot path). */
   private readonly instantDirect: InstantDispatcher;
-  private readonly services: AgentServices;
   private readonly supportDir: string;
+  /** The agent stack once imported (agentStack()); undefined until then. */
+  private stack?: AgentStack;
+  private agentLoad?: Promise<AgentStack>;
+  private warmUpStarted = false;
+  private warmUpTimer?: NodeJS.Timeout;
+  /** The strict card catalog (zod), imported on first use or by the warm-up, never before listen. */
+  private validatorLoad?: Promise<typeof import("./ui/validate.js")>;
+  /** The personal dictionary (Node is its single writer) and the take memo the learn route validates against. */
+  readonly dictionary: DictionaryStore;
+  readonly takeMemo: InMemoryTakeMemo;
+  private readonly frecency: FrecencyStore;
+  private readonly frecencyReady: Promise<void>;
+  /** The host's app index as last fetched (recognizer terms, learn display names, installed checks). */
+  private appIndex?: { apps: AppRecord[]; bundles: ReadonlySet<string> };
+  /** How learning sees the instant lane: the grammar plus a dispatcher without classifier or file search. */
+  private readonly lane: LearnLane;
 
   constructor(
     private readonly config: HarnessConfig = loadConfig(),
@@ -304,27 +366,48 @@ export class HarnessServer {
     // Every pi-os store lives next to settings.json (the support dir), also when tests inject it.
     this.supportDir = options.supportDir ?? (options.modelSettings ? dirname(this.modelSettings.filePath) : supportDirectory());
     this.routing = options.routingSettings ?? new RoutingSettingsStore(this.modelSettings.filePath);
-    this.stats = options.latencyStats ?? new LatencyStats({ path: join(this.supportDir, DEFAULT_STATS_FILE) });
     this.classifierSettings = options.classifierSettings ?? new ClassifierSettingsStore(join(this.supportDir, "classifier.json"));
     this.classifier = this.buildClassifier();
+    this.takeMemo = options.takeMemo ?? new InMemoryTakeMemo();
+    this.dictionary = options.dictionary ?? new DictionaryStore({ path: join(this.supportDir, "dictionary.json") });
+    if (!options.dictionary) this.dictionary.load();
+    this.dictionary.setInstalledCheck((bundleId) => (this.appIndex ? this.appIndex.bundles.has(bundleId) : undefined));
+    const frecency = options.frecency ?? new FileFrecencyStore(join(this.supportDir, "instant-usage.json"));
+    this.frecency = frecency;
+    this.frecencyReady = (frecency.load?.() ?? Promise.resolve()).catch(() => {});
 
     const host = () => this.options.hostClient;
-    this.instantDeps = {
+    const deps: LaneDeps = {
       fend: createFendLoader(),
       fx: new EcbRateStore({ file: join(this.supportDir, "cache", "fx-ecb.json"), enabled: () => this.config.fxRatesEnabled !== false }),
-      apps: new AppIndexCache((signal) => {
+      apps: new AppIndexCache(async (signal) => {
         const client = host();
-        return typeof client?.listApps === "function" ? client.listApps(signal) : Promise.reject(new Error("unavailable"));
-      }),
+        if (typeof client?.listApps !== "function") throw new Error("unavailable");
+        const index = await client.listApps(signal);
+        if (Array.isArray(index?.apps)) {
+          const apps = appRecords(index.apps);
+          this.appIndex = { apps, bundles: new Set(apps.map((app) => app.bundleId)) };
+        }
+        return index;
+      }, { frecency }),
       searchFiles: (request, signal) => {
         const client = host();
         return typeof client?.searchFiles === "function" ? client.searchFiles(request, signal) : Promise.reject(new Error("unavailable"));
       },
+      // The take's desktop icons / target Finder window (macOS hosts that serve launcher.visibleItems). A host
+      // without the route (404, not_found) is remembered as unsupported: the lane then decides as before.
+      visibleItems: new VisibleItemsCache((request, signal) => {
+        const client = host();
+        return typeof client?.visibleItems === "function" ? client.visibleItems(request, signal) : Promise.reject(new LauncherRouteError("unsupported"));
+      }),
       perf: (stage, ms, fields) => perfLog(stage, ms, fields),
       enabled: () => this.config.instantEnabled !== false,
       ...(config.webSearchTemplate ? { webSearchTemplate: () => config.webSearchTemplate! } : {}),
+      dictionary: this.dictionary,
+      takeMemo: this.takeMemo,
       ...options.instant,
     };
+    this.instantDeps = deps;
     // The managed classifier is replaced on settings changes; the dispatcher always asks the current one.
     const current = (): ManagedClassifier => this.classifier;
     const advisory: IntentClassifier = {
@@ -333,23 +416,30 @@ export class HarnessServer {
       classify: (text: string, signal: AbortSignal) => current().classify(text, signal),
     };
     // Finals never wait on the classifier: hints that arrive later are remembered for the take's /invoke.
+    // The rules scorer is wrapped so its ~50 ms regex warm-up runs after listen (warmUp), not here.
     this.instant = createInstantDispatcher({
+      scorer: (text) => rulesContextScorer(text),
       ...this.instantDeps, classifier: advisory,
       onLateHints: (request, hints) => { if (request.takeId) this.rememberHints(request.takeId, hints); },
     });
     // /invoke answers pure results only (answerInstantly): app and file decisions can never answer
     // there, so it never calls the launcher read routes (which the Windows host does not have).
     // It never reports a `scope` either: the host's chip already decided before /invoke.
-    const { apps: _apps, searchFiles: _searchFiles, ...direct } = this.instantDeps;
-    this.instantDirect = createInstantDispatcher({ ...direct, scorer: NO_CONTEXT_SCORER });
-    this.services = {
-      platform: options.platform ?? process.platform,
-      routing: () => this.routing.get(),
-      stats: this.stats,
-      engines: toolEnginesFrom(this.instant.engines),
-      laya: () => this.classifier.sidecar,
-      ...options.agentServices,
-    };
+    // Neither it nor learning's lane below is a take: they never see the take memo, and a learned rule
+    // that decides for them is not a use (only the host's /instant finals count, DESIGN4 §6.1 `uses`).
+    const uncounted = nonCountingLookup(this.dictionary);
+    const { apps: _apps, searchFiles: _searchFiles, takeMemo: _memo, visibleItems: _visible, ...direct } = this.instantDeps;
+    this.instantDirect = createInstantDispatcher({ ...direct, dictionary: uncounted, scorer: NO_CONTEXT_SCORER });
+    // Learning resolves corrected text through the lane itself, but never asks a classifier (text could
+    // leave the machine) or the host's file search, and never reports a scope. The regression check
+    // replays journal takes through it with and without the candidate rule.
+    const { searchFiles: _search, takeMemo: _takes, visibleItems: _shown, ...learnDeps } = this.instantDeps;
+    this.lane = createLearnLane({
+      dispatcher: createInstantDispatcher({ ...learnDeps, dictionary: uncounted, scorer: NO_CONTEXT_SCORER }),
+      apps: () => this.appIndex?.apps,
+      dictionary: uncounted,
+      isCommonWord,
+    });
 
     this.server = createServer({ maxHeaderSize: 8192, requestTimeout: 10_000, headersTimeout: 5000 }, (request, response) => {
       void this.handle(request, response);
@@ -361,17 +451,87 @@ export class HarnessServer {
       this.server.once("error", reject);
       // Loopback only; never bind 0.0.0.0 (protocol.md).
       this.server.listen(this.config.port, "127.0.0.1", () => {
-        // Compile the calculator and read the rate cache now (no network), so the first keystroke is warm;
-        // the router's ~40 heuristic regexes compile once here instead of on the first prompt.
-        if (this.config.instantEnabled !== false) void this.instant.warm();
-        classifyUtterance("warm");
         resolve((this.server.address() as { port: number }).port);
+        // Instant-first: the port answers now; warm-up starts after the first response (see warmUp).
+        this.warmUpTimer = setTimeout(() => this.warmUp(), WARM_UP_FALLBACK_MS);
+        this.warmUpTimer.unref();
       });
     });
   }
 
+  /**
+   * Instant-first warm-up (DESIGN4 §7 item 5), once, after the first response was written (normally the
+   * host's /health probe) or WARM_UP_FALLBACK_MS after listen. Each step holds the event loop (module
+   * loading is synchronous), so the steps yield between each other: the context-scope regexes and the
+   * calculator (no network) for the first keystroke, the router heuristics for the first prompt, then the
+   * agent stack. A route that needs the agent earlier starts its import at once (agentStack()).
+   */
+  private warmUp(): void {
+    if (this.warmUpStarted || this.stopping) return;
+    this.warmUpStarted = true;
+    if (this.warmUpTimer) clearTimeout(this.warmUpTimer);
+    const yieldToRequests = () => new Promise<void>((resolve) => setImmediate(resolve));
+    void (async () => {
+      await yieldToRequests();
+      await this.cardValidator().catch(() => {});
+      await yieldToRequests();
+      if (this.config.instantEnabled !== false) {
+        warmContextScope();
+        await yieldToRequests();
+        await this.instant.warm().catch(() => {});
+        await yieldToRequests();
+      }
+      classifyUtterance("warm");
+      await yieldToRequests();
+      if (!this.stopping) await this.agentStack().catch(() => {});
+    })();
+  }
+
+  /**
+   * The agent stack, imported once (DESIGN4 §7 item 5). Routes that need it await this; a failed import
+   * rejects with 503 `harness_unreachable` and is retried by the next request that needs it.
+   */
+  private agentStack(): Promise<AgentStack> {
+    if (!this.agentLoad) {
+      const watch = new Stopwatch();
+      const load = this.options.loadAgentModules ?? importAgentModules;
+      this.agentLoad = load().then((modules) => {
+        const stats = this.options.latencyStats ?? new modules.latency.LatencyStats({ path: join(this.supportDir, modules.latency.DEFAULT_STATS_FILE) });
+        const services: AgentServices = {
+          platform: this.options.platform ?? process.platform,
+          routing: () => this.routing.get(),
+          stats,
+          engines: modules.runner.toolEnginesFrom(this.instant.engines),
+          laya: () => this.classifier.sidecar,
+          ...this.options.agentServices,
+        };
+        this.stack = { modules, stats, services };
+        perfLog("harness.agent", watch.elapsed(), { ok: true });
+        return this.stack;
+      }, (error: unknown) => {
+        this.agentLoad = undefined;
+        // The error class only: module errors can quote paths.
+        console.error(`[harness] agent stack failed to load kind=${error instanceof Error ? error.name : "unknown"}`);
+        perfLog("harness.agent", watch.elapsed(), { ok: false });
+        throw new RequestError(503, "The agent could not be loaded", "harness_unreachable");
+      });
+    }
+    return this.agentLoad;
+  }
+
+  private cardValidator(): Promise<typeof import("./ui/validate.js")> {
+    return this.validatorLoad ??= import("./ui/validate.js");
+  }
+
+  /** The loaded stack, for code that runs after a route awaited agentStack(). */
+  private get agent(): AgentStack {
+    if (!this.stack) throw new RequestError(503, "The agent is still loading", "harness_unreachable");
+    return this.stack;
+  }
+
   close(): Promise<void> {
     this.stopping = true;
+    if (this.warmUpTimer) clearTimeout(this.warmUpTimer);
     for (const id of this.threads.keys()) void this.closeThread(id);
     for (const takeId of [...this.prepared.keys()]) this.discardPrepared(takeId, "shutdown");
     for (const entry of this.running.values()) {
@@ -379,7 +539,8 @@ export class HarnessServer {
       if (entry.timer) clearTimeout(entry.timer);
     }
     for (const latest of this.instantLatest.values()) latest.controller?.abort();
-    if (this.statsDirty) this.stats.flush();
+    if (this.statsDirty) this.stack?.stats.flush();
+    this.dictionary.flush();
     // stdin EOF for a Laya sidecar before the process exits (its exit hook is only the fallback).
     const classifier = this.classifier.dispose().catch(() => {});
     const server = new Promise<void>((resolve, reject) => {
@@ -390,6 +551,7 @@ export class HarnessServer {
   }
 
   private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    if (!this.warmUpStarted) response.once("finish", () => this.warmUp());
     try {
       const url = new URL(request.url ?? "/", "http://localhost");
       const route = `${request.method} ${url.pathname}`;
@@ -419,10 +581,40 @@ export class HarnessServer {
         return;
       }
 
+      if (url.pathname === "/dictionary" || url.pathname.startsWith("/dictionary/")) {
+        await this.handleDictionary(route, url, request, response);
+        return;
+      }
+
       if (route === "POST /invocations/prepare") {
         await this.handlePrepare(request, response);
         return;
       }
+
+      // Status reads, the event stream and cancel never need the agent stack.
+      const eventsMatch = /^\/invocations\/([\w-]+)\/events$/.exec(url.pathname);
+      if (request.method === "GET" && eventsMatch) {
+        return this.streamEvents(eventsMatch[1]!, response);
+      }
+
+      const invocationMatch = /^\/invocations\/([\w-]+)$/.exec(url.pathname);
+      if (request.method === "GET" && invocationMatch) {
+        const record = this.invocations.get(invocationMatch[1] as string);
+        if (!record) {
+          return this.json(response, 404, {
+            error: { code: "not_found", message: `Unknown invocation '${invocationMatch[1]}'` },
+          });
+        }
+        return this.json(response, 200, record);
+      }
+
+      const cancelMatch = /^\/invocations\/([\w-]+)\/cancel$/.exec(url.pathname);
+      if (request.method === "POST" && cancelMatch) {
+        return this.handleCancel(cancelMatch[1] as string, response);
+      }
+
+      // Everything else runs on the agent stack (imported in the warm-up; at most its import time on a cold start).
+      await this.agentStack();
 
       if (route === "POST /invoke") {
         await this.handleInvoke(request, response);
@@ -431,13 +623,14 @@ export class HarnessServer {
 
       if (route === "GET /models") {
         // Catalog for the host settings page; 500s flow through handle().
-        const models = await this.withModelRuntime(runtime => listAvailableModels(runtime));
+        const { catalog, autoModel } = this.agent.modules;
+        const models = await this.withModelRuntime(runtime => catalog.listAvailableModels(runtime));
         const stored = this.modelSettings.get();
         // macOS: no stored choice means Auto; report it as the effective selection while Auto is offered.
         // Elsewhere (Windows) Auto is opt-in: nothing stored is pi's own default, reported as null.
         const autoByDefault = (this.options.platform ?? process.platform) === "darwin";
         const current = stored ?? (models.length && autoByDefault
-          ? { provider: AUTO_PROVIDER, modelId: AUTO_MODEL_ID, thinkingLevel: thinkingLevelForBias(this.routing.get().bias) }
+          ? { provider: autoModel.AUTO_PROVIDER, modelId: autoModel.AUTO_MODEL_ID, thinkingLevel: autoModel.thinkingLevelForBias(this.routing.get().bias) }
           : null);
         return this.json(response, 200, { models, current, ...(!stored && current ? { currentIsDefault: true } : {}) });
       }
@@ -479,27 +672,6 @@ export class HarnessServer {
         return;
       }
 
-      const eventsMatch = /^\/invocations\/([\w-]+)\/events$/.exec(url.pathname);
-      if (request.method === "GET" && eventsMatch) {
-        return this.streamEvents(eventsMatch[1]!, response);
-      }
-
-      const invocationMatch = /^\/invocations\/([\w-]+)$/.exec(url.pathname);
-      if (request.method === "GET" && invocationMatch) {
-        const record = this.invocations.get(invocationMatch[1] as string);
-        if (!record) {
-          return this.json(response, 404, {
-            error: { code: "not_found", message: `Unknown invocation '${invocationMatch[1]}'` },
-          });
-        }
-        return this.json(response, 200, record);
-      }
-
-      const cancelMatch = /^\/invocations\/([\w-]+)\/cancel$/.exec(url.pathname);
-      if (request.method === "POST" && cancelMatch) {
-        return this.handleCancel(cancelMatch[1] as string, response);
-      }
-
       const followupMatch = /^\/invocations\/([\w-]+)\/followup$/.exec(url.pathname);
       if (request.method === "POST" && followupMatch) {
         return await this.handleFollowup(followupMatch[1]!, request, response);
@@ -533,11 +705,17 @@ export class HarnessServer {
    * request for it (debounce timer, reordered connection) is stale and never aborts it.
    * Requests with neither takeId nor contextId are independent. Node never performs effects:
    * `act` carries a HostAction.
+   *
+   * Bodies are parsed strictly (contracts `parseInstantRequest`): `hypotheses` reach the lane on a voice
+   * final only, `accept` always. Every take's final is remembered in the take memo (what was heard, offered
+   * and acted on) for POST /dictionary/learn, and an app the host opens without asking counts as usage.
    */
   private async handleInstant(request: IncomingMessage, response: ServerResponse): Promise<void> {
-    const parsed = parseInstantBody(await this.readJson(request, MAX_INSTANT_BODY));
+    const parsed = parseInstantRequest(await this.readJson(request, MAX_INSTANT_BODY));
     if (!parsed.ok) return this.json(response, 400, { error: { code: "invalid_arguments", message: parsed.error } });
-    const body = parsed.request;
+    const body = parsed.value;
+    // Hypotheses belong to a voice final (protocol.md); anywhere else they are validated and ignored.
+    if (body.hypotheses && !(body.phase === "final" && body.inputMode === "voice")) delete body.hypotheses;
     const key = body.takeId ?? body.contextId;
     const latest = key === undefined ? undefined : this.instantLatest.get(key);
     const final = body.phase === "final";
@@ -561,18 +739,96 @@ export class HarnessServer {
       }
     }
     response.once("close", () => { if (!response.writableFinished) controller.abort(); });
-    const result = this.checkInstantCard(await this.instant.dispatch(body, controller.signal));
+    const raw = await this.instant.dispatch(body, controller.signal);
+    const result = await this.checkInstantCard(raw);
     const entry = key === undefined ? undefined : this.instantLatest.get(key);
     if (entry?.controller === controller) delete entry.controller;
     // Advisory hints that arrived for this take; /invoke may fuse them (never waits for them).
     if (result.decision === "fallthrough" && result.hints && body.takeId) this.rememberHints(body.takeId, result.hints);
+    // A superseded dispatch answered "timeout": the newer final is the one to remember.
+    if (final && !controller.signal.aborted) this.rememberTake(body, result, takeDetailsOf(raw));
     this.json(response, 200, result);
   }
 
+  /** The take memo entry for a final, and app usage for an app the host opens without asking. */
+  private rememberTake(body: Parameters<InstantDispatcher["dispatch"]>[0], result: InstantResponse, details: ReturnType<typeof takeDetailsOf>): void {
+    try {
+      const record = takeRecordFor(body, result, Date.now(), details);
+      if (record) this.takeMemo.remember(record);
+      if (result.decision === "act" && !result.confirm && result.action.type === "openApp") this.recordAppUse(result.action.bundleId);
+    } catch {
+      // The memo and frecency are conveniences; the decision is already made.
+    }
+  }
+
+  private recordAppUse(bundleId: string): void {
+    void this.frecencyReady.then(() => this.frecency.record?.(bundleId, Date.now()));
+  }
+
+  // ------------------------------------------------------------------ personal dictionary
+
+  /**
+   * /dictionary/* (protocol.md "Personal dictionary"): token-authed like /instant, synchronous, never on
+   * the agent stack, and no agent tool reaches them. Log lines carry the kind, status and code only.
+   */
+  private async handleDictionary(route: string, url: URL, request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const watch = new Stopwatch();
+    switch (route) {
+      case "GET /dictionary":
+        return this.json(response, 200, this.dictionary.document());
+      case "GET /dictionary/recognizer-terms": {
+        const max = parseRecognizerTermsMax(url.searchParams.get("max"));
+        if (!max.ok) return this.json(response, 400, { error: { code: "invalid_arguments", message: max.error } });
+        // The host fetches terms rarely (revision changes, launch): wait briefly for the app index once.
+        if (!this.appIndex && this.instantDeps.apps) await within(this.instantDeps.apps.refresh(), TERMS_APPS_WAIT_MS);
+        const terms = this.dictionary.recognizerTerms(max.value, {
+          ...(this.appIndex ? { apps: spokenAppNames(this.appIndex.apps) } : {}),
+          frecency: (bundleId) => this.frecency.score(bundleId, Date.now()),
+        });
+        // Without the host's app index the list would hold a few learned words and no app names, and a host keeps a
+        // non-empty list for the whole session: answer none, which hosts read as "not ready" and ask again shortly.
+        if (!this.appIndex && this.instantDeps.apps) {
+          perfLog("dictionary.terms", watch.elapsed(), { count: 0, max: max.value, apps: false });
+          return this.json(response, 200, { revision: terms.revision, terms: [] });
+        }
+        perfLog("dictionary.terms", watch.elapsed(), { count: terms.terms.length, max: max.value });
+        return this.json(response, 200, terms);
+      }
+      case "POST /dictionary/learn": {
+        const parsed = parseLearnRequest(await this.readJson(request, DICTIONARY_LIMITS.learnBodyBytes));
+        if (!parsed.ok) return this.json(response, 400, { error: { code: "invalid_arguments", message: parsed.error } });
+        // The lane may need the app index to name or check the app (it is usually cached by the take's /instant).
+        if (!this.appIndex && this.instantDeps.apps) await within(this.instantDeps.apps.refresh(), LEARN_APPS_WAIT_MS);
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), LEARN_RESOLVE_MS);
+        timer.unref?.();
+        try {
+          const result = await learnFromGesture(parsed.value, {
+            store: this.dictionary, memo: this.takeMemo, lane: this.lane, recordUse: (bundleId) => this.recordAppUse(bundleId),
+          }, controller.signal);
+          perfLog("dictionary.learn", watch.elapsed(), { kind: parsed.value.kind, ...outcomeFields(result) });
+          return this.json(response, 200, result);
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+      case "POST /dictionary/edit": {
+        const parsed = parseEditRequest(await this.readJson(request, DICTIONARY_LIMITS.bodyBytes));
+        if (!parsed.ok) return this.json(response, 400, { error: { code: "invalid_arguments", message: parsed.error } });
+        const result = applyEdit(parsed.value, { store: this.dictionary, lane: this.lane, onReset: () => this.takeMemo.clear() });
+        perfLog("dictionary.edit", watch.elapsed(), { op: parsed.value.op, ...outcomeFields(result) });
+        return this.json(response, 200, result);
+      }
+      default:
+        return this.json(response, 404, { error: { code: "not_found", message: `No route: ${route}` } });
+    }
+  }
+
   /** Defense in depth: every instant card must pass the strict catalog check before a host sees it. */
-  private checkInstantCard(response: InstantResponse): InstantResponse {
+  private async checkInstantCard(response: InstantResponse): Promise<InstantResponse> {
     const card = "card" in response ? response.card : undefined;
     if (!card) return response;
+    const { validateCard } = await this.cardValidator();
     const checked = validateCard(card, { mode: "strict", allowedActions: HOST_ACTION_TYPES });
     if (checked.ok) return response;
     console.warn(`[instant] dropped an invalid card issues=${checked.issues.length} first=${checked.issues[0]?.code ?? "?"}`);
@@ -660,6 +916,9 @@ export class HarnessServer {
     const watch = new Stopwatch();
     const signal = take.controller.signal;
     const host = this.options.hostClient!;
+    // Prepare answers 202 at once; the session waits for the agent stack (instant-first start).
+    const { runner } = (await this.agentStack()).modules;
+    if (signal.aborted || this.stopping) return undefined;
     const outcome = await host.getSnapshot(take.contextId, signal);
     if (!outcome.ok) {
       console.log(`[prepare] no session: context ${outcome.error.code}`);
@@ -668,7 +927,7 @@ export class HarnessServer {
     if (outcome.result.targetWindow?.processName) take.app = outcome.result.targetWindow.processName;
     const { readOnly, launcher } = await this.negotiate(signal);
     const options = this.runOptions({ contextId: take.contextId, prompt: "" }, outcome.result, readOnly, launcher, signal, undefined, {});
-    const live = await (this.options.createSession ?? createLiveSession)(options);
+    const live = await (this.options.createSession ?? runner.createLiveSession)(options);
     // Discarded (expiry, cancel, replacement, shutdown) while building. Adoption does not abort.
     if (signal.aborted || this.stopping) {
       await live.close();
@@ -701,7 +960,7 @@ export class HarnessServer {
     this.prepared.delete(take.takeId);
     clearTimeout(take.timer);
     const live = take.contextId === options.contextId ? await take.session : undefined;
-    if (live && !live.isClosed && live.controls.setupKey === sessionSetupKey(options)) return live;
+    if (live && !live.isClosed && live.controls.setupKey === this.agent.modules.runner.sessionSetupKey(options)) return live;
     take.controller.abort();
     void take.session?.then(stale => stale?.close());
     console.log(`[prepare] discarded reason=${live ? "mismatch" : "unavailable"}`);
@@ -785,10 +1044,11 @@ export class HarnessServer {
       });
     }
 
+    const { autoModel, getSupportedThinkingLevels } = this.agent.modules;
     const selection = { provider, modelId, thinkingLevel };
-    const auto = isAutoSelection(selection);
+    const auto = autoModel.isAutoSelection(selection);
     const supported = auto
-      ? [...AUTO_THINKING_LEVELS] as string[]
+      ? [...autoModel.AUTO_THINKING_LEVELS] as string[]
       : await (async () => {
         const available = await this.withModelRuntime(runtime => runtime.getAvailable());
         const model = available.find(model => model.provider === provider && model.id === modelId);
@@ -810,7 +1070,7 @@ export class HarnessServer {
 
     const previous = this.modelSettings.set(selection);
     // Auto's level IS the routing bias; keep GET /settings/routing in step with the picker.
-    if (auto) this.routing.set({ bias: biasForThinkingLevel(thinkingLevel) });
+    if (auto) this.routing.set({ bias: autoModel.biasForThinkingLevel(thinkingLevel) });
     const describe = (s: ModelSelection | null) =>
       s ? `${s.provider}/${s.modelId} effort=${s.thinkingLevel}` : "Auto (default)";
     console.log(`[settings] model switched: ${describe(previous)} -> ${describe(selection)}`);
@@ -822,16 +1082,17 @@ export class HarnessServer {
   private async handleSetRouting(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const checked = validateRoutingPatch(await this.readJson(request, MAX_SETTINGS_BODY));
     if (!checked.ok) return this.json(response, 400, { error: { code: "invalid_arguments", message: checked.error } });
+    const { autoModel, profiles } = this.agent.modules;
     const overrides = checked.patch.tierOverrides;
     if (overrides && Object.values(overrides).some(Boolean)) {
       const available = await this.withModelRuntime(runtime => runtime.getAvailable());
-      const problem = validateTierOverrides(overrides, buildRoutingCatalog(available).candidates);
+      const problem = validateTierOverrides(overrides, profiles.buildRoutingCatalog(available).candidates);
       if (problem) return this.json(response, 400, { error: { code: "invalid_arguments", message: problem } });
     }
     const next = this.routing.set(checked.patch);
     const stored = this.modelSettings.get();
-    if (checked.patch.bias && stored && isAutoSelection(stored)) {
-      this.modelSettings.set({ ...stored, thinkingLevel: thinkingLevelForBias(checked.patch.bias) });
+    if (checked.patch.bias && stored && autoModel.isAutoSelection(stored)) {
+      this.modelSettings.set({ ...stored, thinkingLevel: autoModel.thinkingLevelForBias(checked.patch.bias) });
     }
     return this.json(response, 200, next);
   }
@@ -867,8 +1128,8 @@ export class HarnessServer {
   private buildClassifier(): ManagedClassifier {
     return createClassifier(this.classifierSettings.get(), {
       supportDir: this.supportDir,
-      // Kind "pi" only: one lazily created runtime per process.
-      modelRuntime: () => (this.classifierRuntime ??= createModelCatalogContext(false).then(context => context.runtime)),
+      // Kind "pi" only: one lazily created runtime per process (on the agent stack, imported after listen).
+      modelRuntime: () => (this.classifierRuntime ??= this.agentStack().then(stack => stack.modules.catalog.createModelCatalogContext(false)).then(context => context.runtime)),
       ...this.options.classifierDeps,
     });
   }
@@ -900,7 +1161,7 @@ export class HarnessServer {
     const trusted = this.resourceSettings.get().mode === "trustedGlobal" && !this.config.readOnly && await this.hostAllowsInput();
     if (this.options.modelRuntimeFactory) return use(await this.options.modelRuntimeFactory(trusted));
     const sidecar = this.classifier.sidecar;
-    const context = await createModelCatalogContext(trusted, sidecar ? { laya: sidecar } : {});
+    const context = await this.agent.modules.catalog.createModelCatalogContext(trusted, sidecar ? { laya: sidecar } : {});
     try { return await use(context.runtime); } finally { context.dispose(); }
   }
 
@@ -995,7 +1256,7 @@ export class HarnessServer {
         await this.defaultProcessor(record, signal, followup);
       }
       if (signal.aborted) {
-        throw abortError(signal);
+        throw this.agent.modules.runner.abortError(signal);
       }
       this.invocations.setFollowupAvailable(id, this.threads.has(id));
       this.invocations.setTimings(id, { totalMs: watch.elapsed() });
@@ -1010,7 +1271,7 @@ export class HarnessServer {
       this.invocations.setTimings(id, { totalMs: watch.elapsed() });
       // Logs carry the error class only; provider and host messages can quote the request or
       // name files, so the full message stays on the record (failureMessage), never on disk.
-      const kind = /^([a-z][a-z0-9_]{1,40}):/.exec(message)?.[1] ?? classifyProviderError(message);
+      const kind = /^([a-z][a-z0-9_]{1,40}):/.exec(message)?.[1] ?? this.stack?.modules.latency.classifyProviderError(message) ?? "other";
       if (aborted) {
         console.warn(`[invoke] ${entry.timedOut ? "timed out" : "aborted"} kind=${kind}`);
         this.invocations.addStep(id,
@@ -1051,6 +1312,7 @@ export class HarnessServer {
     const id = record.invocationId;
     const turn = this.turns.get(id) ?? {};
     const watch = new Stopwatch();
+    const { runner } = this.agent.modules;
 
     // A host that sends a takeId ran POST /instant itself (or bypassed it on purpose, ⌥↵). Attachments
     // are for the agent: a request that carries some never ends on an instant answer.
@@ -1118,14 +1380,25 @@ export class HarnessServer {
       ...(turn.attachments ? { attachments: turn.attachments } : {}),
       ...(browserPage ? { browserPage } : {}),
     };
+    if (!followup) {
+      // What the instant lane knew about this voice take (near miss, matching dictionary entries) for the
+      // first prompt only; never logged, never part of the session setup key.
+      const voice = runner.voiceTakeContext({
+        ...(turn.takeId ? { takeId: turn.takeId } : {}), text: record.prompt, ...(turn.input ? { input: turn.input } : {}),
+        memo: this.takeMemo, dictionary: this.dictionary,
+      });
+      if (voice) runOptions.voice = voice;
+    }
     // Auto: heuristics (+ advisory hints that already arrived) → decide() → decision slot,
     // active tools and screenshot gating. Never waits on a classifier. The turn's scope is applied
     // first (planTurn), so a prepared session serves either scope.
     const hints = this.takeHints(turn.takeId);
-    const plan = (session: LiveAgentSession) => planTurn(session, {
-      text: record.prompt, snapshot, followup, hints, settings: this.routing.get(), stats: this.stats,
+    const plan = (session: LiveAgentSession) => runner.planTurn(session, {
+      text: record.prompt, snapshot, followup, hints, settings: this.routing.get(), stats: this.agent.stats,
       ...(turn.context ? { context: turn.context } : {}), ...(turn.attachments ? { attachments: turn.attachments } : {}),
       ...(shot ? { freshScreenshot: true } : {}),
+      // A short spoken request no rule places routes to the quick lane with the option tools (DESIGN4 §5.5).
+      ...(turn.input ? { input: turn.input } : {}),
     });
     let live = thread?.live;
     let prepared = false;
@@ -1139,8 +1412,8 @@ export class HarnessServer {
         // session seeded with a different image is replaced: the attached image must carry authority.
         turnPlan = plan(live);
         const imageId = snapshot.screenshot?.imageId;
-        if (attachesScreenshot(snapshot, turnPlan) && live.controls.initialScreenshotId !== imageId
-          && !(imageId && seedScreenshot(live, imageId))) {
+        if (runner.attachesScreenshot(snapshot, turnPlan) && live.controls.initialScreenshotId !== imageId
+          && !(imageId && runner.seedScreenshot(live, imageId))) {
           // Off the critical path: the replacement session is built while this one disposes.
           void live.close().catch(() => {});
           console.log("[prepare] discarded reason=screenshot");
@@ -1148,10 +1421,10 @@ export class HarnessServer {
         }
       }
       prepared = live !== undefined;
-      live ??= await (this.options.createSession ?? createLiveSession)(runOptions);
+      live ??= await (this.options.createSession ?? runner.createLiveSession)(runOptions);
       if (signal?.aborted || this.stopping || (thread && this.threads.get(id) !== thread)) {
         await live.close();
-        throw signal?.aborted ? abortError(signal) : new Error("session_closed: Reader closed during startup");
+        throw signal?.aborted ? runner.abortError(signal) : new Error("session_closed: Reader closed during startup");
       }
       if (thread) { thread.live = live; thread.readOnly = readOnly; }
     } else if (turn.takeId) {
@@ -1170,14 +1443,14 @@ export class HarnessServer {
     let result;
     try {
       result = followup
-        ? await promptFollowup(live, record.prompt, signal, turn.input, {
+        ? await runner.promptFollowup(live, record.prompt, signal, turn.input, {
           ...(turn.context ? { context: turn.context } : {}),
           ...(turn.attachments ? { attachments: turn.attachments } : {}),
           snapshot,
           ...(browserPage ? { browserPage } : {}),
           ...(shot ? { freshScreenshot: true } : {}),
         })
-        : await promptFirst(live, { ...runOptions, attachScreenshot: turnPlan.attachScreenshot });
+        : await runner.promptFirst(live, { ...runOptions, attachScreenshot: turnPlan.attachScreenshot });
     } finally {
       this.recordContext(id, live, turn, followup);
       if (!thread) await live.close();
@@ -1212,7 +1485,7 @@ export class HarnessServer {
    */
   private threadGeneral(record: InvocationRecord): boolean {
     const live = this.threads.get(record.invocationId)?.live;
-    return (live ? threadIsGeneral(live) : undefined) ?? record.context?.included === false;
+    return (live ? this.agent.modules.runner.threadIsGeneral(live) : undefined) ?? record.context?.included === false;
   }
 
   /**
@@ -1242,7 +1515,7 @@ export class HarnessServer {
       this.invocations.addStep(id, "desktop.getContext", false,
         `${outcome.error.code}: ${outcome.error.message}`);
       const live = followup ? this.threads.get(id)?.live : undefined;
-      const released = !general && live !== undefined && WINDOW_GONE.has(outcome.error.code) && releasePulledWindow(live);
+      const released = !general && live !== undefined && WINDOW_GONE.has(outcome.error.code) && this.agent.modules.runner.releasePulledWindow(live);
       if (!general && !released) {
         await this.closeThread(id);
         throw new Error(`Pinned context unavailable (${outcome.error.code})`);
@@ -1303,10 +1576,12 @@ export class HarnessServer {
    */
   private pageProvider(record: InvocationRecord, snapshot: DesktopContextSnapshot, signal: AbortSignal, eager: boolean):
     BrowserPageProvider | undefined {
+    const { canReadPage, readPage } = this.agent.modules.axTransport;
     if (!canReadPage(snapshot.browser)) return undefined;
     const id = record.invocationId;
     let pending: ReturnType<BrowserPageProvider> | undefined;
-    const read = () => pending ??= readPage(this.options.hostClient!, record.contextId, { signal, timeoutMs: PAGE_DIGEST_TIMEOUT_MS }).then(page => {
+    const timeoutMs = this.agent.modules.runner.PAGE_DIGEST_TIMEOUT_MS;
+    const read = () => pending ??= readPage(this.options.hostClient!, record.contextId, { signal, timeoutMs }).then(page => {
       const current = this.invocations.get(id);
       if (current && !TERMINAL_STATES.has(current.state)) this.invocations.setTimings(id, { pageMs: page.elapsedMs });
       perfLog("invoke.page", page.elapsedMs, page.ok
@@ -1323,7 +1598,7 @@ export class HarnessServer {
    * sessions without a thread view keep what the request said.
    */
   private recordContext(id: string, live: LiveAgentSession, turn: TurnMeta, followup: boolean): void {
-    const current = contextRecord(live);
+    const current = this.agent.modules.runner.contextRecord(live);
     if (current) this.invocations.setContext(id, current);
     else if (!followup && turn.context) this.invocations.setContext(id, requestedContextRecord(turn.context));
   }
@@ -1368,7 +1643,7 @@ export class HarnessServer {
    */
   private async answerInstantly(record: InvocationRecord, turn: TurnMeta, signal: AbortSignal): Promise<boolean> {
     const watch = new Stopwatch();
-    const quick = this.checkInstantCard(await this.instantDirect.dispatch({
+    const quick = await this.checkInstantCard(await this.instantDirect.dispatch({
       text: record.prompt, phase: "final", seq: 0, contextId: record.contextId,
       ...(turn.input?.locale ? { locale: turn.input.locale } : {}), ...(turn.input ? { inputMode: turn.input.mode } : {}),
     }, signal));
@@ -1403,7 +1678,7 @@ export class HarnessServer {
       log: (line) => console.log(line),
       modelSelection: this.modelSettings.get(),
       signal,
-      services: this.services,
+      services: this.agent.services,
       ...(input ? { input } : {}),
       ...callbacks,
     };
@@ -1435,6 +1710,7 @@ export class HarnessServer {
   /** Per-invocation stream sink: steps, activity, partial text, cards, route, context, latency stats. */
   private observerFor(record: InvocationRecord, options: AgentRunOptions, watch: Stopwatch, live: LiveAgentSession): SessionObserver {
     const id = record.invocationId;
+    const { modules, stats } = this.agent;
     let lastComplete: CardSpec | undefined;
     let firstResponse = true;
     return {
@@ -1448,13 +1724,13 @@ export class HarnessServer {
       },
       onToolEnd: (name, isError) => {
         // The host shows "Looked at <app>" as soon as the agent pulled the window in.
-        if (name === USE_ACTIVE_WINDOW_TOOL) {
-          const context = contextRecord(live);
+        if (name === modules.USE_ACTIVE_WINDOW_TOOL) {
+          const context = modules.runner.contextRecord(live);
           if (context) this.invocations.setContext(id, context);
           return;
         }
         // A rejected show_result attempt must not leave its partial card on screen.
-        if (name !== SHOW_RESULT_TOOL || !isError) return;
+        if (name !== modules.SHOW_RESULT_TOOL || !isError) return;
         if (lastComplete) this.invocations.setCard(id, lastComplete, true);
         else this.invocations.clearCard(id);
       },
@@ -1472,13 +1748,13 @@ export class HarnessServer {
         const turn = this.turns.get(id);
         if (turn) turn.responses = (turn.responses ?? 0) + 1;
         if (!sample.ok) {
-          this.stats.recordError({ provider: sample.provider, model: sample.model, thinkingLevel: level });
+          stats.recordError({ provider: sample.provider, model: sample.model, thinkingLevel: level });
           // Quota errors are not retried by pi, so route() never sees them: keep Auto off that provider.
-          if (sample.errorKind === "quota") this.stats.block(sample.provider, HEALTH_PENALTY_MS.quota, "quota");
+          if (sample.errorKind === "quota") stats.block(sample.provider, modules.latency.HEALTH_PENALTY_MS.quota, "quota");
           perfLog("agent.error", 0, { model, kind: sample.errorKind ?? "other" });
           return;
         }
-        this.stats.record({
+        stats.record({
           provider: sample.provider, model: sample.model, thinkingLevel: level,
           ...(sample.ttftMs !== undefined ? { ttftMs: sample.ttftMs } : {}),
           ...(sample.outputTokens !== undefined ? { outputTokens: sample.outputTokens } : {}),

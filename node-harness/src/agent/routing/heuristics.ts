@@ -145,6 +145,30 @@ function countWords(text: string): number {
   return text.length === 0 ? 0 : text.split(" ").filter(Boolean).length;
 }
 
+// --- spoken requests -------------------------------------------------------
+/** The `other` label's confidence: no rule placed the utterance. */
+export const UNPLACED_CONFIDENCE = 0.3;
+/**
+ * A spoken request of at most this many words that no rule places is most likely misheard
+ * (DESIGN4 §4.5: the same bound as the instant lane's check gate).
+ */
+export const SHORT_SPOKEN_WORDS = 8;
+
+/** Words in an utterance as the classifier counts them (boundedUtterance, split on spaces). */
+export function utteranceWords(text: string): number {
+  return countWords(boundedUtterance(text));
+}
+
+/**
+ * A short utterance no rule could place: intent `other` at ≤ UNPLACED_CONFIDENCE and 1..8 words. For
+ * speech this is the garbled-transcript case ("Oh, then kind order."): decide() routes it to the quick
+ * lane with the option tools, and the spoken-input note asks for concrete choices, never an open
+ * question (DESIGN4 §5.5). A confident advisory hint that adopted a label (fusion.ts) places it.
+ */
+export function isUnclearShortUtterance(words: number, c: Pick<Classification, "intent" | "intentConfidence">): boolean {
+  return c.intent === "other" && c.intentConfidence <= UNPLACED_CONFIDENCE && words >= 1 && words <= SHORT_SPOKEN_WORDS;
+}
+
 function intentOf(text: string, words: number, ctx: ClassifyContext): { intent: AgentIntent; confidence: number } {
   const strip = text.replace(/[?!.]+$/u, "");
   const hasDigit = DIGIT.test(strip);
@@ -176,7 +200,7 @@ function intentOf(text: string, words: number, ctx: ClassifyContext): { intent: 
   if (browser && WEB.test(strip)) return { intent: "browse_web", confidence: 0.75 };
   if (text.endsWith("?")) return { intent: "answer", confidence: 0.75 };
   if (QUESTION_LEAD.test(strip)) return { intent: "answer", confidence: 0.65 };
-  return { intent: "other", confidence: 0.3 };
+  return { intent: "other", confidence: UNPLACED_CONFIDENCE };
 }
 
 function complexityOf(text: string, words: number): 0 | 1 | 2 {

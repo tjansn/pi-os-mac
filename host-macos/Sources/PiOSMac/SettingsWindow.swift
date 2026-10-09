@@ -14,10 +14,31 @@ import PiOSCore
 }
 extension HarnessClient: ModelSettingsService {}
 
+/// Settings → Dictionary's routes, reporting the revision of every write response (edits, Undo, Forget Everything, imports
+/// and Recent takes fixes) so the app's `RecognizerTerms` refetch when the dictionary changed (DESIGN4 §6.4).
+@MainActor final class RevisionReportingDictionary: DictionaryService {
+    private let base: DictionaryService
+    private let onRevision: (Int) -> Void
+    init(_ base: DictionaryService, onRevision: @escaping (Int) -> Void) { self.base = base; self.onRevision = onRevision }
+    func learn(_ learn: DictionaryLearnRequest) async throws -> DictionaryWriteResponse {
+        let response = try await base.learn(learn)
+        onRevision(response.revision)
+        return response
+    }
+    func dictionary() async throws -> DictionaryDocument { try await base.dictionary() }
+    func editDictionary(_ edit: DictionaryEditRequest) async throws -> DictionaryWriteResponse {
+        let response = try await base.editDictionary(edit)
+        onRevision(response.revision)
+        return response
+    }
+    func recognizerTerms(max: Int) async throws -> RecognizerTermsResponse { try await base.recognizerTerms(max: max) }
+}
+
 /// Model settings stay Node-owned, exactly as on Windows. No shell or SDK in the UI.
-/// Voice settings are host-local (no harness); the classifier switch is Node-owned.
+/// Voice settings are host-local (no harness); the classifier switch and the dictionary are Node-owned.
+/// The voice journal and the downloadable recognition model are host-owned services handed in by the app.
 @MainActor final class SettingsWindow: NSWindowController, NSWindowDelegate {
-    enum Page: Int, CaseIterable { case general, context, voice, classifier }
+    enum Page: Int, CaseIterable { case general, context, voice, dictionary, classifier }
     private let harness: ModelSettingsService
     /// nil in fixtures/tests: notification permission is then simply unavailable.
     private let notifier: ResultNotifier?
@@ -32,7 +53,7 @@ extension HarnessClient: ModelSettingsService {}
     private var state: ModelSettingsState?
     private var visibleModels: [HarnessClient.Model] = []
     private var classifierSettings: ClassifierSettings?
-    private let tabs = NSSegmentedControl(labels: ["General", "Context", "Voice", "Classifier"], trackingMode: .selectOne, target: nil, action: nil)
+    private let tabs = NSSegmentedControl(labels: ["General", "Context", "Voice", "Dictionary", "Classifier"], trackingMode: .selectOne, target: nil, action: nil)
     /// Settings → Context (host-local, applied at once): the active-window chip, the shelf, Brave access.
     private let contextDefaults: UserDefaults
     private let activeWindow = NSSegmentedControl(labels: ContextSetting.allCases.map { ContextSettings.activeWindowTitles[$0] ?? $0.rawValue },
@@ -55,18 +76,37 @@ extension HarnessClient: ModelSettingsService {}
     private let dismiss = NSButton(title: "Cancel", target: nil, action: nil)
     private let control = NSButton(checkboxWithTitle: "Allow computer control in my chosen window", target: nil, action: nil)
     private let notifications = NSButton(checkboxWithTitle: "Notify when a background task finishes", target: nil, action: nil)
+    /// AutoMinimizePolicy: a finished answer steps aside after pi opened something (host-local, applied at once).
+    private let hideAfterOpen = NSButton(checkboxWithTitle: AutoMinimizePolicy.settingTitle, target: nil, action: nil)
     private let compatibility = NSButton(checkboxWithTitle: "Use trusted global pi extensions and coding tools", target: nil, action: nil)
     private let login = NSButton(checkboxWithTitle: "Open pi-os at login", target: nil, action: nil)
     private let credentials = NSButton(checkboxWithTitle: "Allow input in username and password fields", target: nil, action: nil)
     private let voiceToggle = NSButton(checkboxWithTitle: "Hold the shortcut to talk", target: nil, action: nil)
-    private let language = NSPopUpButton()
     private let microphoneStatus = PanelStyle.label("", size: 12, color: .labelColor)
     private let speechStatus = PanelStyle.label("", size: 12, color: .labelColor)
-    private let assetStatus = PanelStyle.label("", size: 12, color: .labelColor)
     private let microphoneButton = NSButton(title: "Request Access…", target: nil, action: nil)
     private let speechButton = NSButton(title: "Request Access…", target: nil, action: nil)
-    private let assetButton = NSButton(title: "Download", target: nil, action: nil)
     private let voiceNote = NSTextField(wrappingLabelWithString: "")
+    // Settings → Voice scrolls: languages, recognition and instant commands no longer fit one page.
+    private let voiceScroll = NSScrollView()
+    private let voiceContent = FlippedView()
+    private var voiceSections: [(view: NSView, gap: CGFloat)] = []
+    // "Languages I speak" (D-T7): one row per language from VoiceAvailability.localeSupport().
+    private var languageChecks: [VoiceLanguage: NSButton] = [:]
+    private var languageStatus: [VoiceLanguage: NSTextField] = [:]
+    private var languageButtons: [VoiceLanguage: NSButton] = [:]
+    private var languageSupport: [VoiceLanguage: VoiceLocaleSupport] = [:]
+    private var languageProgress: [VoiceLanguage: Double] = [:]
+    private var languageErrors: [VoiceLanguage: String] = [:]
+    private let languagesNote = NSTextField(wrappingLabelWithString: "")
+    /// The one-time migration note is shown while this window is open, once.
+    private var languagesNoteVisible = false
+    private var shownPage: Page?
+    private var voiceWork: [Task<Void, Never>] = []
+    // Settings → Voice → Recognition (hidden without a model store) and Settings → Dictionary.
+    private let speechModels: SpeechModelStoring?
+    private(set) var recognition: RecognitionSettingsView?
+    let dictionaryPage: DictionarySettingsView
     private let classifierToggle = NSButton(checkboxWithTitle: "Use the local Laya classifier (advisory)", target: nil, action: nil)
     private let classifierStatus = NSTextField(wrappingLabelWithString: "Loading…")
     private let pythonPath = PanelStyle.label("Not chosen", size: 12, color: .labelColor)
@@ -74,7 +114,6 @@ extension HarnessClient: ModelSettingsService {}
     private let pythonButton = NSButton(title: "Choose…", target: nil, action: nil)
     private let modelButton = NSButton(title: "Choose…", target: nil, action: nil)
     private var classifierSaving = false
-    private var downloading = false
     var onClosed: (() -> Void)?
     var onPermissions: (() -> Void)?
     var onControlDisabled: (() -> Void)?
@@ -84,9 +123,17 @@ extension HarnessClient: ModelSettingsService {}
     var modelTitles: [String] { models.itemTitles }
     var effortTitles: [String] { efforts.itemTitles }
     var effortLabelText: String { effortLabel.stringValue }
-    var voiceRowText: [String] { [microphoneStatus.stringValue, speechStatus.stringValue, assetStatus.stringValue] }
-    var voiceButtonTitles: [String] { [microphoneButton, speechButton, assetButton].filter { !$0.isHidden }.map(\.title) }
+    /// Microphone, Speech Recognition, then one status per language row.
+    var voiceRowText: [String] { [microphoneStatus.stringValue, speechStatus.stringValue] + VoiceLanguage.allCases.compactMap { languageStatus[$0]?.stringValue } }
+    var voiceButtonTitles: [String] { voiceButtons.filter { !$0.isHidden }.map(\.title) }
+    private var voiceButtons: [NSButton] { [microphoneButton, speechButton] + VoiceLanguage.allCases.compactMap { languageButtons[$0] } }
     var voiceEnabledControl: Bool { voiceToggle.state == .on }
+    var languageTitles: [String] { VoiceLanguage.allCases.compactMap { languageChecks[$0]?.title } }
+    var languageChecked: [Bool] { VoiceLanguage.allCases.compactMap { languageChecks[$0].map { $0.state == .on } } }
+    var languageCheckEnabled: [Bool] { VoiceLanguage.allCases.compactMap { languageChecks[$0]?.isEnabled } }
+    var languagesNoteText: String { languagesNote.stringValue }
+    /// The Voice page's whole scrolling content (offscreen snapshots render all of it).
+    var voiceDocument: NSView { voiceContent }
     var classifierText: String { classifierStatus.stringValue }
     var classifierEnabledControl: Bool { classifierToggle.state == .on }
     var classifierSwitchEnabled: Bool { classifierToggle.isEnabled }
@@ -94,9 +141,9 @@ extension HarnessClient: ModelSettingsService {}
     var modelChoiceEnabled: Bool { models.isEnabled }
     /// Every visible voice button shows its whole title (no "Open System Setti…").
     var voiceButtonsFit: Bool {
-        [microphoneButton, speechButton, assetButton].filter { !$0.isHidden }.allSatisfy { $0.fittingSize.width <= $0.frame.width + 0.5 }
+        voiceButtons.filter { !$0.isHidden }.allSatisfy { $0.fittingSize.width <= $0.frame.width + 0.5 } && (recognition?.buttonFits ?? true)
     }
-    var voiceButtonLabels: [String] { [microphoneButton, speechButton, assetButton].filter { !$0.isHidden }.compactMap { $0.accessibilityLabel() } }
+    var voiceButtonLabels: [String] { voiceButtons.filter { !$0.isHidden }.compactMap { $0.accessibilityLabel() } }
     var classifierPathText: [String] { [pythonPath.stringValue, modelPath.stringValue] }
     var contextValues: ContextSettings { ContextSettings(defaults: contextDefaults) }
     var activeWindowSegments: [String] { (0..<activeWindow.segmentCount).compactMap { activeWindow.label(forSegment: $0) } }
@@ -104,6 +151,12 @@ extension HarnessClient: ModelSettingsService {}
     var braveAccessTitles: [String] { braveAccess.itemTitles }
     var braveNoteText: String { braveNote.stringValue }
     var contextSwitchStates: [Bool] { [includeSelection, copyFallback, suggestClipboard, braveBackground].map { $0.state == .on } }
+    /// Settings → General's "Hide the answer after pi opens something" (offscreen tests).
+    var hideAfterOpenControl: (title: String, on: Bool, enabled: Bool) { (hideAfterOpen.title, hideAfterOpen.state == .on, hideAfterOpen.isEnabled) }
+    func setHideAfterOpen(_ on: Bool) { hideAfterOpen.state = on ? .on : .off; hideAfterOpenChanged() }
+    var hideAfterOpenStored: Bool { AutoMinimizePolicy.enabled(contextDefaults) }
+    /// The General page's view (offscreen snapshots).
+    var generalPage: NSView { pages[Page.general.rawValue] }
     /// Test seams for the Context page's controls (as a click would).
     func chooseActiveWindow(_ setting: ContextSetting) {
         activeWindow.selectedSegment = ContextSetting.allCases.firstIndex(of: setting) ?? 1; activeWindowChanged()
@@ -113,10 +166,27 @@ extension HarnessClient: ModelSettingsService {}
         button.state = on ? .on : .off; contextSwitchChanged(button)
     }
 
+    /// `dictionary`, `journal` and `speechModels` are optional so today's callers compile: without them the Dictionary
+    /// page says it is unavailable, Recent takes has no journal, and the Recognition section is hidden.
+    /// `onDictionaryRevision` gets the revision of every dictionary write this window makes (an edit, Undo, Forget
+    /// Everything, an import, a Recent takes fix), so the app refetches the recognizers' contextual strings.
     init(harness: ModelSettingsService, notifier: ResultNotifier?, voice: VoiceSystem, voiceSettings: VoiceSettings? = nil,
-         contextDefaults: UserDefaults = .standard) {
+         contextDefaults: UserDefaults = .standard, dictionary: DictionaryService? = nil, journal: VoiceJournaling? = nil,
+         speechModels: SpeechModelStoring? = nil, prompts: SettingsPrompts = .system,
+         appName: @escaping AppNameResolver = InstalledAppNames.name,
+         makeAudio: @escaping VoiceTakePlayer.AudioFactory = VoiceTakePlayer.systemAudio,
+         onDictionaryRevision: ((Int) -> Void)? = nil) {
         self.harness = harness; self.notifier = notifier; self.voice = voice; self.voiceSettings = voiceSettings ?? .shared
-        self.contextDefaults = contextDefaults
+        self.contextDefaults = contextDefaults; self.speechModels = speechModels
+        let dictionary = dictionary.map { service in
+            onDictionaryRevision.map { RevisionReportingDictionary(service, onRevision: $0) } ?? service
+        }
+        dictionaryPage = DictionarySettingsView(frame: NSRect(x: 0, y: 0, width: 560, height: 590), service: dictionary, journal: journal,
+                                                appName: appName, prompts: prompts, makeAudio: makeAudio)
+        if let speechModels {
+            recognition = RecognitionSettingsView(frame: NSRect(x: 28, y: 0, width: 502, height: RecognitionSettingsView.height),
+                                                  store: speechModels, prompts: prompts)
+        }
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 708),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "pi-os Settings"; window.isReleasedWhenClosed = false
@@ -124,13 +194,17 @@ extension HarnessClient: ModelSettingsService {}
         window.delegate = self
         let view = FlippedView(frame: window.contentView!.bounds)
         window.contentView = view
-        tabs.frame = NSRect(x: 80, y: 14, width: 400, height: 26); tabs.selectedSegment = 0
+        tabs.frame = NSRect(x: 40, y: 14, width: 480, height: 26); tabs.selectedSegment = 0
         tabs.target = self; tabs.action = #selector(pageChanged); tabs.setAccessibilityLabel("Settings section")
         view.addSubview(tabs)
         pages = Page.allCases.map { _ in FlippedView(frame: NSRect(x: 0, y: 48, width: 560, height: 590)) }
         pages.forEach(view.addSubview)
+        self.voiceSettings.migrateLanguages()
+        languagesNoteVisible = self.voiceSettings.languagesNotePending
         buildGeneral(pages[Page.general.rawValue]); buildContext(pages[Page.context.rawValue])
         buildVoice(pages[Page.voice.rawValue]); buildClassifier(pages[Page.classifier.rawValue])
+        pages[Page.dictionary.rawValue].addSubview(dictionaryPage)
+        recognition?.start()
         let permissions = NSButton(title: "Permissions…", target: self, action: #selector(openPermissions))
         permissions.bezelStyle = .rounded; permissions.frame = NSRect(x: 28, y: 656, width: 128, height: 32); view.addSubview(permissions)
         dismiss.target = self; dismiss.action = #selector(cancel)
@@ -145,16 +219,29 @@ extension HarnessClient: ModelSettingsService {}
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     func present() { window?.center(); showWindow(nil); window?.makeKeyAndOrderFront(nil); NSApp.activate() }
     func show(_ page: Page) {
+        // The page shown before this call: a tab click has already moved `tabs`, so it cannot tell.
+        let previous = shownPage
+        shownPage = page
         tabs.selectedSegment = page.rawValue
         for (index, view) in pages.enumerated() { view.isHidden = index != page.rawValue }
+        if previous == .dictionary && page != .dictionary { dictionaryPage.hidden() }
+        if page == .dictionary { dictionaryPage.shown() }
+        // The migration note is shown once: it stays for this window and is gone next time.
+        if page == .voice && languagesNoteVisible { voiceSettings.dismissLanguagesNote() }
         // Only the General model choice waits for Apply; Voice and Classifier switches apply at once,
         // so those pages get one Done button and Return never applies a model choice from there.
         let general = page == .general
         apply.isHidden = !general; apply.keyEquivalent = general ? "\r" : ""
         dismiss.title = general ? "Cancel" : "Done"
         dismiss.frame = general ? NSRect(x: 354, y: 656, width: 82, height: 32) : NSRect(x: 446, y: 656, width: 84, height: 32)
-        if page == .voice { refreshVoice() }
+        if page == .voice { refreshVoice(); prepareSpeechModels() }
         if page == .context { refreshContext() }
+    }
+    /// Settings → Voice opened with voice on: an installed multilingual model is loaded now if it is not yet (for example
+    /// a load the local-AI benchmark's lock deferred). Utility priority, never a download.
+    private func prepareSpeechModels() {
+        guard let speechModels, voiceSettings.enabled, voice.engineAvailable else { return }
+        Task.detached(priority: .utility) { await speechModels.prepare() }
     }
     @objc private func pageChanged() { show(page) }
 
@@ -187,27 +274,31 @@ extension HarnessClient: ModelSettingsService {}
         notifications.state = UserDefaults.standard.bool(forKey: ResultNotifier.enabledKey) ? .on : .off
         notifications.isEnabled = ControlAvailability.stableSignature
         notifications.target = self; notifications.action = #selector(notificationsChanged); view.addSubview(notifications)
-        login.frame = NSRect(x: 28, y: 364, width: 502, height: 24)
+        hideAfterOpen.frame = NSRect(x: 28, y: 360, width: 502, height: 24)
+        hideAfterOpen.state = AutoMinimizePolicy.enabled(contextDefaults) ? .on : .off
+        hideAfterOpen.toolTip = AutoMinimizePolicy.settingNote
+        hideAfterOpen.target = self; hideAfterOpen.action = #selector(hideAfterOpenChanged); view.addSubview(hideAfterOpen)
+        login.frame = NSRect(x: 28, y: 388, width: 502, height: 24)
         login.isEnabled = ControlAvailability.stableSignature
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         login.target = self; login.action = #selector(loginChanged); view.addSubview(login)
-        compatibility.frame = NSRect(x: 28, y: 400, width: 502, height: 24)
+        compatibility.frame = NSRect(x: 28, y: 420, width: 502, height: 24)
         compatibility.isEnabled = false; compatibility.target = self; compatibility.action = #selector(compatibilityChanged)
         compatibility.toolTip = "Explicit opt-in. These extensions and tools are not confined to the pinned window. Changes apply to the next task."
         view.addSubview(compatibility)
         let caution = PanelStyle.label("Pinned-only is the default. Trusted code can act outside the chosen window.", size: 11)
-        caution.frame = NSRect(x: 48, y: 430, width: 480, height: 20); view.addSubview(caution)
+        caution.frame = NSRect(x: 48, y: 448, width: 480, height: 20); view.addSubview(caution)
         let browser = NSButton(title: "Brave Access…", target: self, action: #selector(browserSetup))
-        browser.bezelStyle = .rounded; browser.frame = NSRect(x: 28, y: 466, width: 170, height: 32); view.addSubview(browser)
+        browser.bezelStyle = .rounded; browser.frame = NSRect(x: 28, y: 480, width: 170, height: 32); view.addSubview(browser)
         let browserHint = PanelStyle.label("Your live tab through Accessibility — no approval prompts.", size: 11)
-        browserHint.frame = NSRect(x: 210, y: 472, width: 320, height: 20); view.addSubview(browserHint)
-        credentials.frame = NSRect(x: 28, y: 508, width: 502, height: 24)
+        browserHint.frame = NSRect(x: 210, y: 486, width: 320, height: 20); view.addSubview(browserHint)
+        credentials.frame = NSRect(x: 28, y: 520, width: 502, height: 24)
         credentials.state = CredentialFields.allowed ? .on : .off
         credentials.isEnabled = ControlAvailability.ready
         credentials.target = self; credentials.action = #selector(credentialsChanged); view.addSubview(credentials)
         let credentialHint = NSTextField(wrappingLabelWithString: "Off by default. Only clearly identified login fields are blocked; ordinary typing stays available. Field values remain omitted from text snapshots.")
         credentialHint.font = .systemFont(ofSize: 11); credentialHint.textColor = PanelStyle.secondaryInk
-        credentialHint.frame = NSRect(x: 48, y: 538, width: 470, height: 40); view.addSubview(credentialHint)
+        credentialHint.frame = NSRect(x: 48, y: 548, width: 470, height: 38); view.addSubview(credentialHint)
     }
     private func note(_ text: String, size: CGFloat = 11, _ frame: NSRect, in view: NSView) -> NSTextField {
         let field = NSTextField(wrappingLabelWithString: text)
@@ -313,41 +404,86 @@ extension HarnessClient: ModelSettingsService {}
     }
 
     private func buildVoice(_ view: FlippedView) {
-        let heading = PanelStyle.label("Voice", size: 18, weight: .semibold, color: .labelColor)
-        heading.frame = NSRect(x: 28, y: 16, width: 300, height: 26); view.addSubview(heading)
-        _ = note("Hold the pi-os shortcut and speak; let go to run it. A quick tap still opens the text bar. Speech is transcribed on this Mac.",
-                 size: 12, NSRect(x: 28, y: 48, width: 502, height: 34), in: view)
-        voiceToggle.frame = NSRect(x: 28, y: 92, width: 502, height: 24)
-        voiceToggle.target = self; voiceToggle.action = #selector(voiceToggled); view.addSubview(voiceToggle)
-        voiceNote.font = .systemFont(ofSize: 11); voiceNote.textColor = PanelStyle.secondaryInk
-        voiceNote.frame = NSRect(x: 48, y: 118, width: 470, height: 44); view.addSubview(voiceNote)
-        let languageLabel = PanelStyle.label("Language", size: 13, color: .labelColor)
-        languageLabel.frame = NSRect(x: 28, y: 178, width: 138, height: 24); view.addSubview(languageLabel)
-        language.addItems(withTitles: VoiceLanguage.allCases.map(\.displayName))
-        language.frame = NSRect(x: 170, y: 174, width: 360, height: 30); language.setAccessibilityLabel("Voice language")
-        language.target = self; language.action = #selector(languageChanged); view.addSubview(language)
-        let rows: [(String, NSTextField, NSButton, Selector)] = [
-            ("Microphone", microphoneStatus, microphoneButton, #selector(microphoneAction)),
-            ("Speech Recognition", speechStatus, speechButton, #selector(speechAction)),
-            ("Speech model", assetStatus, assetButton, #selector(downloadAsset)),
-        ]
-        for (index, row) in rows.enumerated() {
-            let y = 222 + CGFloat(index) * 38
-            let label = PanelStyle.label(row.0, size: 13, color: .labelColor)
-            label.frame = NSRect(x: 28, y: y + 4, width: 138, height: 22); view.addSubview(label)
-            row.1.frame = NSRect(x: 170, y: y + 5, width: 210, height: 20); row.1.setAccessibilityLabel(row.0 + " status")
-            view.addSubview(row.1)
-            row.2.bezelStyle = .rounded; row.2.frame = NSRect(x: 386, y: y, width: 144, height: 30)
-            row.2.target = self; row.2.action = row.3; view.addSubview(row.2)
+        voiceScroll.frame = view.bounds; voiceScroll.drawsBackground = false; voiceScroll.borderType = .noBorder
+        voiceScroll.hasVerticalScroller = true; voiceScroll.autohidesScrollers = true
+        voiceScroll.documentView = voiceContent
+        view.addSubview(voiceScroll)
+        func section(_ height: CGFloat, gap: CGFloat = 0, _ build: (FlippedView) -> Void) {
+            let block = FlippedView(frame: NSRect(x: 0, y: 0, width: 560, height: height))
+            build(block); voiceContent.addSubview(block); voiceSections.append((block, gap))
         }
-        _ = note("pi-os asks for access only when you press a button here; the shortcut never shows a permission prompt. Both grants are needed for voice.",
-                 NSRect(x: 28, y: 338, width: 502, height: 30), in: view)
-        let instant = PanelStyle.label("Instant commands", size: 13, weight: .semibold, color: .labelColor)
-        instant.frame = NSRect(x: 28, y: 390, width: 300, height: 20); view.addSubview(instant)
-        _ = note("Math, units, currencies, time zones, dates, opening apps and links, web searches, file search and volume run on this Mac without a model, usually in milliseconds — spoken or typed. Return runs the result, Option-Return always asks pi, Command-Return reveals a file or types a value into your window.",
-                 size: 12, NSRect(x: 28, y: 414, width: 502, height: 64), in: view)
-        _ = note("Currency conversions use the European Central Bank’s daily reference rates. pi-os downloads them only when you first ask for a conversion; no question or personal data is sent.",
-                 NSRect(x: 28, y: 486, width: 502, height: 30), in: view)
+        section(146, gap: 14) { block in
+            let heading = PanelStyle.label("Voice", size: 18, weight: .semibold, color: .labelColor)
+            heading.frame = NSRect(x: 28, y: 0, width: 300, height: 26); block.addSubview(heading)
+            _ = note("Hold the pi-os shortcut and speak; let go to run it. A quick tap still opens the text bar. Speech is transcribed on this Mac.",
+                     size: 12, NSRect(x: 28, y: 32, width: 502, height: 34), in: block)
+            voiceToggle.frame = NSRect(x: 28, y: 74, width: 502, height: 24)
+            voiceToggle.target = self; voiceToggle.action = #selector(voiceToggled); block.addSubview(voiceToggle)
+            voiceNote.font = .systemFont(ofSize: 11); voiceNote.textColor = PanelStyle.secondaryInk
+            voiceNote.frame = NSRect(x: 48, y: 100, width: 470, height: 44); block.addSubview(voiceNote)
+        }
+        section(110, gap: 20) { block in
+            let rows: [(String, NSTextField, NSButton, Selector)] = [
+                ("Microphone", microphoneStatus, microphoneButton, #selector(microphoneAction)),
+                ("Speech Recognition", speechStatus, speechButton, #selector(speechAction)),
+            ]
+            for (index, row) in rows.enumerated() {
+                let y = CGFloat(index) * 38
+                let label = PanelStyle.label(row.0, size: 13, color: .labelColor)
+                label.frame = NSRect(x: 28, y: y + 4, width: 138, height: 22); block.addSubview(label)
+                row.1.frame = NSRect(x: 228, y: y + 5, width: 160, height: 20); row.1.setAccessibilityLabel(row.0 + " status")
+                block.addSubview(row.1)
+                row.2.bezelStyle = .rounded; row.2.frame = NSRect(x: 386, y: y, width: 144, height: 30)
+                row.2.target = self; row.2.action = row.3; block.addSubview(row.2)
+            }
+            _ = note("pi-os asks for access only when you press a button here; the shortcut never shows a permission prompt. Both grants are needed for voice.",
+                     NSRect(x: 28, y: 80, width: 502, height: 30), in: block)
+        }
+        let languages = VoiceLanguage.allCases
+        section(28 + CGFloat(languages.count) * 34 + 34, gap: 14) { block in
+            let heading = PanelStyle.label("Languages I speak", size: 13, weight: .semibold, color: .labelColor)
+            heading.frame = NSRect(x: 28, y: 0, width: 300, height: 20); block.addSubview(heading)
+            for (index, language) in languages.enumerated() {
+                let y = 28 + CGFloat(index) * 34
+                let check = NSButton(checkboxWithTitle: language.displayName, target: self, action: #selector(languageToggled(_:)))
+                check.frame = NSRect(x: 28, y: y + 3, width: 196, height: 22)
+                check.setAccessibilityLabel(language.displayName)
+                let status = PanelStyle.label("", size: 12, color: .labelColor)
+                status.frame = NSRect(x: 228, y: y + 5, width: 160, height: 20)
+                status.setAccessibilityLabel("\(language.englishName) speech model status")
+                let button = NSButton(title: "Download", target: self, action: #selector(downloadLanguageClicked(_:)))
+                button.bezelStyle = .rounded; button.frame = NSRect(x: 426, y: y, width: 104, height: 30); button.isHidden = true
+                button.setAccessibilityLabel("Download \(language.englishName) speech model")
+                [check, status, button].forEach(block.addSubview)
+                languageChecks[language] = check; languageStatus[language] = status; languageButtons[language] = button
+            }
+            languagesNote.font = .systemFont(ofSize: 11); languagesNote.textColor = PanelStyle.secondaryInk
+            languagesNote.frame = NSRect(x: 28, y: 30 + CGFloat(languages.count) * 34, width: 502, height: 30)
+            block.addSubview(languagesNote)
+        }
+        if let recognition {
+            section(RecognitionSettingsView.height, gap: 18) { block in
+                recognition.frame.origin = NSPoint(x: 28, y: 0); block.addSubview(recognition)
+            }
+        }
+        section(130, gap: 0) { block in
+            let instant = PanelStyle.label("Instant commands", size: 13, weight: .semibold, color: .labelColor)
+            instant.frame = NSRect(x: 28, y: 0, width: 300, height: 20); block.addSubview(instant)
+            _ = note("Math, units, currencies, time zones, dates, opening apps and links, web searches, file search and volume run on this Mac without a model, usually in milliseconds — spoken or typed. Return runs the result, Option-Return always asks pi, Command-Return reveals a file or types a value into your window.",
+                     size: 12, NSRect(x: 28, y: 24, width: 502, height: 64), in: block)
+            _ = note("Currency conversions use the European Central Bank’s daily reference rates. pi-os downloads them only when you first ask for a conversion; no question or personal data is sent.",
+                     NSRect(x: 28, y: 96, width: 502, height: 30), in: block)
+        }
+        layoutVoice()
+    }
+    /// Stacks the Voice sections top-down (a hidden section takes no room) and sizes the scrolling content.
+    private func layoutVoice() {
+        var y: CGFloat = 16
+        for (view, gap) in voiceSections where !view.isHidden {
+            view.frame.origin = NSPoint(x: 0, y: y); y += view.frame.height + gap
+        }
+        let width = max(545, voiceScroll.contentSize.width)
+        voiceContent.frame = NSRect(x: 0, y: 0, width: width, height: max(y + 16, voiceScroll.contentSize.height))
     }
     private func buildClassifier(_ view: FlippedView) {
         let heading = PanelStyle.label("Local classifier", size: 18, weight: .semibold, color: .labelColor)
@@ -488,6 +624,10 @@ extension HarnessClient: ModelSettingsService {}
             if !granted { self.status.stringValue = "Notifications were not enabled. Background results will use a native in-app toast." }
         }
     }
+    /// Applied at once (host-local), like the Context switches.
+    @objc private func hideAfterOpenChanged() {
+        contextDefaults.set(hideAfterOpen.state == .on, forKey: AutoMinimizePolicy.settingKey)
+    }
     @objc private func loginChanged() {
         do {
             if login.state == .on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
@@ -525,10 +665,8 @@ extension HarnessClient: ModelSettingsService {}
         let enabled = voiceSettings.enabled
         voiceToggle.state = enabled ? .on : .off
         voiceToggle.isEnabled = available
-        language.selectItem(at: VoiceLanguage.allCases.firstIndex(of: voiceSettings.language) ?? 0)
-        language.isEnabled = available
         voiceNote.stringValue = available
-            ? "Off by default. While on, the microphone opens the moment you press the shortcut (the menu-bar indicator can flash on a quick tap) and closes when you let go. Audio and transcripts stay on this Mac and are never recorded or logged."
+            ? "Off by default. While on, the microphone opens when you press the shortcut (the menu-bar indicator can flash on a quick tap) and closes when you let go. Audio and transcripts stay on this Mac and are never logged."
             : VoiceSettingsText.unavailable + " The shortcut keeps working for typing."
         let permissions = voice.permissions()
         for (state, label, button, name) in [(permissions.microphone, microphoneStatus, microphoneButton, "Microphone"),
@@ -537,55 +675,96 @@ extension HarnessClient: ModelSettingsService {}
             let action = available ? VoiceSettingsText.permissionAction(state) : nil
             button.title = action ?? ""; button.isHidden = action == nil
             button.setAccessibilityLabel(action.map { name + ": " + $0.replacingOccurrences(of: "…", with: "") })
-            fitVoiceButton(button, status: label)
+            fitVoiceButton(button, status: label, right: 530)
         }
-        assetStatus.stringValue = available ? "Checking…" : "Not available"
-        assetButton.isHidden = true
-        guard available else { return }
-        let selected = voiceSettings.language
+        let spoken = voiceSettings.languages
+        for language in VoiceLanguage.allCases {
+            let on = spoken.contains(language)
+            languageChecks[language]?.state = on ? .on : .off
+            // At least one language stays checked.
+            languageChecks[language]?.isEnabled = available && !(on && spoken.count == 1)
+            languageChecks[language]?.toolTip = on && spoken.count == 1 ? "Keep at least one language." : nil
+        }
+        languagesNote.stringValue = languagesNoteVisible ? VoiceSettingsText.languagesNote(spoken) : VoiceSettingsText.languagesHint
+        languagesNote.textColor = languagesNoteVisible ? .labelColor : PanelStyle.secondaryInk
+        guard available else {
+            for language in VoiceLanguage.allCases {
+                languageStatus[language]?.stringValue = "Not available"; languageButtons[language]?.isHidden = true
+            }
+            return
+        }
+        VoiceLanguage.allCases.forEach(applyLanguageRow)
         voiceTask?.cancel()
         voiceTask = Task { [weak self] in
             guard let self else { return }
-            let value = await self.voice.assetStatus(selected)
-            guard !Task.isCancelled, !self.downloading else { return }
-            self.assetStatus.stringValue = VoiceSettingsText.asset(value, language: selected)
-            self.assetButton.title = "Download"; self.assetButton.isHidden = value != .notInstalled
-            self.assetButton.setAccessibilityLabel("Download \(selected.englishName) speech model")
-            self.fitVoiceButton(self.assetButton, status: self.assetStatus)
+            let supports = await self.voice.localeSupport(VoiceLanguage.allCases)
+            guard !Task.isCancelled else { return }
+            for support in supports { self.languageSupport[support.language] = support }
+            VoiceLanguage.allCases.forEach(self.applyLanguageRow)
         }
     }
+    /// One language row: model status, and Download whenever the better model is missing for a spoken language.
+    private func applyLanguageRow(_ language: VoiceLanguage) {
+        guard let status = languageStatus[language], let button = languageButtons[language] else { return }
+        let spoken = voiceSettings.languages.contains(language)
+        if let progress = languageProgress[language] {
+            status.stringValue = "Downloading \(VoiceSettingsText.percent(progress))"; button.isHidden = true
+        } else if let error = languageErrors[language] {
+            status.stringValue = error; button.isHidden = !spoken
+        } else if let support = languageSupport[language] {
+            status.stringValue = VoiceSettingsText.language(support)
+            button.isHidden = !(spoken && VoiceSettingsText.offersDownload(support))
+        } else {
+            status.stringValue = "Checking…"; button.isHidden = true
+        }
+        status.toolTip = status.stringValue
+        fitVoiceButton(button, status: status, right: 530)
+    }
     /// A row's button keeps its whole title, right-aligned; its status takes the rest of the row.
-    private func fitVoiceButton(_ button: NSButton, status: NSTextField) {
+    private func fitVoiceButton(_ button: NSButton, status: NSTextField, right: CGFloat) {
         let width = max(104, ceil(button.fittingSize.width))
-        button.frame = NSRect(x: 530 - width, y: button.frame.minY, width: width, height: button.frame.height)
-        status.frame.size.width = button.isHidden ? 530 - status.frame.minX : max(80, button.frame.minX - 8 - status.frame.minX)
+        button.frame = NSRect(x: right - width, y: button.frame.minY, width: width, height: button.frame.height)
+        status.frame.size.width = button.isHidden ? right - status.frame.minX : max(80, button.frame.minX - 8 - status.frame.minX)
+    }
+    private func track(_ task: Task<Void, Never>) {
+        voiceWork.removeAll { $0.isCancelled }
+        voiceWork.append(task)
     }
     @objc private func voiceToggled() {
         voiceSettings.enabled = voiceToggle.state == .on
-        reserveInstalledAsset()
+        reserveInstalledAssets()
         refreshVoice()
     }
-    @objc private func languageChanged() {
-        let index = language.indexOfSelectedItem
-        guard VoiceLanguage.allCases.indices.contains(index) else { return }
-        selectLanguage(VoiceLanguage.allCases[index])
+    @objc private func languageToggled(_ sender: NSButton) {
+        guard let language = languageChecks.first(where: { $0.value === sender })?.key else { return }
+        setLanguage(language, spoken: sender.state == .on)
     }
-    /// The language pop-up's effect (internal for tests): store it, reserve it if already installed.
-    func selectLanguage(_ value: VoiceLanguage) {
-        voiceSettings.language = value
-        reserveInstalledAsset()
-        refreshVoice()
-    }
-    /// With voice on, reserve an already-installed model for pi-os (B6: assetStatus counts a
-    /// system-installed locale without reserving it). Checked live, so a status that is still
-    /// loading is not skipped; a missing model never downloads without the Download button.
-    private func reserveInstalledAsset() {
-        guard voiceSettings.enabled, voice.engineAvailable else { return }
-        let selected = voiceSettings.language
-        Task { [weak self] in
-            guard let self, await self.voice.assetStatus(selected) == .installed else { return }
-            try? await self.voice.installAssets(selected, progress: nil)
+    /// A language checkbox's effect (internal for tests): store the set (never empty), give an unchecked language's
+    /// reservation back, and reserve every spoken language whose model is already installed.
+    func setLanguage(_ language: VoiceLanguage, spoken: Bool) {
+        var languages = voiceSettings.languages
+        if spoken { if !languages.contains(language) { languages.append(language) } } else { languages.removeAll { $0 == language } }
+        guard !languages.isEmpty else { refreshVoice(); return }
+        voiceSettings.languages = languages
+        languageErrors[language] = nil
+        if !spoken && voice.engineAvailable {
+            track(Task { [weak self] in await self?.voice.releaseAssets(language) })
         }
+        reserveInstalledAssets()
+        refreshVoice()
+    }
+    /// With voice on, reserve every spoken language whose model is installed (S1: `installStatus == .installed`, so
+    /// nothing downloads). Checked live, so a status that is still loading is not skipped; a missing model never
+    /// downloads without its Download button.
+    private func reserveInstalledAssets() {
+        guard voiceSettings.enabled, voice.engineAvailable else { return }
+        let spoken = voiceSettings.languages
+        track(Task { [weak self] in
+            guard let self else { return }
+            for support in await self.voice.localeSupport(spoken) where VoiceSettingsText.reservable(support) {
+                try? await self.voice.installAssets(support.language, progress: nil)
+            }
+        })
     }
     @objc private func microphoneAction() {
         let state = voice.permissions().microphone
@@ -601,27 +780,33 @@ extension HarnessClient: ModelSettingsService {}
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?" + anchor) { NSWorkspace.shared.open(url) }
     }
     /// Permission grants change readiness without changing a stored preference. With voice on,
-    /// an already-installed model is reserved for pi-os then too (no download).
+    /// already-installed models are reserved for pi-os then too (no download).
     private func notifyVoice() {
-        reserveInstalledAsset()
+        reserveInstalledAssets()
         NotificationCenter.default.post(name: VoiceSettings.changed, object: voiceSettings)
     }
-    @objc private func downloadAsset() {
-        let selected = voiceSettings.language
-        downloading = true; assetButton.isHidden = true
-        assetStatus.stringValue = VoiceSettingsText.asset(.downloading, language: selected)
-        Task { [weak self] in
+    @objc private func downloadLanguageClicked(_ sender: NSButton) {
+        guard let language = languageButtons.first(where: { $0.value === sender })?.key else { return }
+        downloadLanguage(language)
+    }
+    /// The Download button's effect (internal for tests): installs that language's model, never another.
+    func downloadLanguage(_ language: VoiceLanguage) {
+        guard languageProgress[language] == nil else { return }
+        languageProgress[language] = 0; languageErrors[language] = nil
+        applyLanguageRow(language)
+        track(Task { [weak self] in
             guard let self else { return }
             do {
-                try await self.voice.installAssets(selected) { [weak self] fraction in
-                    self?.assetStatus.stringValue = VoiceSettingsText.asset(.downloading, language: selected, progress: fraction)
+                try await self.voice.installAssets(language) { [weak self] fraction in
+                    self?.languageProgress[language] = fraction; self?.applyLanguageRow(language)
                 }
-                self.downloading = false; self.refreshVoice(); self.notifyVoice()
             } catch {
-                self.downloading = false; self.refreshVoice()
-                self.assetStatus.stringValue = (error as? DomainError)?.message ?? error.localizedDescription
+                self.languageErrors[language] = (error as? DomainError)?.message ?? error.localizedDescription
             }
-        }
+            self.languageProgress[language] = nil
+            self.refreshVoice(); self.notifyVoice()
+            await self.voiceTask?.value
+        })
     }
 
     // MARK: Classifier (Node-owned /settings/classifier; read once the catalog loaded the harness)
@@ -752,9 +937,19 @@ extension HarnessClient: ModelSettingsService {}
     }
     func windowWillClose(_ notification: Notification) {
         task?.cancel(); task = nil; voiceTask?.cancel(); voiceTask = nil
+        dictionaryPage.close(); recognition?.stop()
         if let reservation { harness.release(reservation); self.reservation = nil }
         onClosed?()
     }
     /// Offscreen snapshots and tests: wait for the catalog and classifier to load.
-    func waitUntilLoaded() async { await task?.value; await voiceTask?.value; await classifierTask?.value }
+    func waitUntilLoaded() async {
+        await task?.value; await voiceTask?.value; await classifierTask?.value
+        while let pending = voiceWork.first(where: { !$0.isCancelled }) {
+            await pending.value
+            voiceWork.removeAll { $0 == pending }
+        }
+        await voiceTask?.value
+        await dictionaryPage.waitUntilIdle()
+        await recognition?.waitUntilIdle()
+    }
 }

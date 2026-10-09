@@ -1,7 +1,9 @@
 import type { HarnessConfig } from "./config.js";
 import type { BrowserHint } from "./contracts/browser.js";
-import type {
-  AppIndexResult, FileSearchRequest, FileSearchResult, LauncherOpenRequest, LauncherOpenResult,
+import {
+  parseVisibleItemsResult,
+  type AppIndexResult, type FileSearchRequest, type FileSearchResult, type LauncherOpenRequest, type LauncherOpenResult,
+  type VisibleItemsRequest, type VisibleItemsResult,
 } from "./contracts/launcher.js";
 
 /**
@@ -187,6 +189,27 @@ export class HostClient {
   /** POST /tools/launcher.listApps (macOS); hosts version the index so callers can cache it. */
   listApps(signal?: AbortSignal, contextId?: string): Promise<AppIndexResult> {
     return this.launcherRead<AppIndexResult>("launcher.listApps", contextId ? { contextId } : {}, signal);
+  }
+
+  /**
+   * POST /tools/launcher.visibleItems (macOS, newer hosts): the take's visible items, strictly parsed. Rejects
+   * with LauncherRouteError: `unsupported` for a host without the route (HTTP 404 from an older Mac host,
+   * `not_found` / `unsupported` from the Windows host), `invalid_result` when one source or item is malformed
+   * (the whole result is discarded), `host_unavailable` on transport errors, else the host's code. Callers
+   * cache per host and context (instant/visible.ts VisibleItemsCache); nothing here logs names or paths.
+   */
+  async visibleItems(request: VisibleItemsRequest, signal?: AbortSignal): Promise<VisibleItemsResult> {
+    let outcome: ToolOutcome<unknown>;
+    try {
+      outcome = await this.invokeTool<unknown>("launcher.visibleItems", { ...request }, signal);
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      throw new LauncherRouteError(error instanceof HostHttpError && error.status === 404 ? "unsupported" : "host_unavailable");
+    }
+    if (!outcome.ok) throw new LauncherRouteError(outcome.error.code === "not_found" ? "unsupported" : outcome.error.code);
+    const parsed = parseVisibleItemsResult(outcome.result);
+    if (!parsed.ok) throw new LauncherRouteError("invalid_result");
+    return parsed.value;
   }
 
   /** POST /tools/launcher.open (macOS effect). Refusals (policy_blocked, token_expired, …) are data. */

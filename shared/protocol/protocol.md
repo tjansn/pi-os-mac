@@ -89,7 +89,7 @@ HTTP statuses used:
 | 403 | browser-originated request (`forbidden_origin`, Node harness) |
 | 404 | unknown route or closed/expired thread |
 | 409 | duplicate invocation, busy thread or retained-thread capacity reached |
-| 413 | request body too large (`POST /instant` and `/invocations/prepare` > 4 KB, `/settings/routing` and `/settings/classifier` > 16 KB, others > 1 MB) |
+| 413 | request body too large (`POST /instant`, `/invocations/prepare`, `/dictionary/edit` > 4 KB, `/settings/routing`, `/settings/classifier`, `/dictionary/learn` > 16 KB, others > 1 MB) |
 | 415 | request body that is not `application/json` (`unsupported_media_type`, Node harness) |
 | 500 | unexpected server failure |
 
@@ -385,7 +385,8 @@ interface BrowserPageResult {
 Contract code: `node-harness/src/contracts/launcher.ts`; exact wire fixtures:
 `shared/fixtures/launcher/*.json` (the conformance suite checks both sides). Same
 envelope as every host tool (`{arguments}` → `{ok:true,result}` | `{ok:false,error}`);
-`contextId` is optional on all three. The Windows host has none of these routes: Node
+`contextId` is optional on `searchFiles`, `listApps` and `open` and required on
+`visibleItems`. The Windows host has none of these routes: Node
 then registers only its engine-only instant tools and never calls them (the `/invoke`
 instant lane runs without app and file lookups on every host).
 
@@ -394,6 +395,7 @@ instant lane runs without app and file lookups on every host).
 | `launcher.searchFiles` | read | `nameGroups: string[][]` (OR of AND-groups, ≤ 6 words in total, each ≤ 64 chars, no control/format characters; words < 3 chars match whole words only), `contentType?` (UTI, `kMDItemContentTypeTree`), `scopes?: ("home"\|"applications"\|"icloud")[]` (default `["home"]`), `maxResults?` (≤ 200, default 100) | `{items: FileCandidate[], truncated, elapsedMs}` |
 | `launcher.listApps` | read | none | `{version, apps: [{bundleId, name, aliases[], path, running}]}`; `version` changes with the index (Node caches by it) |
 | `launcher.open` | effect | `action`: `openApp {bundleId}` \| `openURL {url}` (http/https) \| `openFile {token}` \| `revealFile {token}` | `{status, performed}`; `performed: "revealFile"` when an executable, script or installer was downgraded from `openFile` |
+| `launcher.visibleItems` | read | `contextId` (required, `^[A-Za-z0-9_-]{1,128}$`), `maxResults?` (1..200, default 100) | `{sources: VisibleSource[], items: VisibleItem[], truncated, elapsedMs}` (see Visible items) |
 
 `FileCandidate = {token, name, path, contentType?, createdMs?, modifiedMs?, lastUsedMs?,
 useCount?, isDirectory, isPackage}`. Tokens are host-minted per search (random 128-bit,
@@ -404,6 +406,52 @@ model sees refs (`f1`, `f2`, …) and names, cards carry tokens, and nothing log
 with `policy_blocked` in read-only invocations and for every other action type (copyText,
 system, anything delete/trash/move-like); an unknown or foreign token is `token_expired`.
 Host messages can name apps or files, so Node logs launcher outcomes by code only.
+
+#### Visible items (`launcher.visibleItems`, macOS)
+
+What the user sees in the take's target context, so "öffne Radfotos" on the desktop opens the
+desktop folder before anything else is tried. Types (`VisibleItemsRequest`, `VisibleItemsResult`,
+`parseVisibleItemsRequest`, `parseVisibleItemsResult`; Swift `VisibleItemsRequest`, `VisibleItemsResult`
+in `LauncherPolicy.swift`); fixtures `shared/fixtures/launcher/visible-items.*.json`, invalid ones in
+`shared/fixtures/launcher/invalid/`.
+
+```ts
+interface VisibleItemsRequest { contextId: string; maxResults?: number /* 1..200, default 100 */ }
+interface VisibleItemsResult {
+  sources: { kind: "desktop" | "finderWindow"; via: "ax" | "spotlight"; complete: boolean }[]; // ≤ 1 per kind
+  items: (FileCandidate & { source: "desktop" | "finderWindow" })[];  // ≤ maxResults, tokens unique
+  truncated: boolean;  // the host stopped at maxResults
+  elapsedMs: number;
+}
+```
+
+- Sources. The host captures them at key-down for the take's context, in the background while the user
+  speaks (never on the main-thread hot path, bounded AX budget, no AppleScript or Apple Events, no new
+  privacy prompt). The target is the Finder desktop surface → `desktop`: the desktop icons via AX (their
+  file URLs), or, when no icon is readable (desktop icons hidden), a Spotlight query for the direct children
+  of `~/Desktop` (`via: "spotlight"`). The target is a regular Finder window → `finderWindow`: the window's
+  items via AX, else its folder (AXDocument) through a Spotlight query for its direct children. Any other
+  target → no sources and no items. Never FileManager enumeration of `~/Desktop` (that raises the
+  Desktop-folder privacy prompt). `complete: false` means the host stopped early (AX budget, Spotlight
+  deadline), so a miss may be a false negative. At most 200 items; hidden files are never listed.
+- Items are ordinary `FileCandidate`s plus `source`: `name` single-line, ≤ 255 UTF-16 units; `path`
+  absolute (≤ 1024 UTF-8 bytes, no empty, `.` or `..` components); `contentType` a UTI; tokens as for
+  searches (`tok_` + 32 hex, TTL 10 min), minted with the request's `contextId` only for the items returned
+  and resolving only in that context. `path` is for display and ranking only (the containing folder's
+  name, "in Desktop"); it is never logged, and Node never sends it back: effects carry the token.
+- Read-only: allowed in read-only invocations (served with the read routes), no focus change, no input budget.
+  A malformed request is `400`; one bad source or item makes Node discard the whole result (strict
+  parsers on both sides; unknown keys dropped, `null` optional members absent).
+- Hosts that do not serve it: the Windows host never implements it (`ok:false` `not_found`) and an older
+  macOS host answers HTTP `404`. Node treats `404`, `not_found` and `unsupported` as "no visible items" and
+  remembers that per host; it fetches a context's visible items once and caches them ≤ 3 s.
+- Status: implemented. The macOS host serves the route (POST only; it is not listed in `GET /tools`, so Node
+  probes it directly and the agent's tool gate is unchanged). The host reads the take's target at key-down
+  (desktop icons or the target Finder window's items via Accessibility, else a Spotlight query of that folder's
+  direct children), answers from that read, waits ≤ 150 ms for one still running and otherwise answers
+  `complete:false` with no items; an unknown context or any other target is `ok:true` with no sources. Node
+  asks for 200 items, waits ≤ 150 ms on finals (previews only prefetch), keeps a complete answer 3 s and a
+  `complete:false` or transient failure 0.5 s, and remembers an unsupported host for 10 minutes.
 
 ### Host actions
 
@@ -437,27 +485,142 @@ thread. Agent tools may request only `openApp | openURL | openFile | revealFile`
 
 Same shape as the host health endpoint, `"service":"node-harness"`.
 
+Instant-first start: the harness listens before it imports the agent stack (pi-coding-agent, pi-ai, the
+model catalog and the Auto router). `/health`, `/instant` and `/dictionary/*` answer at once; the agent
+stack loads after the first response (normally the host's `/health` probe), or 1 s after listen without
+one. Agent routes (`/invocations/prepare` sessions, `/invoke`, `/models`, settings, follow-ups) await
+that load; an import that fails answers `503 harness_unreachable` and is retried on the next request.
+`POST /invocations/prepare` still answers `202` at once.
+
 ### `POST /instant`
 
 Deterministic instant lane (`node-harness/src/instant`; contracts
 `node-harness/src/contracts/instant.ts`, Swift `InstantContracts.swift`, fixtures
-`shared/fixtures/instant/*.json`). Synchronous `200`, token-authed, body ≤ 4 KB
+`shared/fixtures/instant/*.json`, request bodies in `shared/fixtures/instant/requests/`). Synchronous `200`, token-authed, body ≤ 4 KB
 (`413` above), strictly validated (`400`). The macOS host calls it for typed previews,
 voice partials and the final utterance; the Windows host does not use it (it gets instant
 answers through `/invoke`).
 
 ```ts
 interface InstantRequest { text: string /* ≤ 500 */; phase: "typing" | "partial" | "final"; seq: number /* integer ≥ 0 */;
-  takeId?: string; contextId?: string; locale?: string /* BCP 47 */; inputMode?: "text" | "voice"; silenceMs?: number }
+  takeId?: string; contextId?: string; locale?: string /* BCP 47 */; inputMode?: "text" | "voice"; silenceMs?: number;
+  hypotheses?: VoiceHypothesis[] /* 1..6; voice final only, ignored otherwise */;
+  accept?: ("suggest" | "check" | "confirm")[] /* ≤ 8 words ^[a-z][A-Za-z]{0,31}$; unknown words ignored */ }
+interface VoiceHypothesis { text: string /* 1..200, single line */; source: string /* recognizer id, ≤ 32 */;
+  role: "primary" | "peer" | "secondary"; confidence?: number /* 0..1 */; minConfidence?: number /* 0..1 */; locale?: string /* BCP 47 */ }
 type InstantResponse = { seq: number; elapsedMs: number; source: "grammar" | "classifier"; scope?: InstantScope } & (
   | { decision: "answer"; intent: InstantIntent; title: string; subtitle?: string; card: CardSpec }
-  | { decision: "list"; intent: "file_search" | "open_app"; title: string; card: CardSpec; relaxed?: boolean }
-  | { decision: "act"; intent: InstantIntent; title: string; action: HostAction; confirm: boolean; card?: CardSpec }
+  | { decision: "list"; intent: "file_search" | "open_app" | "open_item"; title: string; card: CardSpec; relaxed?: boolean; voice?: VoiceMeta }
+  | { decision: "act"; intent: InstantIntent; title: string; action: HostAction; confirm: boolean; card?: CardSpec; voice?: VoiceMeta }
   | { decision: "refuse"; code: "file_deletion_blocked"; message: string; card: CardSpec }
   | { decision: "fallthrough"; reason: "no_match" | "deictic" | "compound" | "low_confidence" | "timeout" | "unknown_place" | "disabled";
-      hints?: ClassifierHints });
+      hints?: ClassifierHints; voice?: VoiceMeta });
 interface InstantScope { window: number /* 0..1 */; reasons: string[] /* ≤ 8 codes, ^[a-z][a-z0-9-]{0,31}$ */ }
+interface VoiceMeta { heard?: string /* ≤ 80, the open target as heard */; source?: string /* recognizer id */;
+  via?: "exact" | "alias" | "learned" | "sound" | "peer" | "secondary" | "url" | "visible" /* open set */;
+  didYouMean?: boolean /* list */; check?: boolean /* fallthrough low_confidence */;
+  learnedEntryId?: string /* dictionary entry that decided */; correctsTakeId?: string /* "No, I meant X" */ }
 ```
+
+Voice additions (DESIGN4 §4.5, §5.3, §8). Every field is optional and additive: a request without
+`hypotheses` and `accept` (the Windows host never calls `/instant`; older Mac builds) gets exactly today's
+decision vocabulary, and hosts ignore a `voice` they do not know. Swift mirror: `InstantRequest`,
+`VoiceMeta` and `InstantResponse.voice` in `InstantContracts.swift`, `VoiceHypothesis` in `VoiceTypes.swift`.
+Status: implemented. The harness parses requests strictly (`parseInstantRequest`), uses `hypotheses` on
+voice finals and `accept` for the gated kinds, and sends `voice` on voice decisions; the macOS host sends
+`hypotheses`, `accept: ["suggest", "check", "confirm"]` and the spoken locale on every voice final.
+
+- `hypotheses` (voice `final` only): every engine's final plus n-best alternatives, best first, at most
+  6 of at most 200 characters (UTF-16 units), no control characters. `source` is a recognizer id
+  (`^[a-z][a-z0-9.-]*(/[A-Za-z0-9-]+)?$`, ≤ 32): `parakeet-v3`, `apple-dt/en-US`, `apple-dt/de-DE`,
+  `apple-st/<locale>`, `whisper-turbo`. `role`: `primary` is the primary engine (Phase B: Parakeet);
+  `peer` a first-tier final of equal standing (Phase A: each DictationTranscriber language); `secondary`
+  everything gated, including each n-best alternative (its own entry with its engine's `source`).
+  `confidence` is the mean word (or utterance) confidence and `minConfidence` the lowest word confidence.
+  `text` stays the host's pick. One bad hypothesis rejects the request (`400`, values never echoed). The
+  host keeps the body ≤ 4 KB by dropping trailing hypotheses (Swift `InstantRequest.fitted()`).
+  Hypothesis texts are user content: Node logs counts, roles and sources only.
+- `accept`: decision kinds the host understands beyond today's. Node uses a gated kind only when declared.
+  `suggest`: the host presents `voice.didYouMean` lists as a "Did you mean …?" card (1–3 keys, spoken
+  picks) and reports picks to `POST /dictionary/learn`; a did-you-mean is an ordinary `list`, so Node may
+  send one to any host (older hosts show a focused list, Return opens the first row). `check`: Node may
+  answer a short, low-confidence voice final with `fallthrough` `low_confidence` + `voice.check`, and the
+  host shows "Did I hear that right?" (transcript selected, up to two other hypotheses as chips; Return
+  resends the possibly edited text as a newer `inputMode: "text"` final of the take and asks pi only when
+  that misses; ⌥Return asks pi) instead of starting the agent. Without `check` that gate never runs.
+  `confirm`: Node may hold a voice `act` with `confirm: true` (one Return) for a secondary engine, a peer
+  below the confidence threshold, a bare secondary name or an unknown spoken domain. Without `confirm` it
+  never adds `confirm: true` for voice uncertainty. Unknown `accept` words are ignored, so a newer host
+  can declare more.
+- Did you mean (DESIGN4 §5.3): a `list` with `intent: "open_app"` and `voice: {heard, didYouMean: true}`,
+  ≤ 3 rows. Title "Did you mean Pages?" (one row) or "Did you mean…" (2–3 rows); a new host shows the
+  subtitle `Heard "<heard>"`. The row label is the shorter proper name ("Pages").
+- `open_item` (intent; not the agent tool of the same name): an `act` or `list` that opens files or folders
+  by name — a visible item of the take's target context (`launcher.visibleItems`) or a Spotlight find. An
+  act is `openFile {token}` with title "Open Radfotos" (fixture `act-open-visible.json`); a list is a
+  did-you-mean whose rows may mix files and apps, visible rows first (fixture
+  `list-did-you-mean-visible.json`; Node's `choiceRowsCard`/`openItemCard` build exactly these cards). File
+  rows bind `openFile` (primary), `revealFile` and `copyPath` by token and say where the item is ("in
+  Desktop"); app rows are today's. A picked file row performs its own action through `LauncherPolicy`
+  (executables are revealed) and is never reported to `/dictionary/learn` (only `openApp` rows count as
+  offered). `voice.via: "visible"`: a visible item decided; hosts offer no "Not this" for it and nothing
+  is learned from it. A host that does not know `open_item` performs an act's `openFile` like any
+  other act, but an older macOS host's did-you-mean picks (Return, 1–3, spoken) reach only `openApp` rows;
+  file rows there need the host side of this feature. Status: implemented (macOS bar and Node lane). Rules
+  beyond the table: a name said alone opens an exact visible item only if it is not a dictionary word and has
+  ≥ 4 letters (otherwise it is offered); an app said by its exact name beats a FILE of the same name (an
+  installer "Spotify.dmg"), and only a same-named FOLDER is offered next to the app; an item that is an indexed
+  app's own bundle (an Applications window's "Safari.app") counts as that app; a Spotlight did-you-mean (≤ 3,
+  never an act) follows only full open verbs on hosts that served visible items for the request's context.
+- `voice.learnedEntryId`: a learned dictionary rule decided (`via` `alias` or `learned`); the host's "Not
+  this" (the note's button, or a spoken or typed "no"/"nein" within 5 s) sends `/dictionary/learn`
+  `reject` with it. `voice.correctsTakeId`: the final was "No, I meant X" / "nein, ich meinte X" within 2
+  minutes of an act; Node acted on X (at once, behind one Return, or as did-you-mean rows). Once X ran
+  (the act, the Return, the picked row) the host offers *Remember …?*, which sends `/dictionary/learn`
+  `{takeId: correctsTakeId, kind: "no_i_meant", correctedText}` — the first-tier hypothesis of
+  `voice.source` (the words that said it), or "No, I meant <row title>" for a picked row — never a
+  `confirm` or `pick` of the correcting take.
+- `takeId` reuse: every later final of a take reuses its `takeId` with a newer `seq` — Phase B's two-step
+  final (Parakeet first, then all hypotheses, Apple awaited ≤ 150 ms) and the check state's edited resend
+  (`inputMode: "text"`). The newest final supersedes the older one as before; Node's take memo keeps the
+  first voice final's hypotheses and accumulates the offered targets, so `/dictionary/learn` can validate
+  and diff against them.
+- Partials never act and carry no hypotheses; previews stay hints. Voice partials and finals use the
+  spoken grammar (EN/DE wrappers, German verb-final, sound-alike app names); typed text keeps today's.
+- Voice final order (DESIGN4 §4.5, §6.3): policy runs on every hypothesis's original words first (a
+  refusal of the primary or a peer refuses the take; the host's pick decides a compound or deictic
+  request, which goes to the agent whole; deletion vocabulary in any hypothesis turns the secondaries
+  off). Each first-tier hypothesis (the primary, or the Phase A peers) then runs the lane: exact learned
+  utterance alias → exact learned app name inside an open form → grammar + spoken matcher → learned fixes
+  (longest first, only turning a miss into a hit within the closed targets, policy again), all scoped to
+  its `source`. One actionable result, or several that agree, decides; a lone peer acts at once only at
+  `confidence` ≥ 0.4 (else one Return); peers that heard different apps get "Did you mean …?" with both.
+  Only when no first-tier result is actionable: a secondary's app act on literal evidence that is
+  consistent with the first tier (one of its own top sound-alikes, or a tail word that sounds like it)
+  acts; a bare name or any other secondary result needs one Return. Then an open form with candidates ≥
+  0.66 → did-you-mean (≤ 3); then the check gate (`accept: ["check"]` only: ≤ 8 words and a doubt signal —
+  the sent hypothesis's `minConfidence` < 0.2, a request the heuristic router cannot place (intent `other`
+  at ≤ 0.3), or first-tier hypotheses sharing fewer than half their words while the sent hypothesis's
+  `confidence` is below 0.5; an absent confidence never counts as low there; when any hypothesis has
+  deletion vocabulary the host shows no other readings as chips); else `fallthrough` `no_match`. At most 6
+  resolves share one 60 ms budget (or the sent hypothesis's own, e.g. file search). A request without
+  `hypotheses` is its `text` as the only primary; without `accept` the decision vocabulary is today's.
+- Voice URL guard (DESIGN4 §5.4): a spoken domain whose host is not a known site (`KNOWN_SPOKEN_DOMAINS`
+  or a subdomain of one) is `act` `openURL` with `confirm: true` and `voice.via: "url"` — only for hosts
+  that accept `confirm`; others get today's act.
+- Learned rules act on finals only; typed finals use the exact alias and app name with recognizer `any`.
+  `voice.via` is `alias` (utterance alias) or `learned` (app name, fix), with `learnedEntryId`.
+- "No, I meant X" / "nein, ich meinte X" / "nein, X" (spoken or typed) within 2 minutes of an act: X runs
+  through the lane (as said, else as "open X") and the decision carries `voice.correctsTakeId`; a bare
+  "nein, X" counts only when X acts. Arbitration still governs the take: another first-tier hypothesis's
+  deletion or refusal, or a host pick that decides on its own, decides it instead; a lone peer below 0.4
+  needs one Return; and `correctsTakeId` names only a closed target (an app, an http(s) page, the volume).
+  Node learns nothing from it on its own.
+- Every voice decision (`act`, `list`, `fallthrough`) carries `voice`: `heard` (the open target as heard),
+  `source` (the deciding recognizer; absent without `hypotheses`), `via`, and the flags above. The take
+  memo keeps the heard target and recognizer of the hypothesis the host sent as `text`, the near miss
+  (heard target, top-3 candidates with short names and scores, ≤ 3 other hypotheses) and, as offered
+  targets, only the rows a list shows.
 
 - `scope` (optional, any phase and decision): how likely the text refers to the active window
   (Node rules, < 0.01 ms; reasons are content-free codes such as `pronoun`, `ui-verb`,
@@ -521,6 +684,124 @@ interface InstantScope { window: number /* 0..1 */; reasons: string[] /* ≤ 8 c
   routed tier or request the screenshot. The classifier receives the cleaned utterance
   (wake word and politeness removed); neither text nor hints are logged.
 
+### Personal dictionary (`/dictionary/*`)
+
+Node owns one learned dictionary, `<support>/dictionary.json` (DESIGN4 §6; contracts
+`node-harness/src/contracts/dictionary.ts`, Swift `DictionaryContracts.swift`, fixtures
+`shared/fixtures/dictionary/*.json`). Node is the single writer: 0600 in a 0700 directory, atomic writes,
+≤ 256 KB, and a `revision` that changes on every write. The routes are token-authed like `/instant`,
+answer synchronously, and no agent tool can reach them. Everything in the dictionary is user content:
+it is never logged (log lines are content-free, e.g. `learn kind=pick status=learned`) and never sent to
+a remote classifier. Parsers name fields and codes, never values. The Windows host does not use it.
+Status: served by the harness (all four routes). A host must treat `404` from `/dictionary/*` as an older
+harness: nothing is learned, recognizer terms are empty, and did-you-mean lists still work.
+
+```ts
+interface DictionaryDocument { version: 1; revision: number; settings: DictionarySettings;
+  terms: DictionaryTerm[] /* ≤ 500 */; appNames: LearnedAppName[] /* ≤ 300 */; aliases: LearnedAlias[] /* ≤ 200 */;
+  fixes: LearnedFix[] /* ≤ 300 */ }
+interface DictionarySettings { learn: "off" | "ask" | "picks" /* default picks */; applyToRecognizer: boolean; explainToAgent: boolean }
+interface EntryBase { id: string /* [A-Za-z0-9_-]{1,64} */; recognizer: string /* "any" or a recognizer id */;
+  source: "did-you-mean" | "list-pick" | "confirm" | "no-i-meant" | "transcript-edit" | "journal-fix" | "manual";
+  count: number /* 1..1e6 teachings */; rejections: number; uses: number; createdAt: string /* ISO-8601 */;
+  lastUsedAt?: string; disabledAt?: string /* kept 30 days for Undo */; pinned?: boolean }
+interface DictionaryTerm extends EntryBase { text: string; soundsLike: string[] /* ≤ 4 folded */; lang: "any" | "en" | "de";
+  kind: "word" | "app"; bundleId?: string }
+interface LearnedAppName extends EntryBase { heard: string /* folded */; bundleId: string; display: string; shadows?: string }
+interface LearnedAlias extends EntryBase { phrase: string /* folded whole utterance */; target: SafeTarget }
+interface LearnedFix extends EntryBase { heard: string /* folded */; intended: string }
+type SafeTarget = { kind: "openApp"; bundleId: string } | { kind: "openURL"; url: string /* http(s), no userinfo, ≤ 512 */ }
+  | { kind: "system"; op: "volume.set" | "volume.step" | "volume.mute"; value?: number | boolean };
+```
+
+- Heard phrases (`appNames.heard`, `aliases.phrase`, `fixes.heard`, `terms.soundsLike`) are stored
+  folded: NFD, combining marks removed, ß → ss, lowercase, apostrophes removed, every other non-letter
+  a space; 1–6 words, ≤ 64 characters. Phrases, intended text and terms that contain deletion vocabulary
+  (EN/DE: delete, remove, trash, rm, discard, löschen, entfernen, Papierkorb, …, and phrasings such as
+  "throw … away", "get rid of", "wirf … weg", "in den Müll") or consist only of cancel/confirm
+  words (yes, no, ok, cancel, undo, ja, nein, abbrechen, …) are refused. `POST /dictionary/edit` also
+  refuses (`refused_phrase`) a fix whose heard or intended text contains a command verb (EN/DE open,
+  launch, start, show, switch, search, find): verb rewrites are never generalized, and a learned edit that
+  changes the verb becomes an exact phrase instead. `SafeTarget` is closed: no file,
+  delete, agent or display/appearance target, and volume values use LauncherPolicy's ranges. The host
+  validates the resulting HostAction again before acting.
+- A rule is active while `disabledAt` is absent and `rejections < max(2, count)`. Scope: an entry with
+  `recognizer: "any"` applies to every request; any other only to that recognizer's hypotheses (typed
+  input sees only `any` entries). Learned names and aliases match exactly, never through the fuzzy matcher.
+- Load-time validation equals learn-time validation: a bad entry is dropped with a content-free issue
+  (`{path: "aliases[3]", code}`; codes `invalid_entry`, `invalid_id`, `invalid_phrase`, `refused_phrase`,
+  `unsafe_target`, `invalid_recognizer`, `invalid_counter`, `invalid_timestamp`, `invalid_settings`,
+  `duplicate_id`, `duplicate_rule`, `over_limit`); only a wrong overall shape fails the document.
+  `shared/fixtures/dictionary/hostile.json` pins the result on both sides.
+
+| Route | Body | Result |
+|---|---|---|
+| `POST /dictionary/learn` (≤ 16 KB) | `{takeId, kind: "pick"\|"confirm"\|"no_i_meant"\|"edit"\|"reject", bundleId?, correctedText?, entryId?, confirmed?, regression?}` | `DictionaryWriteResponse` |
+| `GET /dictionary` | — | `DictionaryDocument` (Settings) |
+| `POST /dictionary/edit` (≤ 4 KB) | `{op: "upsert", entry, source?: "manual"\|"journal-fix", confirmed?}` · `{op: "delete"\|"disable"\|"enable"\|"pin"\|"unpin", list, id}` · `{op: "undo", undoToken}` · `{op: "reset", confirmed: true}` · `{op: "settings", settings}` | `DictionaryWriteResponse` |
+| `GET /dictionary/recognizer-terms?max=1..100` | — | `{revision, terms: [{text /* ≤ 80 */, lang}]}`, ranked |
+
+```ts
+interface DictionaryWriteResponse { status: "learned" | "updated" | "needs_confirmation" | "refused"; code?: string;
+  entry?: { list: "terms" | "appNames" | "aliases" | "fixes"; id: string }; line?: string /* ≤ 160, user-visible */;
+  undoToken?: string /* learned/updated only, 10 min */; conflicts?: number[] /* regression indices */; revision: number }
+```
+
+- `learn` kinds: `pick` (a did-you-mean or ambiguity row; `bundleId` required) and `confirm` (Return on a
+  one-Return confirm; `bundleId` optional) are explicit and learn at once with Undo; `no_i_meant` and
+  `edit` (`correctedText` required) are inferred and answer `needs_confirmation` once ("Remember …?");
+  the host resends with `confirmed: true` on Remember. `reject` ("Not this"; optional `entryId`) counts a
+  rejection (two disable a rule taught once). A member that does not belong to the kind is a `400`.
+- Validation against Node's in-memory take memo (the last 20 takes for 2 minutes): an unknown or expired
+  `takeId` is `refused` `unknown_take`; `pick`/`confirm` accept only a bundle id the take offered or acted
+  on (`not_offered`); `edit`/`no_i_meant` only a target the lane itself resolves from `correctedText`
+  (`unresolved`). Other codes: `refused` — `nothing_to_learn`, `alias_guard`, `learning_off`,
+  `unknown_entry`, `undo_expired`, `limit_reached` and the issue codes above; `needs_confirmation` —
+  `ask_mode`, `inferred`, `common_word`, `shadows_app`, `regression`; informational — `rejection_recorded`,
+  `rule_disabled`, `replaced`, `undone`, `reset`.
+- The learned footer is `line` + `undoToken` (*Learned: "recast" → Raycast · Undo*); Undo sends
+  `edit {op: "undo", undoToken}`. A new explicit binding for the same heard phrase disables the old one
+  (kept for Undo). `reset` is Settings → Dictionary → "Forget everything".
+- `regression` (opt-in journal only): ≤ 50 accepted takes `{text, source, target?}`, newest first, texts
+  ≤ 10 KB of UTF-8 in total. Node answers `needs_confirmation` `regression` with the indices of takes the
+  new rule would change: each take is replayed as one voice hypothesis from its `source`, with and without
+  the rule. A take whose decision changes conflicts when the user kept a different `target`, or — without
+  a `target`, which may be an acted URL, a volume change or an answer as well as an agent hand-off — when
+  it acted or answered before the rule. A take that went to the agent and now acts is what a rule is for. The host drops the oldest takes until the body fits 16 KB
+  (`DictionaryLearnRequest.fitted()`).
+- The host fetches `recognizer-terms` when the revision it last saw (from any learn/edit response or at
+  launch) changes, never on key-down, and passes them to the recognizer as contextual strings after the
+  pinned app name and window title (≤ 100, `VoiceContext.maximumStrings`).
+
+### Voice journal (host-owned)
+
+The opt-in journal of the last 50 voice takes (DESIGN4 §6.7; Swift `VoiceJournaling`,
+`VoiceTakeRecord`, `VoiceJournalLimits` in `VoiceTypes.swift`) lives only in the macOS host:
+`<support>/voice-takes/` (0700, files 0600, excluded from backups). Each take is ≤ 15 s of 16 kHz mono
+WAV plus a JSON record `{takeId, at, durationMs, hypotheses, decision?, offered, chosen?, corrected?,
+outcome: acted|confirmed|undone|agent|cancelled|empty, hasAudio}`. It is off by default and on for
+installs whose user opted in; Settings → Dictionary → Recent takes plays, fixes and deletes takes, and
+offers "Delete all takes". Switching it off stops recording and regression texts but keeps existing
+takes viewable and deletable until the user deletes them. Audio and records are never sent to Node,
+uploaded or logged. The only journal content that ever crosses the loopback is the opt-in `regression`
+texts of `POST /dictionary/learn`; a Recent takes → Fix becomes an ordinary `edit` `upsert` with
+`source: "journal-fix"`.
+
+### Speech model store (host-owned)
+
+Downloadable recognition models (Phase B: NVIDIA Parakeet TDT 0.6B v3, 483 MB, CC-BY-4.0, from
+Hugging Face `FluidInference/parakeet-tdt-0.6b-v3-coreml` at revision `7dd20fe6b1797d35f5e3307e8b1732d9a178edfe`,
+pinned in `SpeechModelDescriptor.parakeetV3` with every file's size and SHA-256 in the host) are the host's
+alone (Swift `SpeechModelStoring`, `SpeechModelDescriptor`, `SpeechModelState` in `VoiceTypes.swift`). Files
+go to `<support>/models/<directoryName>/`. Settings → Voice → Recognition shows the state —
+`notDownloaded`, `downloading(progress)`, `compiling` (first load and Neural Engine compile), `ready`,
+`failed`, `deferredByLock` — and downloads only after a consent sheet. The download and every model load
+(the first one compiles for the Neural Engine) take a non-blocking lock on the local-inference coordination
+file and are deferred while it is held; per-take inference takes no lock. Loading happens at launch, when
+voice is enabled, when Settings → Voice opens and after a take while it was deferred, never on the hotkey
+path; until the model is ready voice uses Apple recognition only. Nothing about it crosses the Node
+protocol except the hypotheses' `source` (`parakeet-v3`).
+
 ### `POST /invocations/prepare`
 
 `{"contextId":"ctx-123","takeId":"take-7"}` → `202 {"accepted":true,"takeId":"take-7"}`
@@ -567,10 +848,21 @@ Entry point for a hotkey submission. Request:
   so `/invoke` then skips the instant lane; with a matching `contextId` the session
   prepared by `POST /invocations/prepare` for that take is reused, and advisory classifier
   hints that `/instant` already received for the take are fused into routing (never awaited).
-- `input?: {mode: "text"|"voice", confidence?: 0..1, locale?: BCP 47, durationMs?: 0..3600000,
-  engine?: string}` (strictly validated, 400 otherwise). Voice adds a short "spoken request,
-  may be misheard" note (with the locale only) to the prompt. The record keeps
-  `input: {mode}` only; none of it is logged.
+- `input?: {mode: "text"|"voice", confidence?: 0..1, locale?: BCP 47, durationMs?: 0..3600000, engine?:
+  string}` (strictly validated, 400 otherwise). Voice adds a "spoken request, may be misheard" note (with
+  the locale) to the first prompt, with the rule that a short or unclear spoken request never gets an open
+  question: the agent does the most plausible harmless desktop action, or offers at most three concrete
+  choices in a `show_result` card (installed apps only, never deletion). The note also adds, as quoted
+  data, the take's near miss (when the voice take is in the memo) and up to five personal-dictionary
+  entries whose heard phrase occurs in the request (only while `explainToAgent` is on); follow-ups get the
+  rule without the notes. A voice request of 1–8 words that the heuristics cannot place (intent `other` at
+  ≤ 0.3) routes to the quick tier with `list_apps`, `open_item` and `show_result` active (reason
+  `voice-unclear`). The record keeps `input: {mode}` only; none of it is logged. A multi-engine host fills
+  `confidence`, `locale` and `engine` from the chosen hypothesis: `engine` is the recognizer id's engine
+  part (`apple-dt` of `apple-dt/en-US`, `parakeet-v3`; Swift `VoiceHypothesis.engine`, TS
+  `recognizerEngine`), never the whole id (`input.engine` is `^[\w.-]{1,64}$`, so its `/` is a `400`), and
+  the language goes in `locale`. A take's near-miss (heard target, top candidates, other hypotheses)
+  reaches the agent server-side through the take memo, with no wire change.
 - `context?: ContextWire` (see Context scope): general vs window scope as the host's chip showed
   it. Absent means legacy window behaviour (Windows, older Mac builds).
 - `attachments?: Attachment[]` (see Attachments): what the user explicitly pulled into the

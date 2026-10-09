@@ -61,16 +61,18 @@ import XCTest
     var agent: [AgentRequest] = []
     var performed: [(action: HostAction, contextId: String?, confirmed: Bool)] = []
     var performResult: Result<String, DomainError> = .success("Opened Figma")
+    /// A slow action: `perform` waits for this before it answers.
+    var performGate: (() async -> Void)?
     var preparation: TakePreparation?
     /// Context-flow tests: each take gets a chip (and, with `lazyCapture`, a lazy window capture).
     var makeContext: (() -> ContextChipController)?
     var lazyCapture: (() -> Task<Void, Error>)?
     private(set) var lastContext: ContextChipController?
-    /// Mirrors the panel: a take shows the composer; cancel, agent work and results replace it.
+    /// Mirrors the panel: a take shows an empty composer; cancel, agent work and results replace it.
     weak var surface: RecordingSurface?
     func beginTake() -> CommandTake? {
         guard !refuseTakes else { return nil }
-        begun += 1; surface?.showsComposer = true
+        begun += 1; surface?.showsComposer = true; surface?.composerText = ""
         let prepared = preparation ?? lazyCapture.map { TakePreparation(warm: Task {}, startCapture: $0) }
             ?? TakePreparation(warm: Task {}, capture: Task {})
         let context = makeContext?()
@@ -85,9 +87,11 @@ import XCTest
     func submitToAgent(_ request: AgentRequest) { agent.append(request); surface?.showsComposer = false }
     func perform(_ action: HostAction, contextId: String?, confirmed: Bool) async throws -> String {
         performed.append((action, contextId, confirmed))
+        await performGate?()
         return try performResult.get()
     }
-    func finishInstant() { finished += 1 }
+    /// Mirrors the app: the bar is hidden and the take released.
+    func finishInstant() { finished += 1; surface?.showsComposer = false }
 }
 
 @MainActor final class RecordingSurface: CommandSurface {
@@ -100,20 +104,51 @@ import XCTest
     var previewHandles = false
     var instant: [InstantResult] = []
     var confirmations: [String] = []
+    var acting: [String] = []
     var failures: [String] = []
     var notices: [String] = []
+    /// Every presented voice decision (nil: removed) and the chip handler of the last one.
+    var decisions: [VoiceDecisionPresentation?] = []
+    var decisionChip: ((Int) -> Void)?
+    var heardNothing: [String] = []
+    var selectedAll = 0
+    var toasts: [VoiceToast] = []
+    var toastAction: (@MainActor (Int) -> Void)?
+    var toastDismissals = 0
+    /// Mirrors the panel: Return / 1–3 on a shown choice list emits its row's action through the card.
+    var onRowAction: ((HostAction) -> Void)?
+    var shownDecision: VoiceDecisionPresentation? { decisions.last ?? nil }
     func setListening(_ state: ListeningState) { listening.append(state) }
     func setVoiceTranscript(finalized: String, volatile: String) { transcripts.append(finalized + "|" + volatile) }
     func setVoiceLevel(_ level: Float) {}
     func setComposerText(_ text: String) { composerText = text }
+    func selectComposerText() { selectedAll += 1 }
     func setInstantPreview(_ preview: InstantPreview?) { previews.append(preview) }
+    func showHeardNothing(_ text: String) { heardNothing.append(text); composerText = "" }
+    func presentVoiceDecision(_ presentation: VoiceDecisionPresentation?, onChip: ((Int) -> Void)?) {
+        decisions.append(presentation); decisionChip = onChip
+    }
+    func presentActing(_ text: String) { acting.append(text); showsComposer = false }
+    func presentVoiceToast(_ toast: VoiceToast, onAction: @escaping @MainActor (Int) -> Void) { toasts.append(toast); toastAction = onAction }
+    func dismissVoiceToast() { toastDismissals += 1 }
+    /// The n-th row of the shown choice card, as 1–3 or a click would emit it.
+    func pickRow(_ index: Int) {
+        guard let card = shownDecision?.card else { return }
+        let rows = card.choiceRows
+        guard rows.indices.contains(index) else { return }
+        onRowAction?(rows[index].action)
+    }
     var composerEmpty = true
     var voiceHints: [String] = []
     func showVoiceOffHint(_ text: String) -> Bool {
         guard showsComposer, composerEmpty else { return false }
         voiceHints.append(text); return true
     }
-    func performPreview(_ command: CardCommand) -> Bool { previewCommands.append(command); return previewHandles }
+    func performPreview(_ command: CardCommand) -> Bool {
+        previewCommands.append(command)
+        if command == .primary, shownDecision?.card != nil { pickRow(0); return true }
+        return previewHandles
+    }
     func presentInstant(_ result: InstantResult) { instant.append(result); showsComposer = false }
     func presentConfirmation(_ text: String) { confirmations.append(text); showsComposer = false }
     func presentFailure(_ error: Error) { failures.append((error as? DomainError)?.code ?? "unknown"); showsComposer = false }
@@ -235,7 +270,7 @@ import XCTest
         XCTAssertFalse(voice.calls.contains { if case .start = $0 { return true }; return false }, "No take, no microphone")
     }
 
-    func testHoldStreamsPartialsDebouncedAndActsOnFinalOpenApp() async throws {
+    func testHoldStreamsPartialsWithoutDebounceAndActsOnFinalOpenApp() async throws {
         harness.respond = { request in
             request.phase == .final ? try ScriptedHarness.fixture("act-open-app", seq: request.seq)
                 : try ScriptedHarness.fixture("answer-calc", seq: request.seq)
@@ -244,9 +279,9 @@ import XCTest
         XCTAssertEqual(surface.listening.last, .listening)
         voice.advance(); voice.advance()
         XCTAssertEqual(surface.transcripts.last, "|what's 15% of")
-        XCTAssertTrue(harness.requests.isEmpty, "Partials wait for 150 ms of quiet")
-        scheduler.advance(0.2); await settle()
-        XCTAssertEqual(harness.requests.count, 1, "Two partials, one request: latest wins")
+        XCTAssertTrue(harness.requests.isEmpty, "A burst of partials is previewed on the next turn…")
+        scheduler.advance(0); await settle()
+        XCTAssertEqual(harness.requests.count, 1, "…with no debounce, latest wins")
         let partial = try XCTUnwrap(harness.requests.first)
         XCTAssertEqual(partial.phase, .partial); XCTAssertEqual(partial.text, "what's 15% of")
         XCTAssertEqual(partial.inputMode, "voice"); XCTAssertEqual(partial.locale, "en-US")
@@ -263,10 +298,13 @@ import XCTest
         XCTAssertEqual(host.performed.first?.action, .openApp(bundleId: "com.figma.Desktop"))
         XCTAssertEqual(host.performed.first?.contextId, "ctx-1")
         XCTAssertEqual(host.performed.first?.confirmed, false)
-        XCTAssertEqual(surface.confirmations, ["Opened Figma"])
-        XCTAssertEqual(host.finished, 0, "The confirmation stays briefly")
-        scheduler.advance(1.3)
-        XCTAssertEqual(host.finished, 1, "Then the bar goes away")
+        XCTAssertEqual(surface.acting, ["Opening Figma…"], "The act shows at once; the launch is not awaited")
+        XCTAssertTrue(surface.confirmations.isEmpty)
+        XCTAssertEqual(host.finished, 0, "The capsule stays briefly")
+        scheduler.advance(0.39)
+        XCTAssertEqual(host.finished, 0)
+        scheduler.advance(0.02)
+        XCTAssertEqual(host.finished, 1, "Then the bar goes away after 0.4 s")
     }
 
     func testTypingWhileListeningAbandonsVoiceAndKeepsText() async {
@@ -434,13 +472,23 @@ import XCTest
 
     func testVoiceFallthroughCarriesSpokenInput() async throws {
         harness.respond = { try ScriptedHarness.fixture("fallthrough-no-match", seq: $0.seq) }
-        controller.language = .germanDE
+        voice.script = [.final("Wie spät ist es gerade in Tokio?")]
+        voice.nextFinal = VoiceFinal(hypotheses: [
+            VoiceHypothesis(text: "Wie spät ist es gerade in Tokio?", source: "apple-dt/de-DE", role: .peer, confidence: 0.82, locale: "de-DE"),
+            VoiceHypothesis(text: "We spat is as gay rather in Tokyo?", source: "apple-dt/en-US", role: .peer, confidence: 0.31, locale: "en-US"),
+        ])
         hold(); controller.hotkeyReleased(); await settle()
         let request = try XCTUnwrap(host.agent.first)
-        XCTAssertEqual(request.input?.mode, "voice"); XCTAssertEqual(request.input?.locale, "de-DE")
-        XCTAssertEqual(request.input?.engine, "apple-speech")
+        XCTAssertEqual(request.input?.mode, "voice"); XCTAssertEqual(request.input?.locale, "de-DE", "the take's language hint")
+        XCTAssertEqual(request.input?.engine, "apple-dt", "the engine part of the deciding hypothesis, never the locale")
+        XCTAssertEqual(request.input?.confidence, 0.82)
         XCTAssertNotNil(request.input?.durationMs)
-        XCTAssertEqual(request.prompt, "What's 15% of 340?")
+        XCTAssertEqual(request.takeId, "take-1", "the /invoke takeId is the /instant takeId")
+        XCTAssertEqual(request.prompt, "Wie spät ist es gerade in Tokio?")
+        let final = try XCTUnwrap(harness.requests.last)
+        XCTAssertEqual(final.takeId, "take-1"); XCTAssertEqual(final.locale, "de-DE")
+        XCTAssertEqual(final.hypotheses?.map(\.source), ["apple-dt/de-DE", "apple-dt/en-US"])
+        XCTAssertEqual(final.accept, [.suggest, .check, .confirm])
     }
 
     func testOptionReturnAlwaysAsksTheAgent() async {
@@ -705,13 +753,198 @@ import XCTest
         XCTAssertNil(ComposerKeyPolicy.intent(keyCode: 36, modifiers: [], composing: true))
     }
 
-    func testVoiceRaisesTheDefaultWarmTTLButTheKnobWins() throws {
+    func testVoiceKeepsNodeWarmButTheKnobWins() throws {
         let support = FileManager.default.temporaryDirectory.appendingPathComponent("pi-os-ttl-" + UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: support) }
         let defaults = try MacConfiguration(env: ["PI_OS_SUPPORT_DIR": support.path])
         XCTAssertEqual(defaults.warmTTL(voiceEnabled: false), 120)
-        XCTAssertEqual(defaults.warmTTL(voiceEnabled: true), 600)
+        XCTAssertNil(defaults.warmTTL(voiceEnabled: true), "voice on: Node is never idle-stopped")
         let explicit = try MacConfiguration(env: ["PI_OS_SUPPORT_DIR": support.path, "PI_OS_NODE_WARM_TTL_SECONDS": "30"])
         XCTAssertEqual(explicit.warmTTL(voiceEnabled: true), 30)
+    }
+
+    // MARK: Phase B: the two-step final (DESIGN4 §4.2)
+
+    private func parakeet(_ text: String) -> VoiceHypothesis {
+        VoiceHypothesis(text: text, source: RecognizerID.parakeetV3, role: .primary, confidence: 0.93)
+    }
+    private func apple(_ text: String, _ language: String) -> VoiceHypothesis {
+        VoiceHypothesis(text: text, source: "apple-dt/" + language, role: .secondary, confidence: 0.7, locale: language)
+    }
+    private static let noMatch = #"{"seq":0,"elapsedMs":1,"source":"grammar","decision":"fallthrough","reason":"no_match"}"#
+    /// `/instant` finals: `primary` for the primary engine's final alone (one hypothesis), `complete` for every engine's.
+    private func finals(primary: String, complete: String, voice meta: [String: Any]? = nil) {
+        harness.respond = { request in
+            guard request.phase == .final else { return try ScriptedHarness.response(Self.noMatch, seq: request.seq) }
+            let name = (request.hypotheses?.count ?? 0) == 1 ? primary : complete
+            var object = try JSONSerialization.jsonObject(with: Data(contentsOf: ScriptedHarness.fixtures.appendingPathComponent(name + ".json"))) as! [String: Any]
+            if let meta { object["voice"] = meta }
+            object["seq"] = request.seq
+            return try JSONDecoder().decode(InstantResponse.self, from: JSONSerialization.data(withJSONObject: object))
+        }
+    }
+    /// One hold with a loaded primary engine: Parakeet's final alone (`.primary`), then every engine's (`.complete`).
+    private func holdPhaseB(_ text: String, apple others: [VoiceHypothesis]) {
+        voice.script = [.final(text)]
+        voice.nextPrimaryFinal = VoiceFinal(hypotheses: [parakeet(text)], timing: VoiceTiming(holdMs: 900, finalMs: ["parakeet-v3": 38]))
+        voice.nextFinal = VoiceFinal(hypotheses: [parakeet(text)] + others,
+                                     timing: VoiceTiming(holdMs: 900, finalMs: ["parakeet-v3": 38, "apple-dt/en-US": 54, "apple-dt/de-DE": 61]),
+                                     audio: VoiceAudio(samples: [1, 2, 3, 4]))
+        hold(); controller.hotkeyReleased()
+    }
+    private func timingLines(_ log: VoiceTimingLog) throws -> [String] {
+        log.flush()
+        guard FileManager.default.fileExists(atPath: log.file.path) else { return [] }
+        return try String(contentsOf: log.file, encoding: .utf8).split(separator: "\n").map(String.init)
+    }
+    private func temporaryTimingLog() throws -> VoiceTimingLog {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("pi-os-two-step-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+        return VoiceTimingLog(directory: directory)
+    }
+    private func journalRecord(_ journal: FlowVoiceJournal, _ takeId: String) async -> VoiceTakeRecord? {
+        for _ in 0..<400 {
+            if let record = await journal.record(takeId) { return record }
+            try? await Task.sleep(nanoseconds: 1_000_000)
+        }
+        return nil
+    }
+
+    func testAnActOnThePrimaryFinalSendsNoSecondFinalButTheJournalAndTimingUseTheCompleteFinal() async throws {
+        let journal = FlowVoiceJournal(log: FlowEventLog())
+        controller.journal = journal
+        let timing = try temporaryTimingLog()
+        controller.timingLog = timing
+        var finished = 0
+        controller.voiceTakeFinished = { finished += 1 }
+        finals(primary: "act-open-app", complete: "act-open-app")
+        holdPhaseB("open figma", apple: [apple("open figma", "en-US"), apple("öffne figma", "de-DE")])
+        XCTAssertEqual(finished, 0, "nothing runs on the key-up path itself")
+        await settle()
+        let sent = harness.requests.filter { $0.phase == .final }
+        XCTAssertEqual(sent.count, 1, "the act settled the take: Apple's final is never sent")
+        XCTAssertEqual(sent.first?.hypotheses?.map(\.source), ["parakeet-v3"], "the primary engine's final alone")
+        XCTAssertEqual(sent.first?.takeId, "take-1"); XCTAssertEqual(sent.first?.accept, [.suggest, .check, .confirm])
+        XCTAssertEqual(host.performed.map(\.action), [.openApp(bundleId: "com.figma.Desktop")])
+        XCTAssertEqual(surface.acting, ["Opening Figma…"])
+        XCTAssertEqual(finished, 1, "the take's last stage is in")
+        scheduler.advance(0.4)
+        XCTAssertEqual(host.finished, 1)
+        let stored = await journalRecord(journal, "take-1")
+        let record = try XCTUnwrap(stored)
+        XCTAssertEqual(record.hypotheses.map(\.source), ["parakeet-v3", "apple-dt/en-US", "apple-dt/de-DE"], "every engine's hypotheses")
+        XCTAssertTrue(record.hasAudio)
+        XCTAssertEqual(record.decision, "act"); XCTAssertEqual(record.outcome, .acted); XCTAssertEqual(record.chosen, "com.figma.Desktop")
+        let line = try XCTUnwrap(try timingLines(timing).first)
+        XCTAssertTrue(line.contains("final=apple-dt/de-DE:61,apple-dt/en-US:54,parakeet-v3:38"), line)
+        XCTAssertTrue(line.contains("hypotheses=3 finals=1"), line)
+        XCTAssertTrue(line.contains("decision=act") && line.contains("hidden=400"), line)
+    }
+
+    func testAnUndoableEarlyActWritesItsTimingLineOnceTheCompleteFinalIsIn() async throws {
+        let timing = try temporaryTimingLog()
+        controller.timingLog = timing
+        finals(primary: "act-learned", complete: "act-learned")
+        holdPhaseB("open recast", apple: [apple("open raycast", "en-US")])
+        await settle()
+        XCTAssertEqual(harness.requests.filter { $0.phase == .final }.count, 1)
+        XCTAssertEqual(surface.toasts.last?.kind, .notThis, "the bar hid at once; the note carries the undo")
+        let lines = try timingLines(timing)
+        XCTAssertEqual(lines.count, 1, lines.joined(separator: "\n"))
+        XCTAssertTrue(lines[0].contains("final=apple-dt/de-DE:61,apple-dt/en-US:54,parakeet-v3:38"), lines[0])
+        XCTAssertTrue(lines[0].contains("hypotheses=2 finals=1") && lines[0].contains("recognizer=parakeet-v3 via=learned"), lines[0])
+    }
+
+    func testAListOnThePrimaryFinalWaitsForTheCompleteFinalSentAsANewerSeqOfTheSameTake() async throws {
+        let timing = try temporaryTimingLog()
+        controller.timingLog = timing
+        // Parakeet alone: "Did you mean Raycast?"; with Apple's readings: an exact act. Only the act is ever shown.
+        finals(primary: "list-did-you-mean", complete: "act-open-app")
+        holdPhaseB("open figmar", apple: [apple("open figma", "en-US")])
+        await settle()
+        let sent = harness.requests.filter { $0.phase == .final }
+        XCTAssertEqual(sent.count, 2)
+        XCTAssertEqual(sent[1].seq, sent[0].seq + 1, "a newer seq")
+        XCTAssertEqual(sent[1].takeId, sent[0].takeId, "the same take")
+        XCTAssertEqual(sent[1].hypotheses?.map(\.source), ["parakeet-v3", "apple-dt/en-US"], "every hypothesis")
+        XCTAssertEqual(sent[1].accept, [.suggest, .check, .confirm])
+        XCTAssertTrue(surface.decisions.isEmpty, "the first final's list was never shown: one decision per take")
+        XCTAssertEqual(host.performed.map(\.action), [.openApp(bundleId: "com.figma.Desktop")])
+        scheduler.advance(0.4)
+        XCTAssertTrue(try XCTUnwrap(try timingLines(timing).first).contains("finals=2"))
+    }
+
+    func testAFallthroughOnBothFinalsHandsTheCompleteFinalToTheAgentOnce() async throws {
+        finals(primary: "fallthrough-no-match", complete: "fallthrough-no-match")
+        holdPhaseB("wie spät ist es in tokio", apple: [apple("wie spät ist es in Tokio", "de-DE"), apple("we spat is as in tokyo", "en-US")])
+        await settle()
+        let sent = harness.requests.filter { $0.phase == .final }
+        XCTAssertEqual(sent.count, 2)
+        XCTAssertEqual(sent.map { $0.hypotheses?.count ?? 0 }, [1, 3])
+        XCTAssertEqual(host.agent.count, 1, "one hand-off, after the complete final")
+        let request = try XCTUnwrap(host.agent.first)
+        XCTAssertEqual(request.takeId, "take-1")
+        XCTAssertEqual(request.input?.engine, "parakeet-v3", "/invoke input.engine: the chosen hypothesis's engine")
+        XCTAssertEqual(request.input?.locale, "de-DE")
+        XCTAssertEqual(sent.last?.locale, "de-DE")
+    }
+
+    func testWhenAppleFailsAfterThePrimaryFinalThatFinalDecidesTheTake() async throws {
+        finals(primary: "list-did-you-mean", complete: "act-open-app")
+        voice.failAfterPrimary = VoiceError.unavailable("The recognizer stopped.")
+        holdPhaseB("open recast", apple: [apple("open raycast", "en-US")])
+        await settle()
+        let sent = harness.requests.filter { $0.phase == .final }
+        XCTAssertEqual(sent.map { $0.hypotheses?.map(\.source) ?? [] }, [["parakeet-v3"], ["parakeet-v3"]],
+                       "no complete final: the primary engine's final is sent again as the take's final")
+        XCTAssertEqual(sent[1].seq, sent[0].seq + 1)
+        XCTAssertTrue(surface.failures.isEmpty, "a usable final is never reported as a voice failure")
+        XCTAssertEqual(surface.decisions.compactMap { $0 }.map(\.kind), [.didYouMean], "one decision for the take")
+        XCTAssertFalse(controller.finalizing)
+    }
+
+    func testWithoutALoadedModelTheOnlyStageIsCompleteAsInPhaseA() async throws {
+        harness.respond = { request in
+            request.phase == .final ? try ScriptedHarness.fixture("act-open-app", seq: request.seq)
+                : try ScriptedHarness.response(Self.noMatch, seq: request.seq)
+        }
+        voice.script = [.final("open figma")]
+        voice.nextPrimaryFinal = nil
+        voice.nextFinal = VoiceFinal(hypotheses: [VoiceHypothesis(text: "open figma", source: "apple-dt/en-US", role: .peer, confidence: 0.9, locale: "en-US"),
+                                                  VoiceHypothesis(text: "öffne figma", source: "apple-dt/de-DE", role: .peer, confidence: 0.4, locale: "de-DE")])
+        hold(); controller.hotkeyReleased(); await settle()
+        let sent = harness.requests.filter { $0.phase == .final }
+        XCTAssertEqual(sent.count, 1)
+        XCTAssertEqual(sent.first?.hypotheses?.map(\.source), ["apple-dt/en-US", "apple-dt/de-DE"])
+        XCTAssertEqual(host.performed.count, 1)
+    }
+
+    // MARK: Languages I speak (D-T7)
+
+    func testOnlyTheSelectedLanguagesStartAndTheLocaleIsChosenAmongThem() async throws {
+        harness.respond = { try ScriptedHarness.fixture("fallthrough-no-match", seq: $0.seq) }
+        let english = "open the browser please"
+        controller.language = .germanDE
+        controller.languages = [.germanDE]
+        voice.script = [.final(english)]
+        voice.nextFinal = VoiceFinal(hypotheses: [VoiceHypothesis(text: english, source: "apple-dt/de-DE", role: .peer, confidence: 0.6, locale: "de-DE")])
+        hold()
+        XCTAssertEqual(voice.languages, [.germanDE], "an unchecked language is never started")
+        XCTAssertEqual(voice.calls.first, .start(.germanDE, ["TextEdit", "Notes.md"]))
+        controller.hotkeyReleased(); await settle()
+        XCTAssertEqual(harness.requests.last { $0.phase == .final }?.locale, "de-DE", "the /instant locale among the languages spoken")
+        XCTAssertEqual(host.agent.first?.input?.locale, "de-DE", "the /invoke input.locale too")
+
+        // Both checked, English preferred: an English take is hinted English.
+        controller.interrupt(); surface.showsComposer = false
+        controller.language = .englishUS
+        controller.languages = [.englishUS, .germanDE]
+        voice.nextFinal = VoiceFinal(hypotheses: [VoiceHypothesis(text: english, source: "apple-dt/en-US", role: .peer, confidence: 0.9, locale: "en-US")])
+        hold()
+        XCTAssertEqual(voice.languages, [.englishUS, .germanDE])
+        controller.hotkeyReleased(); await settle()
+        XCTAssertEqual(harness.requests.last { $0.phase == .final }?.locale, "en-US")
+        XCTAssertEqual(host.agent.last?.input?.locale, "en-US")
     }
 }

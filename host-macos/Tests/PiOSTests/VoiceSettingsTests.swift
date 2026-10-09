@@ -41,6 +41,8 @@ import XCTest
         XCTAssertEqual(window.footerTitles, ["Cancel", "Apply"])
         window.show(.voice)
         XCTAssertEqual(window.footerTitles, ["Done"], "Voice switches apply at once: no Apply, no Return binding")
+        window.show(.dictionary)
+        XCTAssertEqual(window.footerTitles, ["Done"], "Dictionary edits apply at once")
         window.show(.classifier)
         XCTAssertEqual(window.footerTitles, ["Done"])
         window.show(.general)
@@ -54,64 +56,363 @@ import XCTest
         XCTAssertEqual(explicit.effortLabelText, "Reasoning effort")
     }
 
+    private func suite() -> UserDefaults { UserDefaults(suiteName: "dev.pi-os.voice-settings-test." + UUID().uuidString)! }
+    private func voiceSettings(_ defaults: UserDefaults, system: [String] = ["en-US", "de-DE"]) -> VoiceSettings {
+        VoiceSettings(defaults: defaults, systemLanguages: { system })
+    }
+    /// Lets fire-and-forget reservation tasks run.
+    private func settle() async { for _ in 0..<60 { await Task.yield() } }
+
     func testVoicePageReadsStatusWithoutPromptingOrDownloading() async {
         _ = NSApplication.shared
-        let defaults = UserDefaults(suiteName: "dev.pi-os.voice-settings-test." + UUID().uuidString)!
-        let settings = VoiceSettings(defaults: defaults)
+        let settings = voiceSettings(suite())
         XCTAssertFalse(settings.enabled, "Voice is off by default")
         XCTAssertEqual(settings.language, .englishUS)
+        XCTAssertEqual(settings.languages, [.englishUS, .germanDE], "Default: the system's preferred languages that pi-os supports")
         let voice = ModelSettingsPreview.FakeVoiceSystem(permissions: VoicePermissions(microphone: .denied, speechRecognition: .notDetermined),
                                                          assets: [.englishUS: .installed, .germanDE: .notInstalled])
         let window = SettingsWindow(harness: ModelSettingsPreview.Service(), notifier: nil, voice: voice, voiceSettings: settings)
         window.show(.voice)
         await window.waitUntilLoaded()
         XCTAssertEqual(window.page, .voice)
-        XCTAssertEqual(Array(window.voiceRowText.prefix(2)), ["Not allowed", "Not requested yet"])
-        XCTAssertEqual(window.voiceRowText[2], "English (US): ready on this Mac")
-        XCTAssertEqual(window.voiceButtonTitles, ["Open System Settings…", "Request Access…"])
+        XCTAssertEqual(window.voiceRowText, ["Not allowed", "Not requested yet", "Ready on this Mac", "Download needed"])
+        XCTAssertEqual(window.languageTitles, ["English (US)", "Deutsch (Deutschland)"], "The checkboxes keep the endonym")
+        XCTAssertEqual(window.languageChecked, [true, true], "English and German are both on (D-T7)")
+        XCTAssertEqual(window.voiceButtonTitles, ["Open System Settings…", "Request Access…", "Download"])
         XCTAssertTrue(window.voiceButtonsFit, "No truncated button titles")
-        XCTAssertEqual(window.voiceButtonLabels, ["Microphone: Open System Settings", "Speech Recognition: Request Access"])
+        XCTAssertEqual(window.voiceButtonLabels, ["Microphone: Open System Settings", "Speech Recognition: Request Access",
+                                                  "Download German (Germany) speech model"])
         XCTAssertTrue(voice.requests.isEmpty, "Opening Settings never prompts or downloads")
-        settings.language = .germanDE
-        window.show(.voice); await window.waitUntilLoaded()
-        XCTAssertEqual(window.voiceRowText[2], "German (Germany): download needed", "English sentences use English names")
-        XCTAssertTrue(window.voiceButtonTitles.contains("Download"))
-        XCTAssertTrue(window.voiceButtonLabels.contains("Download German (Germany) speech model"))
-        XCTAssertTrue(window.voiceButtonsFit)
-        XCTAssertTrue(voice.requests.isEmpty)
+        XCTAssertNil(window.recognition, "Without a model store the Recognition section is hidden")
+        XCTAssertEqual(window.languagesNoteText, VoiceSettingsText.languagesHint, "A fresh install has nothing to migrate")
+        window.close()
     }
 
-    func testLanguageChangeReservesOnlyAnInstalledModel() async throws {
+    func testTheFallbackModelStillOffersTheBetterDownload() async {
         _ = NSApplication.shared
-        let defaults = UserDefaults(suiteName: "dev.pi-os.voice-settings-test." + UUID().uuidString)!
-        let settings = VoiceSettings(defaults: defaults)
-        settings.enabled = true
         let voice = ModelSettingsPreview.FakeVoiceSystem()
+        // German runs on the SpeechTranscriber fallback; its dictation model is missing (S1: offer Download anyway).
+        voice.support[.germanDE] = VoiceLocaleSupport(language: .germanDE, dictation: .notInstalled, dictationLocale: VoiceLanguage.germanDE.locale,
+                                                      speech: .installed, speechLocale: VoiceLanguage.germanDE.locale)
+        // English has no dictation model on this Mac at all, only the fallback: nothing better to download.
+        voice.support[.englishUS] = VoiceLocaleSupport(language: .englishUS, dictation: .unsupported, speech: .installed,
+                                                       speechLocale: VoiceLanguage.englishUS.locale)
+        let window = SettingsWindow(harness: ModelSettingsPreview.Service(), notifier: nil, voice: voice, voiceSettings: voiceSettings(suite()))
+        window.show(.voice); await window.waitUntilLoaded()
+        XCTAssertEqual(Array(window.voiceRowText.suffix(2)), ["Ready on this Mac", "Basic model ready"])
+        XCTAssertEqual(window.voiceButtonLabels.last, "Download German (Germany) speech model")
+        XCTAssertEqual(window.voiceButtonTitles.filter { $0 == "Download" }.count, 1)
+        XCTAssertTrue(voice.requests.isEmpty)
+        window.downloadLanguage(.germanDE); await window.waitUntilLoaded()
+        XCTAssertEqual(voice.requests, ["install:de-DE"], "Only the button downloads, and only its language")
+        window.close()
+    }
+
+    func testCheckingLanguagesReservesInstalledModelsAndReleasesUncheckedOnes() async throws {
+        _ = NSApplication.shared
+        let settings = voiceSettings(suite())
+        settings.enabled = true
+        let voice = ModelSettingsPreview.FakeVoiceSystem(assets: [.englishUS: .installed, .germanDE: .installed])
         let window = SettingsWindow(harness: ModelSettingsPreview.Service(), notifier: nil, voice: voice, voiceSettings: settings)
-        await window.waitUntilLoaded()
+        window.show(.voice); await window.waitUntilLoaded()
         XCTAssertTrue(voice.requests.isEmpty, "Opening Settings reserves nothing")
-        window.selectLanguage(.germanDE)
-        for _ in 0..<40 { await Task.yield() }
-        XCTAssertTrue(voice.requests.isEmpty, "A missing model waits for the Download button")
-        window.selectLanguage(.englishUS)
-        for _ in 0..<40 { await Task.yield() }
-        XCTAssertEqual(voice.requests, ["install:en-US"], "An installed model is reserved for pi-os (no download)")
+        window.setLanguage(.germanDE, spoken: false); await window.waitUntilLoaded(); await settle()
+        XCTAssertEqual(settings.languages, [.englishUS])
+        XCTAssertEqual(Set(voice.requests), ["release:de-DE", "install:en-US"], "Unchecked: released; still spoken and installed: reserved")
+        XCTAssertEqual(window.languageChecked, [true, false])
+        XCTAssertEqual(window.languageCheckEnabled, [false, true], "The last language cannot be unchecked")
+        XCTAssertEqual(window.voiceButtonTitles.filter { $0 == "Download" }, [], "An unchecked language offers no download")
+        window.setLanguage(.englishUS, spoken: false); await window.waitUntilLoaded()
+        XCTAssertEqual(settings.languages, [.englishUS], "Never empty")
+        let before = voice.requests.count
+        window.setLanguage(.germanDE, spoken: true); await window.waitUntilLoaded(); await settle()
+        XCTAssertEqual(settings.languages, [.englishUS, .germanDE])
+        XCTAssertEqual(Set(voice.requests.dropFirst(before)), ["install:en-US", "install:de-DE"],
+                       "Every spoken language whose model is installed is reserved (no download)")
         settings.enabled = false
-        window.selectLanguage(.englishUS)
-        for _ in 0..<40 { await Task.yield() }
-        XCTAssertEqual(voice.requests.count, 1, "Voice off reserves nothing")
+        let off = voice.requests.count
+        window.setLanguage(.germanDE, spoken: true); await window.waitUntilLoaded(); await settle()
+        XCTAssertEqual(voice.requests.count, off, "Voice off reserves nothing")
+        // A missing model is never installed without its button.
+        settings.enabled = true
+        voice.assets[.germanDE] = .notInstalled
+        let missing = voice.requests.count
+        window.setLanguage(.germanDE, spoken: true); await window.waitUntilLoaded(); await settle()
+        XCTAssertFalse(voice.requests.dropFirst(missing).contains("install:de-DE"), "A missing model waits for the Download button")
+        window.close()
+    }
+
+    func testVoiceSettingsLanguagesArePreferredFirstAndNeverEmpty() {
+        let defaults = suite()
+        let settings = voiceSettings(defaults, system: ["fr-FR", "de-CH", "en-GB", "de-DE"])
+        XCTAssertEqual(settings.languages, [.germanDE, .englishUS], "Supported system languages, system order, no duplicates")
+        XCTAssertEqual(settings.language, .germanDE)
+        settings.languages = []
+        XCTAssertEqual(settings.languages, [.germanDE, .englishUS], "An empty set is ignored")
+        settings.languages = [.englishUS, .englishUS]
+        XCTAssertEqual(settings.languages, [.englishUS])
+        XCTAssertEqual(settings.language, .englishUS, "The preferred language follows what is spoken")
+        settings.language = .germanDE
+        XCTAssertEqual(settings.languages, [.germanDE, .englishUS], "Preferring a language turns it on and puts it first")
+        XCTAssertEqual(defaults.stringArray(forKey: VoiceSettings.languagesKey), ["en-US", "de-DE"])
+        XCTAssertEqual(voiceSettings(suite(), system: ["fr-FR"]).languages, [.englishUS], "No supported system language: English")
+        let garbage = suite(); garbage.set(["xx", "??"], forKey: VoiceSettings.languagesKey)
+        XCTAssertEqual(voiceSettings(garbage).languages, [.englishUS, .germanDE], "Unreadable stored languages fall back to the default")
+        XCTAssertEqual(VoiceSettings.ordered([.englishUS, .germanDE], preferred: .germanDE), [.germanDE, .englishUS])
+    }
+
+    func testMigrationFromASingleLanguageShowsAOneTimeNote() async {
+        _ = NSApplication.shared
+        let defaults = suite()
+        defaults.set("de-DE", forKey: VoiceSettings.languageKey) // an earlier build's single language
+        let settings = voiceSettings(defaults)
+        XCTAssertEqual(settings.languages, [.germanDE, .englishUS], "Both on, the old choice first (preferred order only)")
+        let window = SettingsWindow(harness: ModelSettingsPreview.Service(), notifier: nil, voice: ModelSettingsPreview.FakeVoiceSystem(),
+                                    voiceSettings: settings)
+        XCTAssertEqual(defaults.stringArray(forKey: VoiceSettings.languagesKey), ["de-DE", "en-US"], "Migrated once")
+        XCTAssertTrue(settings.languagesNotePending)
+        window.show(.voice); await window.waitUntilLoaded()
+        XCTAssertEqual(window.languagesNoteText,
+                       "New: pi-os now listens for German (Germany) and English (US) at the same time. Uncheck any language you don’t speak.")
+        XCTAssertFalse(settings.languagesNotePending, "Shown once")
+        window.show(.general); window.show(.voice)
+        XCTAssertTrue(window.languagesNoteText.hasPrefix("New:"), "It stays while this window is open")
+        window.close()
+        let again = SettingsWindow(harness: ModelSettingsPreview.Service(), notifier: nil, voice: ModelSettingsPreview.FakeVoiceSystem(),
+                                   voiceSettings: settings)
+        again.show(.voice); await again.waitUntilLoaded()
+        XCTAssertEqual(again.languagesNoteText, VoiceSettingsText.languagesHint, "Gone next time")
+        again.close()
+        XCTAssertFalse(settings.migrateLanguages(), "Idempotent")
+        // A single stored language and a system that lists only that one: nothing new, no note.
+        let single = suite(); single.set("en-US", forKey: VoiceSettings.languageKey)
+        let english = voiceSettings(single, system: ["en-US"])
+        XCTAssertFalse(english.migrateLanguages())
+        XCTAssertEqual(english.languages, [.englishUS])
+        XCTAssertFalse(english.languagesNotePending)
+        // A fresh install gets the default without a note.
+        let fresh = voiceSettings(suite())
+        XCTAssertFalse(fresh.migrateLanguages())
+        XCTAssertFalse(fresh.languagesNotePending)
     }
 
     func testVoiceUnavailableOnOlderSystemsKeepsTypingAndDisablesTheSwitch() async {
         _ = NSApplication.shared
-        let defaults = UserDefaults(suiteName: "dev.pi-os.voice-settings-test." + UUID().uuidString)!
         let window = SettingsWindow(harness: ModelSettingsPreview.Service(), notifier: nil,
-                                    voice: ModelSettingsPreview.FakeVoiceSystem(engineAvailable: false), voiceSettings: VoiceSettings(defaults: defaults))
+                                    voice: ModelSettingsPreview.FakeVoiceSystem(engineAvailable: false), voiceSettings: voiceSettings(suite()))
         window.show(.voice); await window.waitUntilLoaded()
-        XCTAssertEqual(window.voiceRowText, ["Not available", "Not available", "Not available"])
+        XCTAssertEqual(window.voiceRowText, ["Not available", "Not available", "Not available", "Not available"])
         XCTAssertTrue(window.voiceButtonTitles.isEmpty)
+        XCTAssertEqual(window.languageCheckEnabled, [false, false])
         let readiness = await ModelSettingsPreview.FakeVoiceSystem(engineAvailable: false).readiness(enabled: true, language: .englishUS)
         if case .unavailable(let error) = readiness { XCTAssertEqual(error.code, "voice_unavailable") } else { XCTFail() }
+        window.close()
+    }
+
+    // MARK: Recognition (Parakeet)
+
+    private func recognitionWindow(_ store: ModelSettingsPreview.FakeSpeechModelStore, confirm: Bool = false) async -> SettingsWindow {
+        _ = NSApplication.shared
+        let window = SettingsWindow(harness: ModelSettingsPreview.Service(), notifier: nil, voice: ModelSettingsPreview.FakeVoiceSystem(),
+                                    voiceSettings: voiceSettings(suite()), speechModels: store, prompts: ModelSettingsPreview.prompts(confirm: confirm))
+        window.show(.voice); await window.waitUntilLoaded()
+        return window
+    }
+
+    func testTheConsentSheetComesBeforeAnyDownload() async throws {
+        let store = ModelSettingsPreview.FakeSpeechModelStore()
+        let window = await recognitionWindow(store)
+        let recognition = try XCTUnwrap(window.recognition)
+        XCTAssertEqual(recognition.statusText, "Parakeet TDT 0.6B v3 (483 MB)")
+        XCTAssertEqual(recognition.buttonTitle, "Download…")
+        var shown: [SpeechModelConsent] = []
+        recognition.presentConsent = { shown.append($0); return false }
+        recognition.press(); await window.waitUntilLoaded()
+        XCTAssertEqual(shown.count, 1)
+        XCTAssertTrue(store.calls.isEmpty, "Declined: nothing downloads")
+        let consent = try XCTUnwrap(shown.first)
+        XCTAssertEqual(consent.title, "Download enhanced recognition?")
+        XCTAssertEqual(consent.lines, [
+            "NVIDIA Parakeet TDT 0.6B v3, about 483 MB.",
+            "From Hugging Face: FluidInference/parakeet-tdt-0.6b-v3-coreml, revision 7dd20fe6b1797d35f5e3307e8b1732d9a178edfe.",
+            "Parakeet TDT 0.6B v3 by NVIDIA, CC BY 4.0",
+            "It stays on this Mac; audio never leaves pi-os.",
+            "Apple’s recognition keeps working while it downloads and prepares.",
+        ])
+        var seen: [SpeechModelState] = []
+        store.downloadSteps = [.downloading(progress: 0.25), .downloading(progress: 0.8), .compiling, .ready]
+        recognition.presentConsent = { _ in true }
+        let watch = Task { @MainActor in for await state in store.stateUpdates() { seen.append(state); if state == .ready { break } } }
+        recognition.press(); await window.waitUntilLoaded(); await watch.value
+        XCTAssertEqual(store.calls, ["download"])
+        XCTAssertEqual(seen.last, .ready)
+        XCTAssertEqual(recognition.statusText, "Ready")
+        XCTAssertEqual(recognition.buttonTitle, "Delete")
+        window.close()
+    }
+
+    func testEveryModelStateHasPlainCopyAndTheRightButton() async throws {
+        let store = ModelSettingsPreview.FakeSpeechModelStore()
+        let window = await recognitionWindow(store, confirm: true)
+        let recognition = try XCTUnwrap(window.recognition)
+        let expected: [(SpeechModelState, String, String?)] = [
+            (.notDownloaded, "Parakeet TDT 0.6B v3 (483 MB)", "Download…"),
+            (.downloading(progress: 0.37), "Downloading 37%", "Cancel"),
+            (.compiling, "Preparing for the Neural Engine… (first time, about 30 s)", nil),
+            (.ready, "Ready", "Delete"),
+            (.failed(message: "The download did not finish."), "The download did not finish.", "Retry"),
+            (.deferredByLock, "Waiting for the local AI benchmark to finish…", "Try Again"),
+        ]
+        for (state, text, button) in expected {
+            recognition.apply(state)
+            XCTAssertEqual(recognition.statusText, text)
+            XCTAssertEqual(recognition.buttonTitle, button, text)
+            XCTAssertTrue(recognition.buttonFits, text)
+            XCTAssertEqual(recognition.progressVisible, { if case .downloading = state { return true }; return false }(), text)
+            XCTAssertFalse(text.contains("_"), "No raw codes")
+        }
+        // Cancel stops a download; Delete asks first (confirmed here) and removes the model.
+        store.set(.downloading(progress: 0.5)); await window.waitUntilLoaded()
+        recognition.press(); await window.waitUntilLoaded()
+        XCTAssertEqual(store.calls, ["cancel"])
+        store.set(.ready); await window.waitUntilLoaded()
+        recognition.press(); await window.waitUntilLoaded()
+        XCTAssertEqual(store.calls, ["cancel", "delete"])
+        XCTAssertEqual(recognition.state, .notDownloaded)
+        // Waiting for the benchmark lock: Try Again asks for consent once more in a new window, then downloads.
+        store.set(.deferredByLock); await window.waitUntilLoaded()
+        XCTAssertEqual(recognition.statusText, "Waiting for the local AI benchmark to finish…")
+        var asked = 0
+        recognition.presentConsent = { _ in asked += 1; return true }
+        store.downloadSteps = [.deferredByLock]
+        recognition.press(); await window.waitUntilLoaded()
+        recognition.press(); await window.waitUntilLoaded()
+        XCTAssertEqual(asked, 1, "Consent once per window")
+        XCTAssertEqual(store.calls.filter { $0 == "download" }.count, 2)
+        window.close()
+    }
+
+    func testDeletingTheModelAsksFirstAndReportsAFailure() async throws {
+        let store = ModelSettingsPreview.FakeSpeechModelStore(state: .ready)
+        let declined = await recognitionWindow(store, confirm: false)
+        try XCTUnwrap(declined.recognition).press(); await declined.waitUntilLoaded()
+        XCTAssertTrue(store.calls.isEmpty, "Declined: nothing deleted")
+        declined.close()
+        store.deleteError = DomainError("delete_failed", "x")
+        let window = await recognitionWindow(store, confirm: true)
+        let recognition = try XCTUnwrap(window.recognition)
+        recognition.press(); await window.waitUntilLoaded()
+        XCTAssertEqual(store.calls, ["delete"])
+        XCTAssertEqual(recognition.statusText, "The model could not be deleted.")
+        XCTAssertEqual(recognition.buttonTitle, "Delete")
+        window.close()
+    }
+
+    func testAnUnpinnedModelIsNeverDownloaded() async throws {
+        var descriptor = SpeechModelDescriptor.parakeetV3
+        descriptor.revision = nil
+        let store = ModelSettingsPreview.FakeSpeechModelStore(descriptor: descriptor)
+        let window = await recognitionWindow(store, confirm: true)
+        let recognition = try XCTUnwrap(window.recognition)
+        XCTAssertEqual(recognition.statusText, "Not available in this build")
+        XCTAssertNil(recognition.buttonTitle)
+        recognition.presentConsent = { _ in true }
+        recognition.download(); await window.waitUntilLoaded()
+        XCTAssertTrue(store.calls.isEmpty)
+        XCTAssertEqual(SpeechModelText.size(.parakeetV3), "483 MB", "whole megabytes in every locale")
+        XCTAssertEqual(SpeechModelText.attribution(.parakeetV3), "Parakeet TDT 0.6B v3 by NVIDIA, CC BY 4.0")
+        window.close()
+    }
+
+    /// The app's own store (the shipped, pinned descriptor) always offers the model: never "Not available in this build".
+    func testTheShippedModelIsOfferedForDownloadNeverNotAvailable() async throws {
+        for descriptor in [SpeechModelDescriptor.parakeetV3, ParakeetModel.descriptor] {
+            XCTAssertTrue(SpeechModelText.downloadable(descriptor))
+            XCTAssertEqual(SpeechModelText.status(.notDownloaded, descriptor: descriptor), "Parakeet TDT 0.6B v3 (483 MB)")
+            XCTAssertEqual(SpeechModelText.action(.notDownloaded, descriptor: descriptor), "Download…")
+            XCTAssertEqual(SpeechModelText.action(.failed(message: "x"), descriptor: descriptor), "Retry")
+            XCTAssertEqual(SpeechModelText.action(.deferredByLock, descriptor: descriptor), "Try Again")
+        }
+        let support = FileManager.default.temporaryDirectory.appendingPathComponent("pi-os-shipped-model-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: support) }
+        _ = NSApplication.shared
+        // Voice is off in this suite, so opening the page loads nothing; the empty folder reads as not downloaded.
+        let window = SettingsWindow(harness: ModelSettingsPreview.Service(), notifier: nil, voice: ModelSettingsPreview.FakeVoiceSystem(),
+                                    voiceSettings: voiceSettings(suite()), speechModels: SpeechModelStore(support: support),
+                                    prompts: ModelSettingsPreview.prompts(confirm: false))
+        window.show(.voice); await window.waitUntilLoaded()
+        let recognition = try XCTUnwrap(window.recognition)
+        XCTAssertEqual(recognition.state, .notDownloaded)
+        XCTAssertNotEqual(recognition.statusText, "Not available in this build")
+        XCTAssertEqual(recognition.statusText, "Parakeet TDT 0.6B v3 (483 MB)")
+        XCTAssertEqual(recognition.buttonTitle, "Download…")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: support.appendingPathComponent("models/parakeet-tdt-v3").path), "nothing downloads")
+        window.close()
+    }
+
+    /// Settings → Voice opening with voice on loads an installed model now (a load the benchmark's lock deferred is retried);
+    /// with voice off nothing loads. Never a download.
+    func testOpeningVoiceSettingsLoadsTheModelOnlyWithVoiceOn() async throws {
+        let store = ModelSettingsPreview.FakeSpeechModelStore(state: .deferredByLock)
+        let off = await recognitionWindow(store)
+        await settle()
+        XCTAssertTrue(store.calls.isEmpty, "voice off: nothing loads")
+        off.close()
+        let settings = voiceSettings(suite())
+        settings.enabled = true
+        let window = SettingsWindow(harness: ModelSettingsPreview.Service(), notifier: nil, voice: ModelSettingsPreview.FakeVoiceSystem(),
+                                    voiceSettings: settings, speechModels: store, prompts: ModelSettingsPreview.prompts(confirm: false))
+        XCTAssertTrue(store.calls.isEmpty, "the General page loads nothing")
+        window.show(.voice); await window.waitUntilLoaded()
+        for _ in 0..<400 where store.calls.isEmpty { try await Task.sleep(nanoseconds: 1_000_000) }
+        XCTAssertEqual(store.calls, ["prepare"], "a load, never a download")
+        window.close()
+    }
+
+    /// After a voice take the app retries a load only while the benchmark's lock deferred it.
+    func testATakeRetriesOnlyALoadTheBenchmarkLockDeferred() async {
+        for state in [SpeechModelState.ready, .notDownloaded, .compiling, .downloading(progress: 0.5), .failed(message: "x")] {
+            let store = ModelSettingsPreview.FakeSpeechModelStore(state: state)
+            let retried = await Application.retryDeferredLoad(store)
+            XCTAssertFalse(retried); XCTAssertTrue(store.calls.isEmpty, "\(state)")
+        }
+        let deferred = ModelSettingsPreview.FakeSpeechModelStore(state: .deferredByLock)
+        let retried = await Application.retryDeferredLoad(deferred)
+        XCTAssertTrue(retried); XCTAssertEqual(deferred.calls, ["prepare"])
+    }
+
+    /// Installed-app fixture runs (`PI_OS_INSTALLED_TEST=1` + `PI_OS_SUPPORT_DIR`) give the app and Settings a fixture suite:
+    /// opening Settings migrates the languages into it, never into the user's dev.pi-os.mac domain.
+    func testInstalledFixtureRunsUseAFixtureVoiceSettingsSuite() throws {
+        XCTAssertTrue(Application.voiceSettingsDefaults(env: [:]) === UserDefaults.standard)
+        XCTAssertTrue(Application.makeVoiceSettings(env: [:]) === VoiceSettings.shared)
+        XCTAssertTrue(Application.voiceSettingsDefaults(env: ["PI_OS_SUPPORT_DIR": "/tmp/pi-os-fixture"]) === UserDefaults.standard,
+                      "only installed-app fixture runs get their own suite")
+        let name = "pi-os-voice-settings-suite-" + UUID().uuidString
+        let domain = "dev.pi-os.voice-settings-fixture." + name
+        defer { UserDefaults.standard.removePersistentDomain(forName: domain) }
+        let settings = Application.makeVoiceSettings(env: ["PI_OS_INSTALLED_TEST": "1", "PI_OS_SUPPORT_DIR": "/tmp/" + name])
+        XCTAssertFalse(settings === VoiceSettings.shared)
+        XCTAssertNil(UserDefaults(suiteName: domain)?.stringArray(forKey: VoiceSettings.languagesKey))
+        _ = NSApplication.shared
+        let window = SettingsWindow(harness: ModelSettingsPreview.Service(), notifier: nil, voice: ModelSettingsPreview.FakeVoiceSystem(),
+                                    voiceSettings: settings, contextDefaults: try XCTUnwrap(UserDefaults(suiteName: domain + ".context")))
+        defer { UserDefaults.standard.removePersistentDomain(forName: domain + ".context") }
+        XCTAssertNotNil(UserDefaults(suiteName: domain)?.stringArray(forKey: VoiceSettings.languagesKey), "migrated into the fixture suite")
+        settings.enabled = true
+        XCTAssertTrue(UserDefaults(suiteName: domain)?.bool(forKey: VoiceSettings.enabledKey) == true)
+        window.close()
+    }
+
+    /// The languages a take uses come from "Languages I speak", the preferred one first; an unchecked language is gone.
+    func testTheTakeLanguagesFollowLanguagesISpeak() {
+        let settings = voiceSettings(suite())
+        XCTAssertEqual(Application.takeLanguages(settings), [.englishUS, .germanDE])
+        settings.languages = [.germanDE]
+        XCTAssertEqual(Application.takeLanguages(settings), [.germanDE], "English unchecked: never started")
+        settings.languages = [.englishUS, .germanDE]
+        settings.language = .germanDE
+        XCTAssertEqual(Application.takeLanguages(settings), [.germanDE, .englishUS], "the preferred language first")
     }
 
     func testClassifierSwitchLoadsAndSavesThroughTheHarnessSettingsRoute() async throws {
@@ -168,9 +469,8 @@ import XCTest
     func testChoosingLayaPathsPostsThemAndEnablesTheSwitch() async throws {
         _ = NSApplication.shared
         let service = ModelSettingsPreview.Service()
-        let defaults = UserDefaults(suiteName: "dev.pi-os.classifier-test." + UUID().uuidString)!
         let window = SettingsWindow(harness: service, notifier: nil, voice: ModelSettingsPreview.FakeVoiceSystem(),
-                                    voiceSettings: VoiceSettings(defaults: defaults))
+                                    voiceSettings: voiceSettings(suite()))
         window.show(.classifier); await window.waitUntilLoaded()
         XCTAssertFalse(window.classifierSwitchEnabled, "Off and not startable: choose the paths first")
         XCTAssertEqual(window.classifierText, "Status: off. Choose the Python of a Laya environment and the Laya model folder to use it.")

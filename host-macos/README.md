@@ -96,16 +96,21 @@ No model-driven follow-up validation was performed during the local-GPU reservat
 ## Voice, instant commands, Auto and result cards
 
 **Push-to-talk (off by default).** Turn on **Settings → Voice → Hold the shortcut to talk**
-(macOS 26+, on-device Apple SpeechAnalyzer/SpeechTranscriber; English (US) or Deutsch).
+(macOS 26+). Recognition is on-device: Apple's dictation runs every language you check under
+**Languages I speak** (English (US) and Deutsch) at the same time, and the optional multilingual
+Parakeet model joins once downloaded (see
+[Spoken commands, corrections and the dictionary](#spoken-commands-corrections-and-the-dictionary)).
 Then *hold* the hotkey for at least 250 ms and speak: the bar shows a live transcript
 (finished words in normal ink, the still-changing tail in secondary ink) and an accent
 waveform in the send slot. Let go to run it. A short *tap* keeps today's text bar; typing
 while listening drops the audio and keeps the text; pressing the hotkey while the text bar
 is open still closes it. The microphone opens at key-down so no syllable is clipped, which
-means the orange menu-bar indicator can flash on a quick tap. Audio and transcripts stay in
-the signed host process and are never recorded, sent to Node as audio, or logged. With voice
-off, or on macOS 14–25, the hotkey behaves exactly as before, except that while voice is
-off (and could run) a real hold shows “Voice is off — turn it on in Settings → Voice” in the
+means the orange menu-bar indicator can flash on a quick tap. Audio is never sent to Node
+(it gets the transcript as text), never leaves this Mac and is never logged. Audio and transcripts
+are saved only after you turn on **Keep my last voice takes to improve recognition** (Settings →
+Dictionary → Recent takes): the last 50 takes, in `voice-takes/` of the support folder, on this
+Mac only. With voice off, or on macOS 14–25, the hotkey behaves exactly as before, except that
+while voice is off (and could run) a real hold shows “Voice is off — turn it on in Settings → Voice” in the
 empty bar, at most three times and never again once voice was turned on. The status menu
 has **Turn On Hold to Talk…** (or **Voice…**) next to Settings. A spoken “never mind”,
 “cancel”, “stop” or “vergiss es” as the whole utterance ends the take without an agent run.
@@ -113,18 +118,18 @@ has **Turn On Hold to Talk…** (or **Voice…**) next to Settings. A spoken “
 Voice needs **Microphone** and **Speech Recognition**. pi-os asks for them only from the
 **Request Access…** buttons in Settings → Voice; the hotkey never shows a permission prompt.
 If a grant is missing, a hold explains what to do and offers **Open Voice Settings…**.
-The German speech model downloads only from that page's **Download** button. While voice is
-on, the warm Node child stays ready for 600 s after use (instead of 120 s) so a hold rarely
-waits for a cold start; an explicit `PI_OS_NODE_WARM_TTL_SECONDS` still wins.
+Each language's speech model downloads only from its **Download** button on that page. While
+voice is on, Node starts when pi-os launches and is never stopped for being idle, so a hold
+never waits for a cold start; an explicit `PI_OS_NODE_WARM_TTL_SECONDS` still wins.
 
 **Instant commands.** Math, units, currencies, number bases, time zones, date math, opening
 apps/links, web searches, file search and volume/display sleep are parsed by Node's instant
 engine (no model) and **performed by this host** after `LauncherPolicy` (`LauncherService`).
 While you type, the bar previews on every keystroke (at most one request per 33 ms, the
 last text always sent; Node holds file search back until typing has been quiet for 150 ms):
-`= 51`, “Open github.com”, or a file/app list above the bar. Spoken partials preview after
-150 ms of quiet. Previews never act and stay on one line: a long number shrinks, then shows
-as `≈ 1.27 × 10³⁰` (Return still gives the exact value), and hints keep their key words
+`= 51`, “Open github.com”, or a file/app list above the bar. Spoken partials (every
+recognizer's) preview at once. Previews never act and stay on one line: a long number
+shrinks, then shows as `≈ 1.27 × 10³⁰` (Return still gives the exact value), and hints keep their key words
 (“↩ Sleep display”). VoiceOver hears each preview (“Equals 51”, “3 files… Return opens …”)
 and every ↑/↓ selection change, but nothing while you dictate. Typed requests send the Mac's
 formatting locale (language + effective Region, e.g. `en-DE` for English with Region
@@ -138,7 +143,8 @@ Germany), so `2,5 * 4` and `1.000 + 1` follow your Region's decimal comma.
 | ↑ / ↓ | Move through a result list |
 | ⌘⇧C | Copy the selected file's path while a list is focused or previewed; otherwise Copy Answer |
 
-Successful actions show a brief “✓ Opened Figma” and the bar goes away. Answers, lists and
+Opening an app or a link shows “Opening Figma…” at once (the launch is not awaited; a launch
+that fails afterwards appears as a note) and the bar goes away after 0.4 s. Answers, lists and
 the file-deletion refusal appear as native cards in the reader; a follow-up there becomes a
 fresh agent turn that starts with “Earlier quick answer: question → answer”. File results
 use host-minted tokens bound to the take's context; they are revoked when the context is
@@ -188,6 +194,66 @@ folder** (the one containing `rl_agent_config.json`) on that page; both are stor
 explained in plain sentences. `PI_OS_LAYA_PYTHON` / `PI_OS_LAYA_MODEL_DIR` remain a fallback,
 but they only reach an app started from Terminal or `run-dev.sh`. Bundled builds ship the
 helper script (`Resources/sidecars/laya/laya_intent_sidecar.py`), never a model.
+
+## Spoken commands, corrections and the dictionary
+
+Speak English, German or a mix; pi-os never forces one language. Design, measurements (all on
+synthetic `say` speech so far) and what is still unverified live: [VOICE_MAGIC.md, pass
+3](../VOICE_MAGIC.md#pass-3-2026-10-07-voice-reliability).
+
+**Recognition.** Every take runs Apple's DictationTranscriber for each language checked under
+**Settings → Voice → Languages I speak** in one analyzer, biased with up to 100 contextual
+strings (the pinned app and window title, then your dictionary's words and learned names, then
+frequently used and installed app names). **Settings → Voice → Recognition → Download…** adds
+the multilingual NVIDIA Parakeet TDT 0.6B v3 model (483 MB). A consent sheet shows the size, the
+Hugging Face source at a pinned revision and the CC BY 4.0 attribution first; every file is
+checked against a pinned SHA-256 before it is installed in `models/parakeet-tdt-v3/` of the
+support folder, and the model runs on the CPU and Neural Engine inside pi-os. The first load
+prepares it for the Neural Engine (about 30 s); Apple's recognition keeps working meanwhile, and
+while the local AI benchmark holds its lock the step waits (*Waiting for the local AI benchmark
+to finish…*, **Try Again**). Once loaded, Parakeet's result is ready about 40 ms after you let
+go (measured on synthetic speech). An action, answer or refusal is shown from it alone; a choice
+list or a hand-off to pi waits for Apple's readings (at most until about 150 ms after you let
+go). Delete the model from the same row.
+
+**What you see after you let go.**
+
+| Situation | Bar |
+|---|---|
+| A clear command ("open Pages", "Pages öffnen", "mach mal Pages auf") | *Opening Pages…*, gone after 0.4 s |
+| Acted on a sound-alike, a learned rule or the other engine's reading | The bar hides; a 4 s note *Opened Keynote (heard "kein note") · Not this* |
+| Unsure which app | *Did you mean Raycast?* / *Did you mean…* (≤ 3 rows), *Heard "recast"* |
+| A doubtful reading or an unknown site | *Open Numbers? ↩* (one Return) |
+| A short, doubtful take | *Did I hear that right?*: the text is selected (type to fix it), up to two other readings as chips; ↩ runs it, ⌥↩ asks pi |
+| Nothing recognized | *Didn't catch that. Hold and say it again.* |
+| Anything else | pi. For an unclear spoken request it does the plausible harmless thing or offers at most three concrete choices instead of an open question |
+
+Answer a decision with Return, a click, 1–3 or ↑/↓ (⌥Return asks pi instead), or hold the hotkey
+again and say *yes / ja / genau*, *no / nein*, *the second / die zweite*, *zwei*, *the last /
+die letzte* or the app's name. **Not this** is the note's button or a spoken or typed *no /
+nein* within 5 s; Escape does not reach pi-os once the app launched. Say or type **"No, I meant
+Notion"** (*nein, ich meinte Notion*, *nein, Notion*) within 2 minutes of an act to correct it.
+
+**Learning.** Picking a row and Return on *Open X? ↩* learn at once (*Learned: "recast" →
+Raycast · Undo*); a fixed "Did I hear that right?" and "No, I meant" ask once (*Remember …? ·
+Remember · Not now*). Learned rules are exact, belong to the recognizer that misheard (typed
+corrections and Settings entries apply to every recognizer), and can only open an app, open an
+http(s) page or change the volume: nothing learned can delete, trash or move anything.
+**Settings → Dictionary** shows and edits everything: *Learn from my corrections* (*Picks learn
+immediately* / *Ask* / *Off*), *Apply to the recognizer*, *Explain to pi*, the App names,
+Phrases, Fixes and Words lists (edit, switch off, pin, delete with Undo, *Add Word…*), *Export…*
+/ *Import…* and *Forget Everything…*. Node keeps the dictionary in `dictionary.json` in the
+support folder (0600, never logged).
+
+**Recent takes (opt-in).** Settings → Dictionary → Recent takes → **Keep my last voice takes to
+improve recognition** keeps the last 50 takes (audio up to 15 s, what each engine heard, what
+happened) in `voice-takes/` of the support folder, on this Mac only, excluded from backups. Play
+a take, **Fix…** it (open the right app, or just fix the words), delete one, or **Delete All
+Takes**. Switching it off keeps what is there until you delete it.
+
+**Timing log.** `logs/voice-perf.log` in the support folder has one line per voice take with
+timings and closed-vocabulary words only (hold, first partial, each recognizer's final, decision
+kind, recognizer), rotated at 256 KB. It never contains what you said.
 
 ## General by default, the context shelf and pointing
 
@@ -399,7 +465,12 @@ Scripts refuse to overwrite a running executable and **never kill another applic
 They stage complete bundles instead of merging old/new files. An incompatible code
 requirement is blocked; a deliberate one-time migration requires
 `PI_OS_ALLOW_SIGNING_CHANGE=1` and a scoped Screen Recording repair afterward.
-The default development build still references this checkout's Node harness.
+The default development build still references this checkout's Node harness: the
+installer rebuilds `node-harness/dist` only after every gate passed, so a blocked install
+leaves the running app and its Node unchanged. `PI_OS_VOICE_JOURNAL_OPT_IN=1` turns on
+**Keep my last voice takes to improve recognition** for a user who consented (Tom's
+install, once): it writes the setting only while it was never set, so switching it off in
+Settings survives later refreshes. Never set it for anyone else or in CI.
 `build-app.sh` copies the on-device context scorer's weights into `Contents/Resources`
 before signing (the app never looks for them outside its bundle; without them the chip
 runs on the Node rules only).
@@ -438,10 +509,10 @@ remains a release gate; a successful build alone is not a distribution claim.
 | `PI_OS_ADD_HOTKEY` | “Add to pi” chord; default `Ctrl+Option+Cmd+C`. A chord that cannot be registered is reported under Diagnostics and never blocks the main hotkey. |
 | `PI_OS_NODE_PATH` | Explicit absolute Node executable path; overrides bundled/build-time configuration. |
 | `PI_OS_NODE_ENTRY` | Explicit absolute built `node-harness/dist/index.js`. |
-| `PI_OS_NODE_WARM_TTL_SECONDS` | One-shot warm retention after result/normal cancellation; default 120 (600 while push-to-talk is on), range 0–3600; an explicit value always wins. With voice off, prompt cancellation stops an unused child immediately; with voice on it keeps the TTL. |
+| `PI_OS_NODE_WARM_TTL_SECONDS` | One-shot warm retention after result/normal cancellation; default 120, range 0–3600. While push-to-talk is on and this is unset, Node starts at launch and is never idle-stopped; an explicit value always wins. With voice off, prompt cancellation stops an unused child immediately; cancelling a running task with voice on stops Node and starts a fresh one off the hotkey path. |
 | `PI_OS_HOST_PORT` / `PI_OS_NODE_PORT` | Loopback ports; defaults 17831 / 17832. |
 | `PI_OS_TOKEN` | Optional explicit shared token for testing; normally 32 random bytes generated by the host. Never printed. |
-| `PI_OS_SUPPORT_DIR` | Default `~/Library/Application Support/pi-os`. Contains a lock, private agent cwd, captures, logs, and Node-owned settings. |
+| `PI_OS_SUPPORT_DIR` | Default `~/Library/Application Support/pi-os`. Contains a lock, private agent cwd, captures, logs (including `logs/voice-perf.log`), Node-owned settings and `dictionary.json`, the opt-in `voice-takes/` and the downloaded speech model in `models/`. |
 | `PI_OS_CAPTURES_DIR` | Shared PNG directory override; passed explicitly to the child. |
 | `PI_OS_INVOKE_TIMEOUT_MS` | Existing Node request timeout (300000; 0 disables). |
 | `PI_OS_ECHO=1` | TCC-free prompt/echo UI probe: **no capture and no Node**. |
@@ -515,10 +586,12 @@ swift run --package-path host-macos pi-os-ui-preview settings --light
 swift run --package-path host-macos pi-os-ui-preview listening --dark   # scripted FakeVoiceInput, no microphone
 # Also: draft, working, short, long, error, failed, instant-calc, instant-files, instant-answer,
 # instant-list, card, streaming, confirmation, voice-denied, voice-unavailable, speech-denied,
-# asset-missing, big-1/2/3, instant-unit, hint-web, confirm-hint, voice-hint, auto-settings,
-# voice-settings, classifier-settings, context-settings, chip-off, chip-suggested, chip-on, chip-on-draft,
+# asset-missing, big-1/2/3, instant-unit, hint-web, confirm-hint, voice-hint, heard-nothing, did-you-mean,
+# did-you-mean-two, check, voice-confirm, acting, auto-settings, voice-settings, dictionary-settings,
+# recent-takes-settings, classifier-settings, context-settings, chip-off, chip-suggested, chip-on, chip-on-draft,
 # shelf, shelf-empty-draft, shelf-suggestion, drop-target, reader-general, reader-included,
-# reader-pointing, followup-shelf; snapshot-only composites: tether, element, added-toast, nothing-toast.
+# reader-pointing, followup-shelf; snapshot-only composites: tether, element, added-toast, nothing-toast,
+# not-this-toast, learned-toast, ask-toast, launch-failed-toast. Voice decisions are display-only there.
 # Settings use a mock catalog and a scripted voice service (no TCC).
 ```
 
@@ -560,8 +633,22 @@ tests launch only their own Node processes and assert process-group identity,
 lazy startup, warm reuse, TTL teardown, restart, and unexpected exit reporting.
 
 `npm test` runs serially with a no-live-provider bootstrap. It blocks Ollama/provider
-fetches before SDK imports; Swift lifecycle children use the same guard. During the
-_LOCAL_AI benchmark, also skip the transient UI test:
+fetches before SDK imports; Swift lifecycle children use the same guard. It includes the
+voice corpus gates (`test/voiceCorpus.test.ts`: text replay of recognizer output for
+synthetic speech, no audio or model).
+
+Speech tests that touch Apple's recognizers or the Neural Engine take a **non-blocking** flock
+on the `_LOCAL_AI` coordination file (`$PI_LOCAL_INFERENCE_LOCK` overrides its path; it is
+opened read-only and never created) and skip while it is held. The two `say`-file replays in
+`VoiceInputTests` (Apple dual dictation, about 16 s; Phase B with a scripted primary, about 3 s)
+run when the en-US and de-DE dictation models and the Samantha and Anna voices are installed;
+`PI_OS_SKIP_SPEECH_REPLAY=1` skips them. Audio is rendered to temporary files, never played.
+The two Parakeet tests in `ParakeetEngineTests` run only with
+`PI_OS_PARAKEET_MODELS=<a Parakeet v3 Core ML folder>` (read-only; set `CFFIXED_USER_HOME` to a
+scratch folder to keep Core ML caches out of `~/Library`); otherwise they are the two skips.
+The developer bench `pi-os-voice-bench` is described in [qa/voice/README.md](qa/voice/README.md).
+
+During the _LOCAL_AI benchmark, also skip the transient UI test:
 
 ```sh
 PI_OFFLINE=1 PI_OS_AGENT=0 swift test --jobs 2 --package-path host-macos \

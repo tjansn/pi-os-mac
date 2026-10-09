@@ -20,8 +20,25 @@ import PiOSMac
     let home = hits.first.map { "/" + $0.path.split(separator: "/").prefix(2).joined(separator: "/") } ?? NSHomeDirectory()
     let tokens = FileTokenStore()
     let index = AppIndex(scanner: { seeds }, running: { running }, observeWorkspace: false)
+    // Visible items: visible-items.response-desktop.json's items as the desktop capture of visible-items.request.json's
+    // context (tokens are minted anew per call, bound to that context).
+    struct VisibleRequest: Decodable { let arguments: VisibleItemsRequest }
+    let visibleFixture = try JSONDecoder().decode(Envelope<VisibleItemsResult>.self,
+                                                  from: Data(contentsOf: directory.appendingPathComponent("visible-items.response-desktop.json"))).result
+    let visibleContext = try JSONDecoder().decode(VisibleRequest.self,
+                                                  from: Data(contentsOf: directory.appendingPathComponent("visible-items.request.json"))).arguments.contextId
+    let entries = visibleFixture.items.map { item in
+        VisibleEntry(path: item.candidate.path, name: item.candidate.name, contentType: item.candidate.contentType,
+                     isDirectory: item.candidate.isDirectory, isPackage: item.candidate.isPackage, created: date(item.candidate.createdMs),
+                     modified: date(item.candidate.modifiedMs), lastUsed: date(item.candidate.lastUsedMs), useCount: item.candidate.useCount)
+    }
+    let visible = VisibleItemsProvider(source: FixtureVisibleItemsSource(VisibleCapture(source: visibleFixture.sources.first, entries: entries)),
+                                       tokens: tokens)
+    let desktop = WindowContext(windowID: 1, pid: 1, name: "Finder", title: "Desktop", bounds: Rect(x: 0, y: 0, width: 1440, height: 900))
+    visible.prefetch(contextId: visibleContext, target: .desktop(desktop, folder: (entries.first.map { ($0.path as NSString).deletingLastPathComponent }) ?? home))
     return LauncherHost(tokens: tokens, files: FileSearch(tokens: tokens, home: home, engine: { _, _, _ in hits }), apps: index,
-                        service: LauncherService(tokens: tokens, apps: index, system: InertSystemControls(), effects: InertLauncherEffects()))
+                        service: LauncherService(tokens: tokens, apps: index, system: InertSystemControls(), effects: InertLauncherEffects()),
+                        visible: visible)
 }
 
 /// Production browser.page / browser.axAct routes over an in-memory Brave tab built from

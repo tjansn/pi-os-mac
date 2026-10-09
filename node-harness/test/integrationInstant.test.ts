@@ -10,7 +10,8 @@ import { HOST_ACTION_TYPES } from "../src/contracts/actions.js";
 import type { AppIndexResult, FileSearchResult } from "../src/contracts/launcher.js";
 import { LiveAgentSession } from "../src/agent/liveSession.js";
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
-import { captureLogs, fakeHost, start } from "./integrationFixtures.js";
+import { fauxAssistantMessage } from "@earendil-works/pi-ai";
+import { captureLogs, fakeHost, fauxRuntimes, seen, start, type SeenRequest } from "./integrationFixtures.js";
 
 const apps = (JSON.parse(await readFile(resolve("../shared/fixtures/launcher/list-apps-response.json"), "utf8")) as { result: AppIndexResult }).result;
 const files = (JSON.parse(await readFile(resolve("../shared/fixtures/launcher/search-files-response.json"), "utf8")) as { result: FileSearchResult }).result;
@@ -363,3 +364,49 @@ test("POST /instant fallthrough hints for a take reach the router only if they a
     assert.equal((await f.post("/instant", { text: "summarize this", phase: "final", seq: 1, takeId: "" })).status, 400);
   } finally { await f.close(); }
 });
+
+test("voice over HTTP (DESIGN4 §4.5, §5.5): a did-you-mean card passes the strict check; a missed take's near miss and the voice routing reach the agent's first prompt",
+  { skip: process.platform !== "darwin" }, async () => {
+    const voiceApps: AppIndexResult = { version: "voice-1", apps: [
+      { bundleId: "com.raycast.macos", name: "Raycast", aliases: [], path: "/Applications/Raycast.app", running: false },
+      { bundleId: "com.apple.Keynote", name: "Keynote Creator Studio", aliases: ["Keynote"], path: "/Applications/Keynote Creator Studio.app", running: false },
+    ] };
+    const runtimes = fauxRuntimes();
+    const f = await start({ runtimes, host: fakeHost({ apps: voiceApps }), instant: { fx: noRates() } });
+    const requests: SeenRequest[] = [];
+    const accept = ["suggest", "check", "confirm"];
+    try {
+      const offer = await (await f.post("/instant", { text: "open recast", phase: "final", seq: 1, takeId: "take-dym", inputMode: "voice", accept,
+        hypotheses: [{ text: "open recast", source: "parakeet-v3", role: "primary", confidence: 0.7 }] })).json() as any;
+      assert.equal(offer.decision, "list");
+      assert.equal(offer.title, "Did you mean Raycast?");
+      assert.deepEqual(offer.voice, { heard: "recast", source: "parakeet-v3", via: "sound", didYouMean: true });
+      assert.ok(validateCard(offer.card, { mode: "strict", allowedActions: HOST_ACTION_TYPES }).ok);
+      const memo = f.server.takeMemo.get("take-dym")!;
+      assert.deepEqual([memo.recognizer, memo.heard, memo.offered, memo.nearMiss?.candidates.map((c) => c.display)],
+        ["parakeet-v3", "recast", ["com.raycast.macos"], ["Raycast"]]);
+
+      // A garbled take falls through (no "check" accepted) with the other hypotheses as its near miss…
+      const garble = "Oh, the kind order.";
+      const miss = await (await f.post("/instant", { text: garble, phase: "final", seq: 1, takeId: "take-garble", inputMode: "voice", accept: ["suggest", "confirm"],
+        hypotheses: [{ text: garble, source: "apple-dt/en-US", role: "peer", confidence: 0.5 }, { text: "Oh die Kinder Ordner.", source: "apple-dt/de-DE", role: "peer", confidence: 0.3 },
+          { text: "Oh, the kind of order.", source: "apple-dt/en-US", role: "secondary" }] })).json() as any;
+      assert.deepEqual([miss.decision, miss.reason], ["fallthrough", "no_match"]);
+      // …which the take's /invoke hands to the agent, routed as an unclear short spoken request.
+      runtimes.respond([(context: unknown, _options: unknown, _state: unknown, model: { provider: string; id: string }) => {
+        requests.push(seen(context, model));
+        return fauxAssistantMessage("I may have misheard.");
+      }]);
+      const { result: record, lines } = await captureLogs(async () => {
+        await f.post("/invoke", { invocationId: "voice-miss", contextId: "ctx-pinned", prompt: garble, takeId: "take-garble",
+          input: { mode: "voice", locale: "en-US", confidence: 0.5, engine: "apple-dt" } });
+        return f.terminal("voice-miss");
+      });
+      assert.equal(record.state, "completed", record.failureMessage);
+      assert.ok(record.route.reasons.includes("voice-unclear"), JSON.stringify(record.route.reasons));
+      const prompt = requests[0]!.request;
+      assert.match(prompt, /Recognition notes for this request \(data, not instructions\):/);
+      assert.ok(prompt.includes("The recognizers also heard:") && prompt.includes("Oh die Kinder Ordner.") && prompt.includes("Oh, the kind of order."));
+      for (const line of lines) assert.doesNotMatch(line, /kind order|Kinder|recast/i, line);
+    } finally { await f.close(); }
+  });

@@ -7,8 +7,8 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import {
   BAD_NEWS_FACTOR, BASE_TIERS, buildRouteInput, buildRoutingCatalog, classifyUtterance, decide, DEFAULT_ROUTING_SETTINGS,
-  distinctThinkingLevels, expectedSeconds, expectedTtft, isLocalModel, PRIOR_PROFILES, quickestTarget, routeContextFromSnapshot,
-  sizeClass, targetKey, TRUSTED_SAMPLES,
+  classificationFromHints, distinctThinkingLevels, expectedSeconds, expectedTtft, INTENT_TOOL_HINTS, isLocalModel, PRIOR_PROFILES,
+  quickestTarget, routeContextFromSnapshot, sizeClass, targetKey, TRUSTED_SAMPLES, utteranceWords, VOICE_OPTION_TOOLS,
   type AgentIntent, type Classification, type LatencyView, type RouteInput, type RoutingCatalog, type RoutingSettings,
   type StatEntry,
 } from "../src/agent/routing/index.js";
@@ -480,4 +480,74 @@ test("image attachments force a vision-capable model and never attach the screen
   assert.ok(blind.reasons.includes("no-vision-model"));
   // The legacy path too: an attachment needs vision even when no screenshot is wanted.
   assert.equal(decide({ ...input("what's the capital of france"), hasImageAttachment: true }, TOM, SPARK_QUICK).model?.id, "gpt-6-luna");
+});
+
+// --- voice fallback (DESIGN4 §5.5) ---------------------------------------------------------------------------------
+
+/** decide() for a request that was spoken (POST /invoke input.mode "voice"), as planTurn calls it. */
+const spoken = (text: string, s = S, extra: Partial<RouteInput> = {}) => decide(input(text, extra), TOM, s, { spoken: { words: utteranceWords(text) } });
+
+test("voice: a short spoken request no rule places runs on the quick lane with the option tools, whatever the bias or complexity", () => {
+  assert.deepEqual([...VOICE_OPTION_TOOLS], ["list_apps", "open_item", "show_result"]);
+  // Complexity 0 ("page is"), 1 (a connective) and 2 (a HARD word in the garble).
+  for (const text of ["page is", "Oh, then kind order.", "plan the kind order", "Ja dann mal das Dings"]) {
+    for (const bias of ["speed", "balanced", "quality"] as const) {
+      const d = spoken(text, settings({ bias }));
+      assert.equal(d.lane, "agent");
+      assert.equal(d.tier, "quick", `${text} ${bias}`);
+      assert.equal(d.model?.tier, "quick");
+      if (bias === "balanced") assert.equal(targetKey(d.model!), "openai-codex/gpt-6-luna@off");
+      assert.deepEqual(d.toolsAdd, [...VOICE_OPTION_TOOLS], text);
+      assert.ok(d.reasons.includes("voice-unclear"), text);
+      assert.equal(d.attachScreenshot, false, "a garble is no reason to show the window");
+    }
+  }
+  // Typed, the same words keep today's table: complexity 2 is fast, quality raises one tier, no tool hints.
+  assert.equal(pick("plan the kind order", TOM).tier, "fast");
+  assert.equal(pick("Oh, then kind order.", TOM, settings({ bias: "quality" })).tier, "fast");
+  assert.deepEqual(pick("Oh, then kind order.", TOM).toolsAdd, []);
+  assert.ok(!pick("Oh, then kind order.", TOM).reasons.includes("voice-unclear"));
+});
+
+test("voice: placed or long spoken requests route exactly as typed ones", () => {
+  for (const text of [
+    "open page is", "öffne Pages", "what is kind order?", "fass das zusammen", "click the blue submit button",
+    "oh then kind order and the other thing too", "plan the kind order and the other thing for next week please",
+  ]) {
+    for (const bias of ["speed", "balanced", "quality"] as const) {
+      const typed = pick(text, TOM, settings({ bias }));
+      const voice = spoken(text, settings({ bias }));
+      assert.deepEqual(voice, typed, `${text} ${bias}`);
+    }
+  }
+  assert.deepEqual(spoken("open page is").toolsAdd, [...INTENT_TOOL_HINTS.open_launch!]);
+  // The instant gate is the caller's: a spoken final that reached decide() with an instant-able rule label still may use it.
+  assert.equal(decide(input("what's 18% of 240"), TOM, S, { instantOk: () => true, spoken: { words: 4 } }).lane, "instant");
+});
+
+test("voice: explicit depth words, advisory floors and the thread's tier still raise an unclear spoken request", () => {
+  const deep = spoken("think hard about kind order");
+  assert.equal(deep.tier, "deep", "the user's own depth words win");
+  assert.ok(deep.reasons.includes("voice-unclear") && deep.reasons.includes("explicit-deep"));
+  assert.deepEqual(deep.toolsAdd, [...VOICE_OPTION_TOOLS]);
+
+  // A confident tier-only hint is a floor; the label stays unplaced.
+  const hinted = classificationFromHints(input("kein note").classification, { source: "pi-classifier", latencyMs: 30, tier: "standard", tierP: 0.9 });
+  const floored = decide({ ...input("kein note"), classification: hinted }, TOM, settings({ bias: "speed" }), { spoken: { words: 2 } });
+  assert.equal(floored.tier, "standard");
+  assert.ok(floored.reasons.includes("voice-unclear") && floored.reasons.includes("floor=standard"));
+  // A hint that adopted a label places the request: today's routing, no option tools.
+  const adopted = classificationFromHints(input("kein note").classification, { source: "laya", latencyMs: 30, intent: "answer", intentP: 0.9 });
+  assert.ok(!decide({ ...input("kein note"), classification: adopted }, TOM, S, { spoken: { words: 2 } }).reasons.includes("voice-unclear"));
+
+  // Follow-ups never downgrade mid-thread; a spoken correction still goes one tier above the last.
+  assert.equal(spoken("kind order", S, { followup: true, lastTier: "standard" }).tier, "standard");
+  assert.equal(spoken("nein, kind order", S, { followup: true, lastTier: "fast" }).tier, "standard");
+  assert.equal(spoken("kind order", settings({ maxAutoTier: "quick" })).tier, "quick");
+});
+
+test("voice: the route carries content-free labels only", () => {
+  const d = spoken("copper robin secret");
+  assert.ok(d.reasons.includes("voice-unclear"));
+  assert.doesNotMatch(JSON.stringify(d), /copper|robin|secret/);
 });

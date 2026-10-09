@@ -1,0 +1,11 @@
+{
+  "op": "upsert",
+  "entry": {
+    "list": "aliases",
+    "phrase": "meine datei",
+    "target": {
+      "kind": "openFile",
+      "token": "tok_12345678"
+    }
+  }
+}

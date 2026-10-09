@@ -1,0 +1,10 @@
+{
+  "text": "open recast",
+  "phase": "final",
+  "seq": 7,
+  "takeId": "take-42",
+  "inputMode": "voice",
+  "accept": [
+    "did-you-mean"
+  ]
+}

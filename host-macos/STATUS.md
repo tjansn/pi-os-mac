@@ -3,6 +3,132 @@
 2026-09-15. Target machine: Apple Silicon, macOS 26.5.2, Xcode 26.6 / Swift 6.3.3,
 Node 24.15.0. Deployment target is macOS 14; that OS has not been exercised here.
 
+## 2026-10-08 visible items and auto-minimize — Mac side, installed 2026-10-08 (signed, main 1f114f1)
+
+Branch `vis/swift` on `feat/visible-open` (contract `53ede15`). Tom: "öffne Radfotos" on the desktop should open the
+desktop's folder first, and a request that ends by opening something can hide its answer. The installed build is
+**stale** (refresh only with `PI_OS_SIGN_IDENTITY`).
+
+- **Visible items** (`VisibleItems.swift`): at key-down (typed and spoken takes, and a tether's new pin) the host
+  classifies the target (Finder desktop surface → `desktop`, another Finder window → `finderWindow`, anything else →
+  none) and captures on a background queue: the desktop's icons through the same unambiguous container match desktop
+  input uses (scroll area → group → AXImage icons with file URLs; ≈ 3–30 ms live), or the window's items whose URL is a
+  direct child of its AXDocument folder (sidebar, path bar and expanded subfolders drop out). No readable item (icons
+  hidden, no AX) → Spotlight `kMDItemDisplayName == "*"` scoped to the folder, direct children only (`kMDItemFSName ==
+  "*"` matches nothing; a 13 000-item desktop subtree took ≈ 650 ms). AX budget 0.3 s, ≤ 2 000 elements, ≤ 200 items,
+  hidden names out; no AppleScript, Apple Events, FileManager enumeration or file access (folder vs file from the URL's
+  trailing "/", type from the extension). `POST /tools/launcher.visibleItems` (token-authed, read-only, served while
+  control is off, cancelled when its client leaves) answers from the capture, waits ≤ 150 ms for one still running
+  (then `complete:false`, no items), mints tokens only for returned items, bound to the take's context; the capture is
+  dropped and its tokens revoked with the context. Served but not in `GET /tools` (the agent's launcher tools depend on
+  exactly the advertised list). Perf line (PI_OS_PERF=1) carries kind, via, counts and durations only.
+- **Bar** (`CommandController.swift`): an `open_item` act shows "Opening Radfotos…" and hides after the 0.4 s dwell (a
+  reveal downgrade says "Revealed … in Finder"); did-you-mean and choice lists take file rows next to app rows (Return,
+  click, 1–3, "ja", "die erste", the row's name — "Rad Fotos" matches "Radfotos", extensions optional), each performing
+  its own action through `LauncherService.perform`; file rows and file acts never call `/dictionary/learn` and never
+  offer "Not this".
+- **Auto-minimize** (`AutoMinimize.swift`): `InvocationEffects` records the agent's last screen effect (a successful
+  `launcher.open` for the invocation's context via `LauncherService.onAgentOpen`; any later input, capture, Brave or
+  open attempt via a `DesktopService` observer; any later agent tool but `show_result`/`thinking`/`open_item`), and the
+  completed record's step log must show no tool after the last `agent.open_item` but `agent.show_result`/`agent.run`
+  (a Node-only tool such as `find_files` can end between two streamed records and leave no activity). A
+  completed, visible answer that is not a question and whose card waits for nothing (no suggestion, no ask, < 2 rows)
+  shows for 0.8 s, then `PromptPanel.stepAside()` orders it out with its thread and follow-up composer kept; the note
+  "Opened Radfotos · Show" (Show, or Show Last Answer, brings it back). Settings → General "Hide the answer after pi
+  opens something" (default on, applied at once). Failures, cancels, questions and instant acts never minimize.
+- **Live check (read-only):** the production source on the real desktop found the folder whose key is "radfotos" as a
+  directory via AX (3 desktop windows, 7 items each, complete; names and paths not printed).
+
+## 2026-10-07 voice reliability (pass 3) — Mac side, built and tested offline, NOT installed
+
+Branch `feat/voice-reliability` (`3036435` … `3764700` on `dd0126d`); overview, measurements and safety rules in
+[VOICE_MAGIC.md](../VOICE_MAGIC.md#pass-3-2026-10-07-voice-reliability), UI changes in [UI_NOTES.md](UI_NOTES.md).
+The installed build is **stale**: it still runs one SpeechTranscriber locale and today's bar. Refresh only with
+`PI_OS_SIGN_IDENTITY` (never ad hoc), with `PI_OS_VOICE_JOURNAL_OPT_IN=1` the first time for Tom.
+
+- **Engine, Apple both languages** (`VoiceInput.swift`, `VoiceArbiter.swift`): one SpeechAnalyzer per take with a
+  DictationTranscriber for each checked language (short-form hint, volatile results, alternatives, word confidence),
+  SpeechTranscriber fallback for a language without a dictation model, up to 100 contextual strings at key-down,
+  the audio stream ended before the engine stops, a 16 kHz Int16 tee of the whole take (capped at the 125 s capture
+  limit) for Parakeet and the journal. `finishTake()` returns a `VoiceFinal` (every hypothesis with source, role,
+  confidence and minimum confidence, ≤ 2 n-best per language, content-free timing, the audio); an empty take is an
+  explicit empty final. The arbiter merges DictationTranscriber's doubled finals by audio range, keeps the bar's
+  live language stable, waits for the slower language until key-up + 150 ms and picks the locale hint with
+  `NLLanguageRecognizer` among the checked languages.
+- **Parakeet TDT v3** (`ParakeetEngine.swift`): FluidAudio 0.17.5 pinned exactly, `NemoTextProcessing` trait off,
+  tools version 6.1 with every pi-os target in Swift 5 mode. CPU + Neural Engine, never the GPU; loads with
+  `AsrModels.loadLocal` (only the verified install, never FluidAudio's own downloader); one decode at key-up,
+  partial re-decodes every 0.5 s. A loaded model joins the take as the primary engine and the Apple modules become
+  secondary; `finishTakeStages()` yields `.primary` (Parakeet) and then `.complete` (every engine). A failed or
+  stalled Parakeet drops out and the take settles as in Phase A. FluidAudio's logger is set to errors only.
+- **Speech model store** (`SpeechModelStore.swift`): Hugging Face `FluidInference/parakeet-tdt-0.6b-v3-coreml` at
+  revision `7dd20fe6b1797d35f5e3307e8b1732d9a178edfe`, 21 files (483,105,645 bytes) with sizes and SHA-256 pinned in
+  code (`SpeechModelDescriptor.parakeetV3` equals `ParakeetModel.descriptor`). Staged download, every file verified,
+  one rename into `<support>/models/parakeet-tdt-v3/` (0600/0700, excluded from backups); cancel and delete clean up.
+  The download and every load take a non-blocking flock on the local-inference lock (`deferredByLock` while held;
+  a deferred download keeps waiting instead of falling back to "Download"); per-take inference takes none.
+  `prepare()` never downloads.
+- **App wiring** (`Application.swift`): one store in the harness's support directory (a fixture's
+  `PI_OS_SUPPORT_DIR` in installed-test runs); `prepare()` detached at utility priority at launch with voice on, on
+  any Voice setting change, when Settings → Voice opens with voice on, and after a take while deferred, never on
+  the hotkey path. `migrateLanguages()` runs once before the first readiness check; takes start only the checked
+  languages. With voice on, Node starts at launch (`startForVoice`, `/health` polled every 20 ms for the first
+  second, no idle stop unless `PI_OS_NODE_WARM_TTL_SECONDS` is set), and cancelling a running task stops Node and
+  starts a fresh one off the hotkey path. `HarnessClient.warm()` fix: a key-down warm that arrives while a restart waits for the old
+  child to exit now joins that restart instead of timing out as "still stopping".
+- **Command flow and bar** (`CommandController.swift`, `PromptPanel.swift`, `ShelfToastView.swift`): voice finals send
+  `hypotheses`, `accept [suggest, check, confirm]` and the spoken locale. Two-step final: Parakeet's final goes alone
+  (seq N); an act, answer or refusal settles the take, a list or fallthrough shows nothing and waits for the complete
+  final (seq N+1, same `takeId`, every hypothesis), so one take never shows two decisions. Timeout keeps an unsettled
+  Parakeet partial out of the primary slot. New states: "Didn't catch that", "Did you mean …?" (Return, click, 1–3,
+  ↑/↓ or a spoken answer on the next hold), "Open X? ↩", "Did I hear that right?" (text selected, ≤ 2 other readings
+  as chips, none when any reading mentions deletion), "Opening Pages…" (launch not awaited; a later failure is a
+  note), "Not this" (note button or a spoken/typed "no" within 5 s, after sound, learned, alias, peer or secondary
+  acts), "No, I meant X" (marks the earlier take undone, learns from the words that said it, asks once), the learned
+  footer with Undo. Voice preview debounce 0; dwell 0.4 s. Suggestions on agent cards for a spoken request go
+  through `/instant` first. `/invoke` reuses the take's `takeId` with `input.engine` of the deciding hypothesis.
+- **Recognizer terms**: fetched at launch, whenever a learn or edit response (bar or Settings) brings a new
+  revision, and after a take if the launch fetch never succeeded; never at key-down.
+- **Voice journal** (`VoiceJournal.swift`, `VoiceJournalPolicy.swift`): opt-in `voiceJournalEnabled`, last 50 takes in
+  `<support>/voice-takes/` (`<takeId>.wav` ≤ 15 s 16 kHz mono, `<takeId>.take` record), 0700/0600, atomic writes,
+  never through a symlink, excluded from backups, self-repairing listing, no logging or network code (scanned by a
+  test). Appends and updates run off the key-up path in order; learn requests that would commit a rule carry the
+  accepted takes' text as the regression check.
+- **Settings** (`SettingsWindow.swift`, `RecognitionSettingsView.swift`, `DictionarySettingsView.swift`,
+  `RecentTakesView.swift`): Voice → Languages I speak (per-language Download) and Recognition (consent sheet, progress
+  + Cancel, Neural Engine preparation, waiting for the lock + Try Again, Ready + Delete, never "Not available in this
+  build" for the shipped model); a new Dictionary tab (learn mode, Apply to the recognizer, Explain to pi; App names,
+  Phrases, Fixes, Words; edit, switch, pin, delete with Undo; Add Word…; Export… 0600 / Import…; Forget
+  Everything…) with Recent takes (journal switch, ▶, Fix…, delete one or all). Every Settings write refetches the
+  recognizer terms. Installed-test runs use a fixture voice-settings suite.
+- **Voice timing log** (`VoiceTimingLog.swift`): `<support>/logs/voice-perf.log`, one content-free line per take
+  (hold, first partial, finish, each recognizer's final, cut modules, hypotheses, finals sent, decide, hidden, decision
+  kind, source, recognizer, via, reason), 256 KB × 2 generations.
+- **Packaging** (`build-app.sh`, `refresh-install.sh`, `Info.plist`): FluidAudio's resource bundles are signed with
+  the app's identity before the app; `THIRD_PARTY_NOTICES.md` and FluidAudio's licence texts ship in
+  `Contents/Resources`; `refresh-install.sh` blocks a nested bundle without the app's certificate, rebuilds the Node
+  dist only after every gate passed, and with `PI_OS_VOICE_JOURNAL_OPT_IN=1` turns the journal on once (only if the
+  setting was never set). The microphone text now says audio is kept only with *Keep my last voice takes*, on this Mac;
+  the bundle identifier and certificate, and so the code requirement, are unchanged.
+- **Developer bench** (`PiOSVoiceBench`, `pi-os-voice-bench`): WAV files through the production engines, JSONL for
+  `node-harness/scripts/voice-eval.mts`; holds the local-inference lock itself (exit 75 when held). See
+  [qa/voice/README.md](qa/voice/README.md).
+
+**Verified offline** (final tree `3764700`): `swift build` and `swift build --build-tests` 0 warnings;
+`PI_OFFLINE=1 PI_OS_AGENT=0 swift test` 712 tests, 0 failures, 2 skipped (the `PI_OS_PARAKEET_MODELS` opt-in tests);
+guarded `npm test` 652/652; `npm run test:macos` 1/1. The Apple and Phase B `say`-file replays ran under their own
+non-blocking lock. Offscreen snapshots of every new bar state and Settings page in every preset, light and dark.
+Synthetic measurements (`say` speech only) are in VOICE_MAGIC.md.
+
+**Not verified live:** real microphone takes and accuracy on Tom's voice; the real Parakeet download, first Neural
+Engine compile and loads in the running app; the real one-versus-two-finals split and latency (the timing log now
+records it); the Node restart after a cancelled task in the running app; Microphone/Speech Recognition grants with the new
+permission text; Bluetooth headsets; VoiceOver for the decision header, chips and notes; the 1–3 keys on non-US
+layouts; NSAlert/NSSavePanel/NSOpenPanel and real AVAudioPlayer playback in Settings → Dictionary. Known gaps:
+Escape does not count as "Not this" (no global key monitor); the journal record does not say which hypothesis
+decided (Fix scopes to the first first-tier hypothesis); Phase B needs at least one Apple dictation model; the
+check gate's 0.2 threshold was calibrated on Apple word confidence, not Parakeet's token confidence.
+
 ## 2026-10-05 final-review fixes (Mac side, wp2/f1-axwire), built and tested offline, NOT installed
 
 - **One credential rule** (POL-1): native AX now runs the web rule (`CredentialFields.identified`

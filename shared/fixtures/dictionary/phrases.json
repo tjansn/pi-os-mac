@@ -1,0 +1,195 @@
+{
+  "_doc": "foldPhrase / DictionaryPhrase.fold and isRefusedPhrase / DictionaryPhrase.isRefused must agree on every case.",
+  "fold": [
+    {
+      "input": "Öffne  Pages!",
+      "folded": "offne pages"
+    },
+    {
+      "input": "Straße",
+      "folded": "strasse"
+    },
+    {
+      "input": "STRAẞE",
+      "folded": "strasse"
+    },
+    {
+      "input": "Let's go",
+      "folded": "lets go"
+    },
+    {
+      "input": "Let’s go",
+      "folded": "lets go"
+    },
+    {
+      "input": "kein-Note",
+      "folded": "kein note"
+    },
+    {
+      "input": "Ça va",
+      "folded": "ca va"
+    },
+    {
+      "input": "  Wi‑Fi 2.0  ",
+      "folded": "wi fi 2 0"
+    },
+    {
+      "input": "Ünïcödé",
+      "folded": "unicode"
+    },
+    {
+      "input": "İstanbul",
+      "folded": "istanbul"
+    },
+    {
+      "input": "ΣΟΦΙΑ",
+      "folded": "σοφια"
+    },
+    {
+      "input": "Ⅻ Uhr",
+      "folded": "ⅻ uhr"
+    },
+    {
+      "input": "x² + y",
+      "folded": "x² y"
+    },
+    {
+      "input": "Ghostty🙂",
+      "folded": "ghostty"
+    },
+    {
+      "input": "naïve café",
+      "folded": "naive cafe"
+    },
+    {
+      "input": "école",
+      "folded": "ecole"
+    },
+    {
+      "input": "über Mac",
+      "folded": "uber mac"
+    },
+    {
+      "input": "!!!",
+      "folded": ""
+    }
+  ],
+  "refused": [
+    {
+      "input": "Move to Trash",
+      "refused": true
+    },
+    {
+      "input": "Papierkorb leeren",
+      "refused": true
+    },
+    {
+      "input": "Ja",
+      "refused": true
+    },
+    {
+      "input": "OK, cancel",
+      "refused": true
+    },
+    {
+      "input": "Nein!",
+      "refused": true
+    },
+    {
+      "input": "rm -rf ~",
+      "refused": true
+    },
+    {
+      "input": "Lösch das",
+      "refused": true
+    },
+    {
+      "input": "uninstall Zoom",
+      "refused": true
+    },
+    {
+      "input": "throw Pages away",
+      "refused": true
+    },
+    {
+      "input": "bin the pages app",
+      "refused": true
+    },
+    {
+      "input": "schmeiß Pages weg",
+      "refused": true
+    },
+    {
+      "input": "Pages in den Müll",
+      "refused": true
+    },
+    {
+      "input": "discard pages",
+      "refused": true
+    },
+    {
+      "input": "verwirf Pages",
+      "refused": true
+    },
+    {
+      "input": "get rid of pages",
+      "refused": true
+    },
+    {
+      "input": "wirf das weg",
+      "refused": true
+    },
+    {
+      "input": "toss it out",
+      "refused": true
+    },
+    {
+      "input": "put it in the bin",
+      "refused": true
+    },
+    {
+      "input": "in die Mülltonne",
+      "refused": true
+    },
+    {
+      "input": "ja bitte",
+      "refused": false
+    },
+    {
+      "input": "open Pages",
+      "refused": false
+    },
+    {
+      "input": "Bin ich da",
+      "refused": false
+    },
+    {
+      "input": "okay open pages",
+      "refused": false
+    },
+    {
+      "input": "bin gleich zurück",
+      "refused": false
+    },
+    {
+      "input": "throw a party",
+      "refused": false
+    },
+    {
+      "input": "Müller öffnen",
+      "refused": false
+    },
+    {
+      "input": "open the bin folder",
+      "refused": false
+    },
+    {
+      "input": "mull it over",
+      "refused": false
+    },
+    {
+      "input": "",
+      "refused": false
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "op": "upsert",
+  "entry": {
+    "list": "aliases",
+    "phrase": "Move to Trash",
+    "target": {
+      "kind": "openApp",
+      "bundleId": "com.apple.finder"
+    }
+  }
+}

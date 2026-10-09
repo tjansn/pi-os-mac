@@ -1,0 +1,61 @@
+{
+  "seq": 6,
+  "elapsedMs": 1,
+  "source": "grammar",
+  "decision": "act",
+  "intent": "open_app",
+  "title": "Open Safari",
+  "action": {
+    "type": "openApp",
+    "bundleId": "com.apple.Safari"
+  },
+  "confirm": true,
+  "card": {
+    "format": "pi-os-ui/1",
+    "root": "root",
+    "elements": {
+      "root": {
+        "type": "Answer",
+        "props": {
+          "summary": "Open Safari"
+        },
+        "children": [
+          "n1"
+        ]
+      },
+      "n1": {
+        "type": "ItemList",
+        "props": {
+          "title": "Applications"
+        },
+        "children": [
+          "n2"
+        ]
+      },
+      "n2": {
+        "type": "Item",
+        "props": {
+          "title": "Safari",
+          "subtitle": "/Applications/Safari.app",
+          "icon": {
+            "kind": "app",
+            "bundleId": "com.apple.Safari"
+          }
+        },
+        "on": {
+          "primary": {
+            "action": "openApp",
+            "params": {
+              "bundleId": "com.apple.Safari"
+            }
+          }
+        }
+      }
+    }
+  },
+  "voice": {
+    "heard": "safari",
+    "source": "apple-dt/de-DE",
+    "via": "peer"
+  }
+}

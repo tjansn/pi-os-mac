@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   BASE_TIERS, boundedUtterance, buildRouteInput, classificationFromHints, classifyUtterance, extractRequestText, intrinsicTier,
-  routeContextFromSnapshot, screenEvidence, surfaceFromProcess, tierRank,
+  isUnclearShortUtterance, routeContextFromSnapshot, screenEvidence, SHORT_SPOKEN_WORDS, surfaceFromProcess, tierRank,
+  UNPLACED_CONFIDENCE, utteranceWords,
   type AgentIntent, type Classification, type ClassifierHints, type SurfaceClass,
 } from "../src/agent/routing/index.js";
 import type { DesktopContextSnapshot } from "../src/hostClient.js";
@@ -332,4 +333,27 @@ test("confident hints raise: unknown utterance adopts a label, a higher hinted t
   const ignored = classificationFromHints(answer, { source: "pi-classifier", latencyMs: 180, tier: "deep", tierP: 0.4 });
   assert.equal(intrinsicTier(ignored), "quick", "low-probability hints are ignored");
   assert.equal(classificationFromHints(answer, null), answer);
+});
+
+test("spoken requests: a short utterance no rule places is unclear; placed, long and empty ones are not", () => {
+  const unclear = (text: string) => isUnclearShortUtterance(utteranceWords(text), classifyUtterance(text));
+  // Garbled transcripts of the kind Tom's takes produced (fixture text, DESIGN4 §3), EN and DE.
+  for (const text of ["Oh, then kind order.", "page is", "kein note", "Ja dann mal das Dings", "hmm the thing", "Mach mal Kino", "recast"]) {
+    const c = classifyUtterance(text);
+    assert.deepEqual([c.intent, c.intentConfidence], ["other", UNPLACED_CONFIDENCE], text);
+    assert.ok(unclear(text), text);
+  }
+  // Placed by a rule: the open grammar, a question, a calculation, writing.
+  for (const text of ["open page is", "öffne Pages", "what is kind order?", "12 * 7 + 3", "fass das zusammen"]) assert.ok(!unclear(text), text);
+  // Short means at most SHORT_SPOKEN_WORDS words (the instant lane's check-gate bound); nothing is not short.
+  assert.equal(SHORT_SPOKEN_WORDS, 8);
+  assert.ok(unclear("oh then kind order and the other thing"));
+  assert.ok(!unclear("oh then kind order and the other thing too"));
+  for (const text of ["", "   "]) assert.ok(!isUnclearShortUtterance(utteranceWords(text), { intent: "other", intentConfidence: UNPLACED_CONFIDENCE }), JSON.stringify(text));
+  assert.deepEqual(["  open   Pages  ", "Oh, then kind order.", "Öffne bitte Pages"].map(utteranceWords), [2, 4, 3]);
+  // Only the unplaced label counts: an `other` that a confident hint adopted as a question is placed;
+  // a tier-only hint leaves it unplaced (decide() then honours the hinted floor).
+  const other = classifyUtterance("kein note");
+  assert.ok(!isUnclearShortUtterance(2, classificationFromHints(other, { source: "laya", latencyMs: 20, intent: "answer", intentP: 0.9 })));
+  assert.ok(isUnclearShortUtterance(2, classificationFromHints(other, { source: "pi-classifier", latencyMs: 20, tier: "standard", tierP: 0.9 })));
 });

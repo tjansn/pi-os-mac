@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  canonicalMath, cleanUtterance, decimalConvention, detectLang, fixDecimalSeparators, normalize, normalizeSpokenUrl,
+  canonicalMath, cleanUtterance, decimalConvention, detectLang, fixDecimalSeparators, normalize, normalizeSpokenUrl, spokenCore,
 } from "../src/instant/normalize.js";
 import { applyDigitScales, deWordsToDigits, deWordToNumber, enWordsToDigits } from "../src/instant/numberWords.js";
 
@@ -132,4 +132,73 @@ test("spoken URLs (jev normalizeSpokenUrl, EN + DE)", () => {
   assert.equal(normalizeSpokenUrl("w w w dot example dot org"), "www.example.org");
   assert.equal(normalizeSpokenUrl("h t t p s colon slash slash example dot com"), "https://example.com");
   assert.equal(normalizeSpokenUrl("my dash site dot io"), "my-site.io");
+});
+
+test("spokenCore: EN fillers, request wrappers, politeness, gerunds, commas and stutters reduce to the command", () => {
+  const cases: [string, string][] = [
+    ["okay can you open pages for me", "open pages"],
+    ["okay, open pages", "open pages"],
+    ["um open, pages", "open pages"],
+    ["uh, um, so open pages", "open pages"],
+    ["hey open pages", "open pages"],
+    ["alright then open pages now", "open pages"],
+    ["open open pages", "open pages"],
+    ["open pages open pages", "open pages"],
+    ["would you mind opening pages", "open pages"],
+    ["would you mind open pages", "open pages"],
+    ["do you mind launching spotify", "launch spotify"],
+    ["go ahead and open pages", "open pages"],
+    ["can you please just open pages", "open pages"],
+    ["i'd like to open pages please", "open pages"],
+    ["i want to switch to notion", "switch to notion"],
+    ["let's open pages", "open pages"],
+    ["could you open pages for me thanks", "open pages"],
+    ["open pages real quick", "open pages"],
+    ["turn the volume down a bit", "turn the volume down"],
+    ["okay so open pages please", "open pages"],
+  ];
+  for (const [input, core] of cases) assert.equal(spokenCore(input), core, input);
+});
+
+test("spokenCore: German wrappers, particles after the verb and verb-final requests", () => {
+  const cases: [string, string][] = [
+    ["öffne mir bitte mal pages", "öffne pages"],
+    ["öffne bitte pages", "öffne pages"],
+    ["öffne mal pages", "öffne pages"],
+    ["mach mal pages auf", "mach pages auf"],
+    ["mach mir mal pages auf", "mach pages auf"],
+    ["kannst du pages öffnen", "pages öffnen"],
+    ["kannst du mal pages aufmachen", "pages aufmachen"],
+    ["könntest du bitte pages starten", "pages starten"],
+    ["ich möchte pages öffnen", "pages öffnen"],
+    ["ich will pages öffnen", "pages öffnen"],
+    ["äh, öffne pages", "öffne pages"],
+    ["also öffne pages", "öffne pages"],
+    ["okay, öffne pages bitte", "öffne pages"],
+    ["öffne pages für mich", "öffne pages"],
+    ["bitte pages öffnen", "pages öffnen"],
+    ["mach mal lauter", "mach lauter"],
+    ["open mal pages", "open pages"],
+  ];
+  for (const [input, core] of cases) assert.equal(spokenCore(input), core, input);
+});
+
+test("spokenCore leaves commands, numbers and ordinary sentences alone", () => {
+  for (const input of ["open pages", "pages öffnen", "what's 17 times 23", "find my invoice from march", "how are you", "open pages and write a letter", "the notion of time"]) {
+    assert.equal(spokenCore(input), input, input);
+  }
+  // A comma between digits is a decimal or group separator, not ASR punctuation.
+  assert.equal(spokenCore("okay, 1,5 mal 2"), "1,5 mal 2");
+  assert.equal(spokenCore("okay, 1,000 times 3"), "1,000 times 3");
+  // URL punctuation, ports and clock times stay; sentence punctuation goes.
+  assert.equal(spokenCore("okay, open https://github.com"), "open https://github.com");
+  assert.equal(spokenCore("go to example.com/search?q=pizza please"), "go to example.com/search?q=pizza");
+  assert.equal(spokenCore("open example.com:8080"), "open example.com:8080");
+  assert.equal(spokenCore("okay: open pages?"), "open pages");
+  assert.equal(spokenCore("can you open pages? now"), "open pages");
+  assert.equal(spokenCore("okay?! open pages"), "open pages");
+  // Idempotent.
+  for (const input of ["okay can you open pages for me", "öffne mir bitte mal pages", "um open, pages"]) {
+    assert.equal(spokenCore(spokenCore(input)), spokenCore(input), input);
+  }
 });

@@ -15,8 +15,6 @@ public struct MacConfiguration {
     public let warmTTL: Double
     /// True when `PI_OS_NODE_WARM_TTL_SECONDS` was set; the explicit knob always wins.
     public let warmTTLExplicit: Bool
-    /// Default idle TTL while push-to-talk is enabled, so a hold rarely pays a Node cold start.
-    public static let voiceWarmTTL: Double = 600
     public let echo: Bool
     public let forceReadOnly: Bool
     public var canControl: Bool { !forceReadOnly && ControlAvailability.ready }
@@ -28,9 +26,10 @@ public struct MacConfiguration {
               let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
         return value["mode"] as? String == "trustedGlobal" && value["trustAcknowledgement"] as? Int == 1
     }
-    /// Idle time a warm Node child is kept: the explicit knob, else 600 s with voice on, else 120 s.
-    public func warmTTL(voiceEnabled: Bool) -> Double {
-        warmTTLExplicit || !voiceEnabled ? warmTTL : Self.voiceWarmTTL
+    /// Idle time a warm Node child is kept: the explicit knob, else none while push-to-talk is enabled (nil: Node is
+    /// started at launch and never idle-stopped, DESIGN4 §7 item 6, about 170 MB), else 120 s.
+    public func warmTTL(voiceEnabled: Bool) -> Double? {
+        warmTTLExplicit || !voiceEnabled ? warmTTL : nil
     }
     public init(env: [String: String] = ProcessInfo.processInfo.environment) throws {
         support = URL(fileURLWithPath: env["PI_OS_SUPPORT_DIR"] ?? NSHomeDirectory() + "/Library/Application Support/pi-os", isDirectory: true)
@@ -163,8 +162,13 @@ private final class OwnedChild {
     private var expectedExit = false
     private var reservations: Set<UUID> = []
     public var onUnexpectedExit: (() -> Void)?
-    /// Push-to-talk raises the default warm TTL (see MacConfiguration.warmTTL(voiceEnabled:)).
+    /// Push-to-talk keeps Node warm without an idle stop (see MacConfiguration.warmTTL(voiceEnabled:)).
     public var voiceEnabled: () -> Bool = { false }
+    /// `/health` poll interval while a child starts: 20 ms for the first second (instant-first Node answers in about
+    /// 0.1 s), then 100 ms (DESIGN4 §7 item 6).
+    nonisolated static func healthPollNanoseconds(elapsed: TimeInterval) -> UInt64 {
+        elapsed < 1 ? 20_000_000 : 100_000_000
+    }
     public var ownedPID: pid_t? { child?.exited == false ? child?.pid : nil }
 
     public init(config: MacConfiguration) {
@@ -184,10 +188,13 @@ private final class OwnedChild {
         // A previous cancellation may still be reaping its owned group. Only poll during a new warm request.
         if expectedExit {
             let deadline = Date().addingTimeInterval(3)
-            while child != nil && Date() < deadline {
+            // Two warms can wait here at once (a cancel's voice restart and the next key-down): the first one past the
+            // reap starts the next child (`expectedExit` becomes false), and the other joins it below.
+            while child != nil && expectedExit && Date() < deadline {
                 try await Task.sleep(nanoseconds: 20_000_000)
             }
-            guard child == nil else { throw DomainError("harness_unreachable", "Previous agent process is still stopping") }
+            if let starting { return try await starting.value }
+            guard child == nil || !expectedExit else { throw DomainError("harness_unreachable", "Previous agent process is still stopping") }
         }
         if let child, !child.exited { return }
         generation = UUID(); expectedExit = false
@@ -220,7 +227,8 @@ private final class OwnedChild {
         }
         let task = Task { [weak self] in
             guard let self else { throw CancellationError() }
-            let deadline = Date().addingTimeInterval(12)
+            let started = Date()
+            let deadline = started.addingTimeInterval(12)
             while Date() < deadline {
                 try Task.checkCancellation()
                 guard self.generation == run, self.child?.exited == false else {
@@ -229,7 +237,7 @@ private final class OwnedChild {
                 if let data = try? await self.request("GET", "/health", authenticated: false),
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    json["sessionId"] as? String == run.uuidString { return }
-                try await Task.sleep(nanoseconds: 100_000_000)
+                try await Task.sleep(nanoseconds: Self.healthPollNanoseconds(elapsed: Date().timeIntervalSince(started)))
             }
             throw DomainError("harness_unreachable", "Node readiness timed out; check logs/harness.log and port \(self.config.nodePort)")
         }
@@ -257,14 +265,21 @@ private final class OwnedChild {
     public func stopIfUnused() { if reservations.isEmpty { stop() } }
     public func retainWarm() {
         retention?.cancel(); retention = nil
-        guard reservations.isEmpty, child?.exited == false, !expectedExit else { return }
+        guard reservations.isEmpty, child?.exited == false, !expectedExit,
+              let ttl = config.warmTTL(voiceEnabled: voiceEnabled()) else { return }
         retention = Task { [weak self] in
-            guard let self else { return }
-            let ttl = self.config.warmTTL(voiceEnabled: self.voiceEnabled())
             do { try await Task.sleep(nanoseconds: UInt64(ttl * 1_000_000_000)) }
             catch { return }
-            self.stop()
+            self?.stop()
         }
+    }
+    /// Push-to-talk is on: Node starts now (at launch or when voice is switched on), off the hotkey path, and stays up
+    /// without an idle stop, so the first hold never pays a cold start. Best effort: a failure here is reported by
+    /// the next take that needs Node.
+    public func startForVoice() async -> Bool {
+        do { try await warm() } catch { return false }
+        retainWarm()
+        return true
     }
     public func stop() {
         expectedExit = true; generation = UUID()
@@ -386,6 +401,10 @@ private final class OwnedChild {
         public let route: Route?
         /// Additive (DESIGN2 §5.1): the thread's scope and whether the agent looked at the window.
         public let context: ContextRecord?
+        /// The record's step log as tool names only (`agent.<tool>` per agent tool execution, protocol.md
+        /// "GET /invocations"), in order; a step's `detail` is never read. Nil when absent or malformed.
+        public let steps: [String]?
+        private struct Step: Decodable { let tool: String }
         public struct ContextRecord: Decodable, Equatable {
             public let scope: ContextScope
             public let source: ContextSource?
@@ -402,14 +421,14 @@ private final class OwnedChild {
             public let auto: Bool?
         }
         private enum Keys: String, CodingKey {
-            case state, activity, responseText, failureMessage, followupAvailable, revision, partialText, card, cardComplete, route, context
+            case state, activity, responseText, failureMessage, followupAvailable, revision, partialText, card, cardComplete, route, context, steps
         }
         public init(state: String, activity: String? = nil, responseText: String? = nil, failureMessage: String? = nil,
                     followupAvailable: Bool? = nil, revision: Int? = nil, partialText: String? = nil, card: CardSpec? = nil,
-                    cardComplete: Bool? = nil) {
+                    cardComplete: Bool? = nil, steps: [String]? = nil) {
             self.state = state; self.activity = activity; self.responseText = responseText; self.failureMessage = failureMessage
             self.followupAvailable = followupAvailable; self.revision = revision; self.partialText = partialText
-            self.card = card; self.cardComplete = cardComplete; route = nil; context = nil
+            self.card = card; self.cardComplete = cardComplete; route = nil; context = nil; self.steps = steps
         }
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: Keys.self)
@@ -424,6 +443,7 @@ private final class OwnedChild {
             cardComplete = (try? c.decodeIfPresent(Bool.self, forKey: .cardComplete)) ?? nil
             route = (try? c.decodeIfPresent(Route.self, forKey: .route)) ?? nil
             context = (try? c.decodeIfPresent(ContextRecord.self, forKey: .context)) ?? nil
+            steps = ((try? c.decodeIfPresent([Step].self, forKey: .steps)) ?? nil)?.map(\.tool)
         }
         public var isTerminal: Bool { !["queued", "running"].contains(state) }
     }
@@ -521,6 +541,28 @@ private final class OwnedChild {
         do { _ = try await request("POST", "/invocations/\(id)/cancel", payload: [:]); return true }
         catch { return false }
     }
+    // MARK: Personal dictionary (DESIGN4 §6.2): token-authed like /instant, synchronous in Node, no agent tool
+    // reaches it. An older harness answers 404, which arrives here as a thrown DomainError: treat it as "no dictionary".
+    /// POST /dictionary/learn: a user gesture in the bar (pick, confirm, edit, "No, I meant", reject). Never warms the
+    /// harness: a take was just answered by /instant, so it is running.
+    public func learn(_ learn: DictionaryLearnRequest) async throws -> DictionaryWriteResponse {
+        try JSONDecoder().decode(DictionaryWriteResponse.self, from: await request("POST", DictionaryRoutes.learn, body: JSONEncoder().encode(learn)))
+    }
+    /// GET /dictionary: the whole document, disabled entries included (Settings only).
+    public func dictionary() async throws -> DictionaryDocument {
+        try await warm()
+        return try JSONDecoder().decode(DictionaryDocument.self, from: await request("GET", DictionaryRoutes.document))
+    }
+    /// POST /dictionary/edit: Settings → Dictionary and the bar's Undo.
+    public func editDictionary(_ edit: DictionaryEditRequest) async throws -> DictionaryWriteResponse {
+        try await warm()
+        return try JSONDecoder().decode(DictionaryWriteResponse.self, from: await request("POST", DictionaryRoutes.edit, body: JSONEncoder().encode(edit)))
+    }
+    /// GET /dictionary/recognizer-terms: the ranked contextual strings for the recognizers. Fetched at launch and when a
+    /// write's `revision` changes, never on key-down.
+    public func recognizerTerms(max: Int = DictionaryLimits.recognizerTerms) async throws -> RecognizerTermsResponse {
+        try JSONDecoder().decode(RecognizerTermsResponse.self, from: await request("GET", DictionaryRoutes.recognizerTerms(max: max)))
+    }
     private func request(_ method: String, _ path: String, payload: [String: Any]? = nil, authenticated: Bool = true) async throws -> Data {
         try await request(method, path, body: payload.map { try JSONSerialization.data(withJSONObject: $0) }, authenticated: authenticated)
     }
@@ -542,25 +584,113 @@ private final class OwnedChild {
     }
 }
 
+/// The dictionary routes as the bar and Settings use them (DESIGN4 §6.2); tests and previews substitute fakes.
+@MainActor protocol DictionaryService: AnyObject {
+    func learn(_ learn: DictionaryLearnRequest) async throws -> DictionaryWriteResponse
+    func dictionary() async throws -> DictionaryDocument
+    func editDictionary(_ edit: DictionaryEditRequest) async throws -> DictionaryWriteResponse
+    func recognizerTerms(max: Int) async throws -> RecognizerTermsResponse
+}
+extension HarnessClient: DictionaryService {}
+
 /// `input` on POST /invoke (protocol §3.5). Additive: Windows never sends it.
 public struct AgentInput: Equatable, Sendable {
     public var mode: String
     public var locale: String?
     public var durationMs: Int?
+    /// The engine part of the deciding hypothesis's recognizer id (`apple-dt`, `parakeet-v3`; never the `/locale` part).
     public var engine: String?
-    public init(mode: String, locale: String? = nil, durationMs: Int? = nil, engine: String? = nil) {
+    /// 0...1: the deciding hypothesis's mean word (or utterance) confidence.
+    public var confidence: Double?
+    public init(mode: String, locale: String? = nil, durationMs: Int? = nil, engine: String? = nil, confidence: Double? = nil) {
         self.mode = mode; self.locale = locale; self.durationMs = durationMs; self.engine = engine
+        self.confidence = confidence.flatMap { $0.isFinite ? min(1, max(0, $0)) : nil }
     }
-    public static func voice(_ language: VoiceLanguage, durationMs: Int?) -> AgentInput {
-        AgentInput(mode: "voice", locale: language.identifier, durationMs: durationMs, engine: "apple-speech")
+    /// A spoken take: `/invoke` gets the take's language hint among the languages the user speaks (Settings → Voice), the
+    /// engine and confidence of the hypothesis that decided (`voice.source`, else the host's pick) and the hold time
+    /// (DESIGN4 §4.4, §8). The same locale is the take's `/instant` `locale`.
+    public static func voice(_ final: VoiceFinal, decidedBy source: String? = nil, fallback language: VoiceLanguage,
+                             durationMs: Int?, among languages: [VoiceLanguage] = VoiceLanguages.enabled) -> AgentInput {
+        let usable = final.wireHypotheses
+        let chosen = source.flatMap { source in usable.first { $0.source == source } } ?? usable.first
+        let spoken = languages.isEmpty ? VoiceLanguages.enabled : languages
+        let locale = final.languageHint(among: spoken)?.identifier ?? chosen?.locale.flatMap { VoiceText.isLocale($0) ? $0 : nil } ?? language.identifier
+        return AgentInput(mode: "voice", locale: locale, durationMs: durationMs, engine: chosen.map(\.engine) ?? "apple-dt",
+                          confidence: chosen?.confidence)
     }
     var payload: [String: Any] {
         var value: [String: Any] = ["mode": mode]
         if let locale { value["locale"] = locale }
         if let durationMs { value["durationMs"] = durationMs }
         if let engine { value["engine"] = engine }
+        if let confidence { value["confidence"] = confidence }
         return value
     }
+}
+
+/// The recognizers' contextual strings from `GET /dictionary/recognizer-terms` (DESIGN4 §6.4): fetched at launch (once
+/// Node is up), after a take while no fetch has succeeded yet, and whenever a learn or edit response carries a revision
+/// other than the last one seen, never on key-down. Takes put the pinned app name and window title first, then these,
+/// capped at 100. An older harness (404) or a failure leaves the list as it was. Terms are user content: never logged.
+@MainActor final class RecognizerTerms {
+    private let service: DictionaryService
+    private(set) var strings: [String] = []
+    /// The revision of `strings`, or of the newest write response seen while a fetch was pending.
+    private(set) var revision: Int?
+    private var fetching: Task<Void, Never>?
+    private var again = false
+    /// Completed fetches (tests).
+    private(set) var fetches = 0
+    /// An empty answer means Node had no app index yet (it asks the host for it, and right after launch the host may
+    /// not answer within Node's short wait): it does not count as fetched, and is retried a few times off the hotkey path.
+    private let emptyRetryDelay: Duration
+    private let maximumEmptyRetries: Int
+    private var emptyRetries = 0
+
+    init(service: DictionaryService, emptyRetryDelay: Duration = .seconds(3), maximumEmptyRetries: Int = 3) {
+        self.service = service; self.emptyRetryDelay = emptyRetryDelay; self.maximumEmptyRetries = maximumEmptyRetries
+    }
+
+    /// Fetches now (launch, voice switched on). A fetch already running is followed by one more.
+    func refresh() {
+        if fetching != nil { again = true; return }
+        fetching = Task { [weak self] in
+            guard let self else { return }
+            var empty = false
+            if let response = try? await self.service.recognizerTerms(max: DictionaryLimits.recognizerTerms) {
+                self.strings = response.terms.map(\.text)
+                empty = response.terms.isEmpty
+                // Keep "never fetched" for an empty answer, so refreshIfNeverFetched tries again after a take.
+                self.revision = empty ? nil : response.revision
+                if !empty { self.emptyRetries = 0 }
+            }
+            self.fetches += 1
+            self.fetching = nil
+            if self.again { self.again = false; self.refresh(); return }
+            if empty, self.emptyRetries < self.maximumEmptyRetries {
+                self.emptyRetries += 1
+                let delay = self.emptyRetryDelay
+                Task { [weak self] in
+                    try? await Task.sleep(for: delay)
+                    self?.refreshIfNeverFetched()
+                }
+            }
+        }
+    }
+    /// After a take (Node just answered, off the hotkey path): fetches when no fetch ever succeeded, so a launch start that
+    /// failed (a slow login, a spawn error) does not leave the recognizers without the dictionary for the whole session.
+    func refreshIfNeverFetched() {
+        guard revision == nil, fetching == nil else { return }
+        refresh()
+    }
+    /// A learn or edit response's revision: refetches only when it changed.
+    func noteRevision(_ revision: Int) {
+        guard revision != self.revision else { return }
+        self.revision = revision
+        refresh()
+    }
+    /// Waits for a running fetch (tests).
+    func settled() async { while let fetching { await fetching.value } }
 }
 
 /// /settings/classifier (protocol §3.5). `kind`, `python` and `modelDir` are edited here; every

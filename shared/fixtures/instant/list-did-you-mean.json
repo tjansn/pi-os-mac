@@ -1,0 +1,57 @@
+{
+  "seq": 7,
+  "elapsedMs": 1,
+  "source": "grammar",
+  "decision": "list",
+  "intent": "open_app",
+  "title": "Did you mean Raycast?",
+  "card": {
+    "format": "pi-os-ui/1",
+    "root": "root",
+    "elements": {
+      "root": {
+        "type": "Answer",
+        "props": {
+          "summary": "Did you mean Raycast?"
+        },
+        "children": [
+          "n1"
+        ]
+      },
+      "n1": {
+        "type": "ItemList",
+        "props": {
+          "title": "Applications"
+        },
+        "children": [
+          "n2"
+        ]
+      },
+      "n2": {
+        "type": "Item",
+        "props": {
+          "title": "Raycast",
+          "subtitle": "/Applications/Raycast.app",
+          "icon": {
+            "kind": "app",
+            "bundleId": "com.raycast.macos"
+          }
+        },
+        "on": {
+          "primary": {
+            "action": "openApp",
+            "params": {
+              "bundleId": "com.raycast.macos"
+            }
+          }
+        }
+      }
+    }
+  },
+  "voice": {
+    "heard": "recast",
+    "source": "parakeet-v3",
+    "via": "sound",
+    "didYouMean": true
+  }
+}

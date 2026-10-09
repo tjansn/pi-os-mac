@@ -129,6 +129,10 @@ public actor DesktopService {
     private let capacity: Int
     /// Serves POST /tools/launcher.* when set (contextId optional there); nil keeps those routes 404.
     private let launcher: LauncherBackend?
+    /// Called synchronously, before the route runs, for every authorized tool call that can change or observe the
+    /// user's screen: native input, captures, the Brave routes and launcher.open (a successful open is reported
+    /// afterwards by LauncherService.onAgentOpen). Never for launcher reads or desktop.getContext. Content-free.
+    private let toolObserver: (@Sendable () -> Void)?
     /// Live Settings for the Brave AX routes, read on every call (injected by tests and --conformance).
     private var browserSettings: () -> BrowserAXSettings = BrowserAXSettings.stored
     private var browserTiming = BrowserAXTiming.standard
@@ -136,11 +140,18 @@ public actor DesktopService {
     public init(captures: URL, token: String, ttl: TimeInterval = 1800, capacity: Int = 32,
                 controlEnabled: @escaping () -> Bool = { false }, traceFile: URL? = nil,
                 beforeInput: @escaping () async -> Bool = { false }, afterInput: @escaping (Bool) async -> Void = { _ in },
-                launcher: LauncherBackend? = nil) {
+                launcher: LauncherBackend? = nil, toolObserver: (@Sendable () -> Void)? = nil) {
         self.captures = captures; self.token = token; self.ttl = ttl; self.capacity = capacity
         self.controlEnabled = controlEnabled; self.traceFile = traceFile
         self.beforeInput = beforeInput; self.afterInput = afterInput
-        self.launcher = launcher
+        self.launcher = launcher; self.toolObserver = toolObserver
+    }
+    /// Whether a POST to `path` is reported to `toolObserver`.
+    static func observes(_ path: String) -> Bool {
+        guard path.hasPrefix("/tools/") else { return false }
+        let name = String(path.dropFirst(7))
+        if let launcher = LauncherRoutes.name(forPath: path) { return launcher == LauncherRoutes.open }
+        return name != "desktop.getContext"
     }
     public func insert(_ snapshot: Snapshot, browserPin: BrowserPin? = nil) {
         insert(snapshot, browserPin: browserPin, browserTab: browserPin)
@@ -546,6 +557,7 @@ public actor DesktopService {
             let control = controlEnabled()
             return HostRoutes.catalog(includeInput: control, launcher: launcher == nil ? [] : LauncherRoutes.advertised(controlEnabled: control))
         }
+        if request.method == "POST", let toolObserver, Self.observes(request.path) { toolObserver() }
         // Launcher routes take an optional contextId, so they dispatch before the contextId guard below.
         if request.method == "POST", let launcher, let name = LauncherRoutes.name(forPath: request.path) {
             return await launcherRoute(name, request: request, backend: launcher)

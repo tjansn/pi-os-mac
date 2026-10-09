@@ -454,6 +454,29 @@ test("privacy: perf hook and logs never carry the utterance", async () => {
   assert.deepEqual(logged, []);
 });
 
+test("privacy: voice finals report counts and content-free labels only (hypothesis count, via), never heard text or sources", async () => {
+  const fields: Record<string, unknown>[] = [];
+  const logged: unknown[] = [];
+  const original = console.log;
+  console.log = (...args: unknown[]) => { logged.push(args); };
+  try {
+    const dispatcher = make({ perf: (stage, ms, f) => fields.push({ stage, ms, ...f }) });
+    const hypotheses = [
+      { text: "open spotifei secretword", source: "parakeet-v3", role: "primary" as const },
+      { text: "Open Spotify.", source: "apple-dt/en-US", role: "secondary" as const },
+      { text: "Öffne Spotifei privat.", source: "apple-dt/de-DE", role: "secondary" as const },
+    ];
+    await dispatcher.dispatch({ ...request("open spotifei secretword", "final"), inputMode: "voice", hypotheses, accept: ["suggest", "check", "confirm"] });
+    await dispatcher.dispatch({ ...request("Spotify", "final"), inputMode: "voice" });
+    const blob = JSON.stringify(fields);
+    for (const word of ["spotifei", "secretword", "privat", "parakeet", "apple-dt"]) assert.ok(!blob.toLowerCase().includes(word), word);
+    assert.deepEqual(fields.map((f) => [f.hyps, f.via]), [[3, "secondary"], [0, "exact"]]);
+  } finally {
+    console.log = original;
+  }
+  assert.deepEqual(logged, []);
+});
+
 test("currency rates download on the first currency query only, then come from the cache", async () => {
   const xml = readFileSync(join(fixtures, "instant-cases", "ecb-2026-10-02.xml"), "utf8");
   let fetches = 0;

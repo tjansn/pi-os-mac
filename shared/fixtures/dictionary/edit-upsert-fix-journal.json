@@ -1,0 +1,10 @@
+{
+  "op": "upsert",
+  "entry": {
+    "list": "fixes",
+    "recognizer": "apple-dt/en-US",
+    "heard": "clod",
+    "intended": "Claude"
+  },
+  "source": "journal-fix"
+}

@@ -1,0 +1,37 @@
+{
+  "text": "Mach mal Pages auf.",
+  "phase": "final",
+  "seq": 3,
+  "takeId": "take-43",
+  "contextId": "ctx-123",
+  "locale": "de-DE",
+  "inputMode": "voice",
+  "hypotheses": [
+    {
+      "text": "Mach mal Pages auf.",
+      "source": "apple-dt/de-DE",
+      "role": "peer",
+      "confidence": 0.82,
+      "minConfidence": 0.55,
+      "locale": "de-DE"
+    },
+    {
+      "text": "Mark Mal pages off.",
+      "source": "apple-dt/en-US",
+      "role": "peer",
+      "confidence": 0.38,
+      "minConfidence": 0.12,
+      "locale": "en-US"
+    },
+    {
+      "text": "Mach mal Pages an.",
+      "source": "apple-dt/de-DE",
+      "role": "secondary",
+      "locale": "de-DE"
+    }
+  ],
+  "accept": [
+    "suggest",
+    "confirm"
+  ]
+}

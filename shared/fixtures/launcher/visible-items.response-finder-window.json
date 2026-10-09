@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "result": {
+    "sources": [{ "kind": "finderWindow", "via": "ax", "complete": false }],
+    "items": [
+      { "token": "tok_9f2c6e1a4b8d", "name": "Radfotos 2025", "path": "/Users/fixture/Pictures/Touren/Radfotos 2025", "contentType": "public.folder", "isDirectory": true, "isPackage": false, "source": "finderWindow" },
+      { "token": "tok_1a7e3c9b5d2f", "name": "Alpen.jpg", "path": "/Users/fixture/Pictures/Touren/Alpen.jpg", "contentType": "public.jpeg", "createdMs": 1751328000000, "isDirectory": false, "isPackage": false, "source": "finderWindow" }
+    ],
+    "truncated": false,
+    "elapsedMs": 38.2
+  }
+}

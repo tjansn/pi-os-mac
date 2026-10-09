@@ -1,0 +1,18 @@
+{
+  "seq": 5,
+  "elapsedMs": 1,
+  "source": "grammar",
+  "decision": "act",
+  "intent": "url",
+  "title": "Open guests.example",
+  "action": {
+    "type": "openURL",
+    "url": "https://guests.example/"
+  },
+  "confirm": true,
+  "voice": {
+    "heard": "guests.example",
+    "source": "parakeet-v3",
+    "via": "url"
+  }
+}

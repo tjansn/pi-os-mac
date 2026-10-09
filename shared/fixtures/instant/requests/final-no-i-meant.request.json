@@ -1,0 +1,22 @@
+{
+  "text": "No, I meant Notion.",
+  "phase": "final",
+  "seq": 2,
+  "takeId": "take-42",
+  "contextId": "ctx-123",
+  "locale": "en-US",
+  "inputMode": "voice",
+  "hypotheses": [
+    {
+      "text": "No, I meant Notion.",
+      "source": "parakeet-v3",
+      "role": "primary",
+      "confidence": 0.81
+    }
+  ],
+  "accept": [
+    "suggest",
+    "check",
+    "confirm"
+  ]
+}

@@ -1,0 +1,87 @@
+{
+  "seq": 6,
+  "elapsedMs": 2,
+  "source": "grammar",
+  "decision": "list",
+  "intent": "open_item",
+  "title": "Did you mean…",
+  "card": {
+    "format": "pi-os-ui/1",
+    "root": "root",
+    "elements": {
+      "root": {
+        "type": "Answer",
+        "props": {
+          "summary": "Did you mean…"
+        },
+        "children": [
+          "n1"
+        ]
+      },
+      "n1": {
+        "type": "ItemList",
+        "props": {},
+        "children": [
+          "n2",
+          "n3"
+        ]
+      },
+      "n2": {
+        "type": "Item",
+        "props": {
+          "title": "Fotos",
+          "subtitle": "in Desktop",
+          "icon": {
+            "kind": "file",
+            "uti": "public.folder"
+          }
+        },
+        "on": {
+          "primary": {
+            "action": "openFile",
+            "params": {
+              "token": "tok_2b8d4f6a1c3e"
+            }
+          },
+          "secondary": {
+            "action": "revealFile",
+            "params": {
+              "token": "tok_2b8d4f6a1c3e"
+            }
+          },
+          "tertiary": {
+            "action": "copyPath",
+            "params": {
+              "token": "tok_2b8d4f6a1c3e"
+            }
+          }
+        }
+      },
+      "n3": {
+        "type": "Item",
+        "props": {
+          "title": "Fotos",
+          "subtitle": "/System/Applications/Photos.app",
+          "icon": {
+            "kind": "app",
+            "bundleId": "com.apple.Photos"
+          }
+        },
+        "on": {
+          "primary": {
+            "action": "openApp",
+            "params": {
+              "bundleId": "com.apple.Photos"
+            }
+          }
+        }
+      }
+    }
+  },
+  "voice": {
+    "heard": "fotos",
+    "source": "apple-dt/de-DE",
+    "via": "visible",
+    "didYouMean": true
+  }
+}

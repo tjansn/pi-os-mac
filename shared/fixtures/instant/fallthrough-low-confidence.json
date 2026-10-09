@@ -1,0 +1,11 @@
+{
+  "seq": 5,
+  "elapsedMs": 1,
+  "source": "grammar",
+  "decision": "fallthrough",
+  "reason": "low_confidence",
+  "voice": {
+    "source": "apple-dt/en-US",
+    "check": true
+  }
+}

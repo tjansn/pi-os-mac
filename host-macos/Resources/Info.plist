@@ -13,6 +13,6 @@
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSScreenCaptureUsageDescription</key><string>pi-os reads the window you pin with its hotkey to answer your question.</string>
-    <key>NSMicrophoneUsageDescription</key><string>pi-os listens only while you hold the pi-os hotkey. Your speech is transcribed on this Mac, the audio is not saved, and the text is used like a typed request.</string>
+    <key>NSMicrophoneUsageDescription</key><string>pi-os listens only while you hold the pi-os hotkey. Your speech is transcribed on this Mac and the text is used like a typed request. Audio is kept only if you turn on “Keep my last voice takes” in Settings, and then only on this Mac.</string>
     <key>NSSpeechRecognitionUsageDescription</key><string>pi-os uses Apple's on-device speech recognition to turn what you say while holding the pi-os hotkey into a request. Audio does not leave this Mac.</string>
 </dict></plist>

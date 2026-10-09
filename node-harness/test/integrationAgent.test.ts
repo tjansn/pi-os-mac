@@ -11,6 +11,7 @@ import type { FileSearchResult } from "../src/contracts/launcher.js";
 import type { DesktopContextSnapshot } from "../src/hostClient.js";
 import { captureLogs, fakeHost, fauxRuntimes, readEvents, seen, snapshot, start, type SeenRequest } from "./integrationFixtures.js";
 import { PI_OS_SYSTEM_PROMPT } from "../src/agent/resources.js";
+import { SPOKEN_CHOICES_RULE } from "../src/agent/agentRunner.js";
 
 /**
  * End to end through HarnessServer with real pi sessions on an in-process provider:
@@ -508,3 +509,65 @@ test("macOS sessions send the lean pi-os system prompt and the compact context; 
     assert.match(request!.descriptions.desktop_get_context!, /Guidelines:\n- The user's active window is pinned/);
   } finally { await f.close(); }
 });
+
+test("voice /invoke (DESIGN4 §5.5): the first prompt rules out open questions, the agent's concrete choices land on the record as a card, typed requests keep today's prompt",
+  { skip: process.platform !== "darwin" }, async () => {
+    const garble = "Oh, then kind order.";
+    const apps = { version: "fx-1", apps: [
+      { bundleId: "com.apple.Keynote", name: "Keynote", aliases: [], path: "/Applications/Keynote.app", running: false },
+      { bundleId: "notion.id", name: "Notion", aliases: [], path: "/Applications/Notion.app", running: true },
+    ] };
+    const host = fakeHost();
+    const invoke = host.invokeTool.bind(host);
+    host.invokeTool = (async (name: string, args?: unknown) => {
+      if (name !== "launcher.listApps") return invoke(name);
+      host.calls.push(`tool:${name}`);
+      return { ok: true, result: apps };
+    }) as typeof host.invokeTool;
+    const runtimes = fauxRuntimes();
+    const f = await start({ runtimes, host });
+    const requests: SeenRequest[] = [];
+    const recorded = (answer: () => ReturnType<typeof fauxAssistantMessage>) =>
+      (context: unknown, _options: unknown, _state: unknown, model: { provider: string; id: string }) => { requests.push(seen(context, model)); return answer(); };
+    try {
+      runtimes.respond([
+        recorded(() => fauxAssistantMessage([fauxToolCall("list_apps", { query: "k" })], { stopReason: "toolUse" })),
+        recorded(() => fauxAssistantMessage([fauxText("I may have misheard."), fauxToolCall("show_result", {
+          summary: "I heard \u201cOh, then kind order\u201d and may have misheard it.",
+          blocks: [{ type: "suggestions", prompts: ["Open Keynote", "Open Notion"] }],
+        })], { stopReason: "toolUse" })),
+      ]);
+      // A host that ran /instant itself sends the takeId (the instant lane is not run again).
+      const { result: voice, lines } = await captureLogs(async () => {
+        await f.post("/invoke", { invocationId: "voice-garble", contextId: "ctx-pinned", prompt: garble, takeId: "take-garble",
+          input: { mode: "voice", locale: "en-US", confidence: 0.31, durationMs: 1_400, engine: "apple-dt" } });
+        return f.terminal("voice-garble");
+      });
+      assert.equal(voice.state, "completed", voice.failureMessage);
+      assert.ok(voice.route.reasons.includes("tier=quick"), "decided on the quick lane (the fixture catalog's nearest model may sit higher)");
+      const first = requests[0]!;
+      assert.match(first.request, /## Input\nThe request was spoken and transcribed by speech recognition \(en-US\)\./);
+      assert.ok(first.request.includes(SPOKEN_CHOICES_RULE));
+      assert.match(first.request, /## Request\nOh, then kind order\.$/);
+      for (const tool of ["list_apps", "open_item", "show_result"]) assert.ok(first.tools.includes(tool), tool);
+      assert.ok(host.calls.includes("tool:launcher.listApps"));
+      assert.equal(voice.cardComplete, true);
+      const choices = Object.values(voice.card.elements as Record<string, { type: string; props: { prompt?: string }; on?: unknown }>)
+        .filter(element => element.type === "Suggestion");
+      assert.deepEqual(choices.map(element => element.on), [
+        { press: { action: "askAgent", params: { prompt: "Open Keynote" } } },
+        { press: { action: "askAgent", params: { prompt: "Open Notion" } } },
+      ]);
+      assert.match(voice.responseText, /^I may have misheard\.\n\n/);
+      assert.equal(runtimes.core.getPendingResponseCount(), 0, "the card ends the turn");
+      // The harness logs no transcript.
+      for (const line of lines) assert.doesNotMatch(line, /kind order/i, line);
+
+      // The same words typed: no spoken-input note, no choices rule.
+      runtimes.respond([recorded(() => fauxAssistantMessage("ok"))]);
+      await f.post("/invoke", { invocationId: "typed-garble", contextId: "ctx-pinned", prompt: garble, takeId: "take-typed" });
+      assert.equal((await f.terminal("typed-garble")).state, "completed");
+      const typed = requests.at(-1)!.request;
+      assert.ok(!typed.includes("## Input") && !typed.includes(SPOKEN_CHOICES_RULE));
+    } finally { await f.close(); }
+  });

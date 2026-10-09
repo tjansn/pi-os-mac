@@ -1,0 +1,576 @@
+{"id":"A001","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open Pages","finalMs":28.4,"firstPartialMs":918.5,"locale":"en-US"}
+{"id":"A001","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Open Pages","finalMs":25.4,"firstPartialMs":920,"locale":"de-DE"}
+{"id":"A002","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open Keynote","finalMs":37.7,"firstPartialMs":610.1,"locale":"en-US"}
+{"id":"A002","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Open","finalMs":71.2,"firstPartialMs":917.7,"locale":"de-DE"}
+{"id":"A003","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open numbers","finalMs":16.1,"firstPartialMs":914.4,"locale":"en-US"}
+{"id":"A003","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Numbers","finalMs":47.6,"firstPartialMs":1033.8,"locale":"de-DE"}
+{"id":"A004","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Launch Sigma","finalMs":34.4,"firstPartialMs":911.7,"locale":"en-US"}
+{"id":"A004","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Lounge","finalMs":15.8,"firstPartialMs":922.1,"locale":"de-DE"}
+{"id":"A005","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open brave","finalMs":16.5,"firstPartialMs":918.5,"locale":"en-US"}
+{"id":"A005","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Open Rave","finalMs":37.2,"firstPartialMs":910.2,"locale":"de-DE"}
+{"id":"A006","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open notion","finalMs":15,"firstPartialMs":917.8,"locale":"en-US"}
+{"id":"A006","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Open Motion","finalMs":27.6,"firstPartialMs":913.4,"locale":"de-DE"}
+{"id":"A007","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open VSCO","finalMs":10.7,"firstPartialMs":911,"locale":"en-US"}
+{"id":"A007","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Open Me Code","finalMs":68.7,"firstPartialMs":917.3,"locale":"de-DE"}
+{"id":"A008","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open code","finalMs":45.3,"firstPartialMs":918.2,"locale":"en-US"}
+{"id":"A008","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Open Gold","finalMs":60.2,"firstPartialMs":913.7,"locale":"de-DE"}
+{"id":"A009","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open recast","finalMs":17.9,"firstPartialMs":906.8,"locale":"en-US"}
+{"id":"A009","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Open Read","finalMs":26.2,"firstPartialMs":923.9,"locale":"de-DE"}
+{"id":"A010","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Start Spotify","finalMs":19.4,"firstPartialMs":926,"locale":"en-US"}
+{"id":"A010","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Badewanne","finalMs":17,"firstPartialMs":1138.3,"locale":"de-DE"}
+{"id":"A011","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Alpen","finalMs":15.3,"firstPartialMs":1019.3,"locale":"de-DE"}
+{"id":"A011","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open orca","finalMs":45.5,"firstPartialMs":606.9,"locale":"en-US"}
+{"id":"A012","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open system settings","finalMs":14,"firstPartialMs":904.3,"locale":"en-US"}
+{"id":"A012","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Oben System Settings","finalMs":20.2,"firstPartialMs":918.8,"locale":"de-DE"}
+{"id":"A013","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open calendar","finalMs":10,"firstPartialMs":907.7,"locale":"en-US"}
+{"id":"A013","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Open Kalender","finalMs":15.2,"firstPartialMs":921.5,"locale":"de-DE"}
+{"id":"A014","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Switch to Safari","finalMs":14.2,"firstPartialMs":905.8,"locale":"en-US"}
+{"id":"A014","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Switch the Safari","finalMs":19.2,"firstPartialMs":915.4,"locale":"de-DE"}
+{"id":"A015","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open telegram","finalMs":9.7,"firstPartialMs":904.8,"locale":"en-US"}
+{"id":"A015","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Telegram","finalMs":14.8,"firstPartialMs":1214.6,"locale":"de-DE"}
+{"id":"A016","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open Gosti","finalMs":62.3,"firstPartialMs":905.8,"locale":"en-US"}
+{"id":"A016","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Open Gusti","finalMs":38.7,"firstPartialMs":906.3,"locale":"de-DE"}
+{"id":"A017","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open ChatGPT","finalMs":11.8,"firstPartialMs":905.6,"locale":"en-US"}
+{"id":"A017","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Open ChatGPT","finalMs":16.2,"firstPartialMs":915.9,"locale":"de-DE"}
+{"id":"A018","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open that","finalMs":17.4,"firstPartialMs":909.7,"locale":"en-US"}
+{"id":"A018","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Open","finalMs":14,"firstPartialMs":911.2,"locale":"de-DE"}
+{"id":"A019","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open notion calendar","finalMs":10.8,"firstPartialMs":927,"locale":"en-US"}
+{"id":"A019","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Open Nation Kellner","finalMs":33.9,"firstPartialMs":918.2,"locale":"de-DE"}
+{"id":"A020","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open activity monitor","finalMs":21.4,"firstPartialMs":918.7,"locale":"en-US"}
+{"id":"A020","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Open Night Timmy Mother","finalMs":27.1,"firstPartialMs":617.7,"locale":"de-DE"}
+{"id":"A021","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"What is 17×23","finalMs":17.9,"firstPartialMs":915.7,"locale":"en-US"}
+{"id":"A021","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"What I'm Sweet","finalMs":28.3,"firstPartialMs":929.5,"locale":"de-DE"}
+{"id":"A022","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"What is 15% of 240","finalMs":23.4,"firstPartialMs":916.8,"locale":"en-US"}
+{"id":"A022","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Was ist 10 % of Two hundred","finalMs":35.4,"firstPartialMs":918.7,"locale":"de-DE"}
+{"id":"A023","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Können wir Five milesto Kilometers","finalMs":37.2,"firstPartialMs":924,"locale":"de-DE"}
+{"id":"A023","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Convert 5 miles to kilometers","finalMs":13.4,"firstPartialMs":1110,"locale":"en-US"}
+{"id":"A024","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"How much is $100 in euros","finalMs":17.7,"firstPartialMs":609.9,"locale":"en-US"}
+{"id":"A024","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"How much is one hundred Dollars in Euro","finalMs":20.4,"firstPartialMs":610.8,"locale":"de-DE"}
+{"id":"A025","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"What time is it in Tokyo","finalMs":15.3,"firstPartialMs":909,"locale":"en-US"}
+{"id":"A025","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"What time is it in Tokio","finalMs":19.7,"firstPartialMs":908.6,"locale":"de-DE"}
+{"id":"A026","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Square root of 144","finalMs":15.9,"firstPartialMs":906,"locale":"en-US"}
+{"id":"A026","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Square Room the One hundred forty Four","finalMs":76.7,"firstPartialMs":924.8,"locale":"de-DE"}
+{"id":"A027","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"250÷8","finalMs":11.6,"firstPartialMs":609.8,"locale":"en-US"}
+{"id":"A027","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"200 fifty ÷ eight","finalMs":53.6,"firstPartialMs":909.9,"locale":"de-DE"}
+{"id":"A028","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Search the web for best pizza in Berlin","finalMs":16,"firstPartialMs":913.4,"locale":"en-US"}
+{"id":"A028","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Search White for best Feed Orlin","finalMs":165.8,"firstPartialMs":907.8,"locale":"de-DE"}
+{"id":"A029","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Du bleibst du Lesben","finalMs":45.5,"firstPartialMs":939.3,"locale":"de-DE"}
+{"id":"A029","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Google flights to Lisbon","finalMs":16.5,"firstPartialMs":908,"locale":"en-US"}
+{"id":"A030","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Meine Meinung ist Marge","finalMs":52.2,"firstPartialMs":920.6,"locale":"de-DE"}
+{"id":"A030","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Find my invoice from March","finalMs":14.6,"firstPartialMs":910.9,"locale":"en-US"}
+{"id":"A031","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Search my computer for tax return when it went to five","finalMs":30,"firstPartialMs":916.4,"locale":"en-US"}
+{"id":"A031","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Soll Michael","finalMs":9.7,"firstPartialMs":927.8,"locale":"de-DE"}
+{"id":"A032","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Turn the volume down","finalMs":10.5,"firstPartialMs":910.3,"locale":"en-US"}
+{"id":"A032","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Turn Volume Down","finalMs":44.3,"firstPartialMs":927.4,"locale":"de-DE"}
+{"id":"A033","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Prozent","finalMs":176.4,"firstPartialMs":2679.2,"locale":"de-DE"}
+{"id":"A033","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Set volume to 60%","finalMs":15.1,"firstPartialMs":912.1,"locale":"en-US"}
+{"id":"A034","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Rufe Disam","finalMs":68,"firstPartialMs":960,"locale":"de-DE"}
+{"id":"A034","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open up.com","finalMs":23.1,"firstPartialMs":932.5,"locale":"en-US"}
+{"id":"A035","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"What is the weather tomorrow","finalMs":11,"firstPartialMs":909.1,"locale":"en-US"}
+{"id":"A035","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"What is the with Tomorrow","finalMs":230,"firstPartialMs":937.8,"locale":"de-DE"}
+{"id":"A036","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"How do I take a screenshot on a Mac","finalMs":19.5,"firstPartialMs":609.8,"locale":"en-US"}
+{"id":"A036","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"How do I take a Screenshot on the Mac","finalMs":184,"firstPartialMs":917.8,"locale":"de-DE"}
+{"id":"A037","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Summarize this page","finalMs":10.5,"firstPartialMs":908.8,"locale":"en-US"}
+{"id":"A037","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Sunrise the Page","finalMs":20.9,"firstPartialMs":921.4,"locale":"de-DE"}
+{"id":"A038","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Reply to this email and say I will be late","finalMs":14.2,"firstPartialMs":910.7,"locale":"en-US"}
+{"id":"A038","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Reply the E-Mail und say I be Late","finalMs":359.4,"firstPartialMs":925.4,"locale":"de-DE"}
+{"id":"A039","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"What is on my calendar today","finalMs":11.5,"firstPartialMs":609.5,"locale":"en-US"}
+{"id":"A039","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"What is my the today","finalMs":282.3,"firstPartialMs":676.8,"locale":"de-DE"}
+{"id":"A040","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Play some jazz on Spotify","finalMs":14.6,"firstPartialMs":910.2,"locale":"en-US"}
+{"id":"A040","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Play Spotify","finalMs":22.6,"firstPartialMs":1817.7,"locale":"de-DE"}
+{"id":"A041","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Remind me to call Anna at 5 PM","finalMs":24.8,"firstPartialMs":909.5,"locale":"en-US"}
+{"id":"A041","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Reminder Call zwei PM","finalMs":136.5,"firstPartialMs":1230.1,"locale":"de-DE"}
+{"id":"A042","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"How many days until Christmas","finalMs":21.6,"firstPartialMs":907.2,"locale":"en-US"}
+{"id":"A042","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"How many Day Christmas","finalMs":312.9,"firstPartialMs":945.1,"locale":"de-DE"}
+{"id":"A043","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Opinion of Japanese","finalMs":25,"firstPartialMs":1841.8,"locale":"en-US"}
+{"id":"A043","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Good morning","finalMs":18.6,"firstPartialMs":1590.2,"locale":"de-DE"}
+{"id":"A044","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Closer bei Windows","finalMs":326.3,"firstPartialMs":949.9,"locale":"de-DE"}
+{"id":"A044","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Close all Finder windows","finalMs":21.8,"firstPartialMs":906.1,"locale":"en-US"}
+{"id":"B001","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Oben Tages","finalMs":134.5,"firstPartialMs":965.7,"locale":"de-DE"}
+{"id":"B001","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open August","finalMs":17.6,"firstPartialMs":924.2,"locale":"en-US"}
+{"id":"B002","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Keine","finalMs":178.8,"firstPartialMs":1685.6,"locale":"de-DE"}
+{"id":"B002","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open kind order","finalMs":29.2,"firstPartialMs":910.8,"locale":"en-US"}
+{"id":"B003","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open numbers","finalMs":38.4,"firstPartialMs":910.7,"locale":"en-US"}
+{"id":"B003","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Oben","finalMs":67.2,"firstPartialMs":1375.3,"locale":"de-DE"}
+{"id":"B004","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Launch","finalMs":33.6,"firstPartialMs":935.9,"locale":"en-US"}
+{"id":"B004","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Lounge Sigma","finalMs":143.1,"firstPartialMs":1006.1,"locale":"de-DE"}
+{"id":"B005","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Oben habe","finalMs":186.3,"firstPartialMs":1327.7,"locale":"de-DE"}
+{"id":"B005","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open app","finalMs":83.6,"firstPartialMs":913.3,"locale":"en-US"}
+{"id":"B006","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open","finalMs":31.9,"firstPartialMs":916.4,"locale":"en-US"}
+{"id":"B006","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Motion","finalMs":180.5,"firstPartialMs":1682.8,"locale":"de-DE"}
+{"id":"B007","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Escort","finalMs":23.5,"firstPartialMs":1322.2,"locale":"en-US"}
+{"id":"B007","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Boden VS","finalMs":90.1,"firstPartialMs":1028.6,"locale":"de-DE"}
+{"id":"B008","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open today","finalMs":73.1,"firstPartialMs":923,"locale":"en-US"}
+{"id":"B008","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Studi","finalMs":41.3,"firstPartialMs":1342.8,"locale":"de-DE"}
+{"id":"B009","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open my cast","finalMs":30.6,"firstPartialMs":916.1,"locale":"en-US"}
+{"id":"B009","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Google Cast","finalMs":145.6,"firstPartialMs":1653.8,"locale":"de-DE"}
+{"id":"B010","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Sport","finalMs":69.1,"firstPartialMs":956.8,"locale":"en-US"}
+{"id":"B010","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Start","finalMs":46.9,"firstPartialMs":1647.2,"locale":"de-DE"}
+{"id":"B011","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Rufe","finalMs":114.2,"firstPartialMs":1321.5,"locale":"de-DE"}
+{"id":"B011","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open WhatsApp","finalMs":18.1,"firstPartialMs":912.3,"locale":"en-US"}
+{"id":"B012","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open the same settings","finalMs":12.1,"firstPartialMs":908.8,"locale":"en-US"}
+{"id":"B012","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"System","finalMs":249.9,"firstPartialMs":2056.4,"locale":"de-DE"}
+{"id":"B013","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open college","finalMs":37,"firstPartialMs":914.6,"locale":"en-US"}
+{"id":"B013","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Oben Calau","finalMs":235.7,"firstPartialMs":1003,"locale":"de-DE"}
+{"id":"B014","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Switch to Safari","finalMs":11.4,"firstPartialMs":915.5,"locale":"en-US"}
+{"id":"B014","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Safari","finalMs":270.9,"firstPartialMs":1639,"locale":"de-DE"}
+{"id":"B015","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open card game please","finalMs":26.1,"firstPartialMs":914.5,"locale":"en-US"}
+{"id":"B015","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"AGB","finalMs":120,"firstPartialMs":1823,"locale":"de-DE"}
+{"id":"B016","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open activity monitor","finalMs":24.1,"firstPartialMs":909.1,"locale":"en-US"}
+{"id":"B016","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Open Activity Monitor","finalMs":256.7,"firstPartialMs":623.2,"locale":"de-DE"}
+{"id":"B017","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Mag dies nehmen Tee und Tee Tee","finalMs":212.6,"firstPartialMs":1004,"locale":"de-DE"}
+{"id":"B017","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Val is 17 he is 23","finalMs":86.9,"firstPartialMs":932.7,"locale":"en-US"}
+{"id":"B018","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Von mir 2 km","finalMs":36.4,"firstPartialMs":2406,"locale":"de-DE"}
+{"id":"B018","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Call me talking","finalMs":27.4,"firstPartialMs":916.5,"locale":"en-US"}
+{"id":"B019","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Martin ist ist in Tokio","finalMs":75.5,"firstPartialMs":928.8,"locale":"de-DE"}
+{"id":"B019","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"What team is it in Tokyo","finalMs":14.6,"firstPartialMs":939.6,"locale":"en-US"}
+{"id":"B020","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Baby wo bist du in Berlin","finalMs":102.3,"firstPartialMs":1330.7,"locale":"de-DE"}
+{"id":"B020","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Mouse TV for best pizza in the","finalMs":57.6,"firstPartialMs":937.8,"locale":"en-US"}
+{"id":"B021","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Finde mir in VoiceOver","finalMs":120.5,"firstPartialMs":962.4,"locale":"de-DE"}
+{"id":"B021","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Send me invoice for March","finalMs":17.3,"firstPartialMs":930.7,"locale":"en-US"}
+{"id":"B022","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Schnee Computer vor Taxon Mandy suchen","finalMs":247.3,"firstPartialMs":1377.1,"locale":"de-DE"}
+{"id":"B022","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Asked me for tax on 2025","finalMs":287.8,"firstPartialMs":1346.6,"locale":"en-US"}
+{"id":"B023","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Von genommen","finalMs":163.8,"firstPartialMs":918,"locale":"de-DE"}
+{"id":"B023","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"One","finalMs":105.6,"firstPartialMs":2009,"locale":"en-US"}
+{"id":"B024","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Wo ist","finalMs":69.6,"firstPartialMs":1876.9,"locale":"de-DE"}
+{"id":"B024","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open tiktok.com","finalMs":30.6,"firstPartialMs":914,"locale":"en-US"}
+{"id":"B025","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"That is the weather to Mahal","finalMs":74.2,"firstPartialMs":909.8,"locale":"en-US"}
+{"id":"B025","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"What is the Wetter Tomorrow","finalMs":218.6,"firstPartialMs":922.8,"locale":"de-DE"}
+{"id":"B026","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Oh do it ice cream so you are awake","finalMs":61.6,"firstPartialMs":918.4,"locale":"en-US"}
+{"id":"B026","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Oh ist AA Creme weg","finalMs":70.8,"firstPartialMs":992.2,"locale":"de-DE"}
+{"id":"B027","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Pocket","finalMs":14.5,"firstPartialMs":1853.9,"locale":"en-US"}
+{"id":"B027","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Nummer Tage","finalMs":24.1,"firstPartialMs":1184.3,"locale":"de-DE"}
+{"id":"B028","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Weil die Only laut","finalMs":184.2,"firstPartialMs":952.1,"locale":"de-DE"}
+{"id":"B028","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Wahi only calendar","finalMs":208.5,"firstPartialMs":927.7,"locale":"en-US"}
+{"id":"B029","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Play","finalMs":30.3,"firstPartialMs":926.8,"locale":"en-US"}
+{"id":"B029","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Jasmin","finalMs":117.2,"firstPartialMs":2622.5,"locale":"de-DE"}
+{"id":"B030","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Me to come on p.m.","finalMs":75.7,"firstPartialMs":1324,"locale":"en-US"}
+{"id":"B030","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Metal","finalMs":230.9,"firstPartialMs":3294.6,"locale":"de-DE"}
+{"id":"B031","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Oh Mann da ist viel Christmas","finalMs":218.5,"firstPartialMs":947.6,"locale":"de-DE"}
+{"id":"B031","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Call mommy daughter till Christmas","finalMs":28.3,"firstPartialMs":912.9,"locale":"en-US"}
+{"id":"B032","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Große alle Windows","finalMs":158.2,"firstPartialMs":969.1,"locale":"de-DE"}
+{"id":"B032","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Who are the windows","finalMs":57.7,"firstPartialMs":953.2,"locale":"en-US"}
+{"id":"C001","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"This","finalMs":33.1,"firstPartialMs":1228.8,"locale":"en-US"}
+{"id":"C001","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne Pages","finalMs":55.8,"firstPartialMs":917.4,"locale":"de-DE"}
+{"id":"C002","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne keine Note","finalMs":28.6,"firstPartialMs":989.5,"locale":"de-DE"}
+{"id":"C002","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"The kind order","finalMs":32.8,"firstPartialMs":1125.6,"locale":"en-US"}
+{"id":"C003","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Southport near me","finalMs":76.8,"firstPartialMs":953.9,"locale":"en-US"}
+{"id":"C003","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Starte","finalMs":108,"firstPartialMs":985.8,"locale":"de-DE"}
+{"id":"C004","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne diese Systemeinstellungen","finalMs":26.4,"firstPartialMs":1050,"locale":"de-DE"}
+{"id":"C004","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"The other line","finalMs":96.8,"firstPartialMs":1118.6,"locale":"en-US"}
+{"id":"C005","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne den Kalender","finalMs":25,"firstPartialMs":1087.8,"locale":"de-DE"}
+{"id":"C005","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Calendar","finalMs":12.4,"firstPartialMs":1314.2,"locale":"en-US"}
+{"id":"C006","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"There's a party","finalMs":95.7,"firstPartialMs":1342.1,"locale":"en-US"}
+{"id":"C006","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne Safari","finalMs":31.4,"firstPartialMs":1162.9,"locale":"de-DE"}
+{"id":"C007","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne Motion","finalMs":17.4,"firstPartialMs":1035,"locale":"de-DE"}
+{"id":"C007","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Person","finalMs":40.9,"firstPartialMs":1443.3,"locale":"en-US"}
+{"id":"C008","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"That's the problem","finalMs":269.2,"firstPartialMs":1125.1,"locale":"en-US"}
+{"id":"C008","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Das brave","finalMs":75.8,"firstPartialMs":970.2,"locale":"de-DE"}
+{"id":"C009","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Die Fotos","finalMs":47,"firstPartialMs":1637,"locale":"de-DE"}
+{"id":"C009","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Voice","finalMs":109.5,"firstPartialMs":1687.7,"locale":"en-US"}
+{"id":"C010","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne die Erinnerungen","finalMs":197.2,"firstPartialMs":1028.9,"locale":"de-DE"}
+{"id":"C010","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Nadia","finalMs":47.7,"firstPartialMs":1551.2,"locale":"en-US"}
+{"id":"C011","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Was ist 17 × 23","finalMs":122.2,"firstPartialMs":1060.5,"locale":"de-DE"}
+{"id":"C011","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"What is in multi","finalMs":58.7,"firstPartialMs":916.6,"locale":"en-US"}
+{"id":"C012","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Was sind 15 % von 240","finalMs":275.9,"firstPartialMs":1331.2,"locale":"de-DE"}
+{"id":"C012","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"What's the difference","finalMs":20.1,"firstPartialMs":914.4,"locale":"en-US"}
+{"id":"C013","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Wie viel sind 100 $ in Euro","finalMs":229,"firstPartialMs":998.9,"locale":"de-DE"}
+{"id":"C013","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"The real dollar loyal","finalMs":72.8,"firstPartialMs":1213.5,"locale":"en-US"}
+{"id":"C014","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Rechne Mailand in Kilometer","finalMs":96.4,"firstPartialMs":1892.6,"locale":"de-DE"}
+{"id":"C014","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Krishna Milan in kilometer","finalMs":24.4,"firstPartialMs":934.3,"locale":"en-US"}
+{"id":"C015","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Wie spät ist es in Tokio","finalMs":15.4,"firstPartialMs":983.6,"locale":"de-DE"}
+{"id":"C015","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"It is an in Tokyo","finalMs":22.6,"firstPartialMs":1323.7,"locale":"en-US"}
+{"id":"C016","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Wurzel aus 124","finalMs":149.2,"firstPartialMs":953.7,"locale":"de-DE"}
+{"id":"C016","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Works out of the OC","finalMs":89.2,"firstPartialMs":924.9,"locale":"en-US"}
+{"id":"C017","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Suche im Internet nach Pizza in Berlin","finalMs":131.5,"firstPartialMs":951,"locale":"de-DE"}
+{"id":"C017","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Zoom him in and tips are in Berlin","finalMs":40.7,"firstPartialMs":906.5,"locale":"en-US"}
+{"id":"C018","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Suche nach Rechnung März","finalMs":243.6,"firstPartialMs":971.3,"locale":"de-DE"}
+{"id":"C018","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Press mouse","finalMs":100.4,"firstPartialMs":924.5,"locale":"en-US"}
+{"id":"C019","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Finde meine Steuererklärung","finalMs":101.7,"firstPartialMs":973.1,"locale":"de-DE"}
+{"id":"C019","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Fender minor Toyota","finalMs":43.4,"firstPartialMs":917.7,"locale":"en-US"}
+{"id":"C020","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Mach lauter","finalMs":255.6,"firstPartialMs":990.1,"locale":"de-DE"}
+{"id":"C020","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Louder","finalMs":27,"firstPartialMs":1124.8,"locale":"en-US"}
+{"id":"C021","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Stell die Lautstärke auf 50 %","finalMs":14.9,"firstPartialMs":1010.7,"locale":"de-DE"}
+{"id":"C021","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Tell me loud","finalMs":34.4,"firstPartialMs":917,"locale":"en-US"}
+{"id":"C022","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Leiser bitte","finalMs":140.4,"firstPartialMs":969.5,"locale":"de-DE"}
+{"id":"C022","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Eliza better","finalMs":26.7,"firstPartialMs":913.5,"locale":"en-US"}
+{"id":"C023","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Wie wird das Wetter morgen","finalMs":72.9,"firstPartialMs":1195.1,"locale":"de-DE"}
+{"id":"C023","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Morgan","finalMs":28.4,"firstPartialMs":1732.4,"locale":"en-US"}
+{"id":"C024","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Was diese Seite zusammen","finalMs":297.7,"firstPartialMs":1057.1,"locale":"de-DE"}
+{"id":"C024","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"What is light","finalMs":24.2,"firstPartialMs":937.2,"locale":"en-US"}
+{"id":"C025","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Was steht heute in meinem Kalender","finalMs":41.8,"firstPartialMs":971,"locale":"de-DE"}
+{"id":"C025","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"What's the order in my calendar","finalMs":25.2,"firstPartialMs":915.6,"locale":"en-US"}
+{"id":"C026","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Erinnere mich morgen um neun an den Zahnarzt","finalMs":155.1,"firstPartialMs":955.2,"locale":"de-DE"}
+{"id":"C026","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"They are in the Ramesh market going on","finalMs":41.7,"firstPartialMs":621.9,"locale":"en-US"}
+{"id":"C027","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Wie viele Tage sind es Weihnachten","finalMs":58.7,"firstPartialMs":959.6,"locale":"de-DE"}
+{"id":"C027","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Give me the Tigers in lineup","finalMs":63.8,"firstPartialMs":933.5,"locale":"en-US"}
+{"id":"C028","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Schreib eine Mail an Thomas","finalMs":10.1,"firstPartialMs":951.4,"locale":"de-DE"}
+{"id":"C028","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Strike and me and Thomas","finalMs":64.8,"firstPartialMs":915,"locale":"en-US"}
+{"id":"C029","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Übersetze guten Morgen ins Englische","finalMs":16.8,"firstPartialMs":1283.4,"locale":"de-DE"}
+{"id":"C029","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Circle and Morgan in English","finalMs":32.8,"firstPartialMs":1355.4,"locale":"en-US"}
+{"id":"C030","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Zeige mir meine dummen was","finalMs":217.3,"firstPartialMs":983.6,"locale":"de-DE"}
+{"id":"C030","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Psych me a minor","finalMs":61.4,"firstPartialMs":922.3,"locale":"en-US"}
+{"id":"C031","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne die Aktivität Seite","finalMs":282.8,"firstPartialMs":1181.3,"locale":"de-DE"}
+{"id":"C031","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Delete at","finalMs":59.5,"firstPartialMs":1681.5,"locale":"en-US"}
+{"id":"C032","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Wie spät ist es","finalMs":288.5,"firstPartialMs":1005.3,"locale":"de-DE"}
+{"id":"C032","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Reset","finalMs":26.4,"firstPartialMs":1149.2,"locale":"en-US"}
+{"id":"D001","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne White Cheese","finalMs":21.5,"firstPartialMs":999,"locale":"de-DE"}
+{"id":"D001","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"White cheese","finalMs":13.6,"firstPartialMs":1716.7,"locale":"en-US"}
+{"id":"D002","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Tagesticket","finalMs":16.2,"firstPartialMs":1033.6,"locale":"de-DE"}
+{"id":"D002","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"August","finalMs":25,"firstPartialMs":915.4,"locale":"en-US"}
+{"id":"D003","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Mach Wecker aus","finalMs":250.2,"firstPartialMs":1065.5,"locale":"de-DE"}
+{"id":"D003","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Ma","finalMs":19.8,"firstPartialMs":922.8,"locale":"en-US"}
+{"id":"D004","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"März","finalMs":210.1,"firstPartialMs":1075.3,"locale":"de-DE"}
+{"id":"D004","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Nami come in with four nails","finalMs":35.5,"firstPartialMs":940.9,"locale":"en-US"}
+{"id":"D005","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Called","finalMs":23.9,"firstPartialMs":1424.2,"locale":"en-US"}
+{"id":"D005","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne VS","finalMs":16.3,"firstPartialMs":999.2,"locale":"de-DE"}
+{"id":"D006","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne die App Code","finalMs":155.8,"firstPartialMs":1653.2,"locale":"de-DE"}
+{"id":"D006","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"VS code","finalMs":120.7,"firstPartialMs":1895.8,"locale":"en-US"}
+{"id":"D007","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Court","finalMs":82.4,"firstPartialMs":1568.8,"locale":"en-US"}
+{"id":"D007","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne Ex","finalMs":163.7,"firstPartialMs":965.9,"locale":"de-DE"}
+{"id":"D008","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"The right cast","finalMs":13.5,"firstPartialMs":1119.9,"locale":"en-US"}
+{"id":"D008","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Drei Cat","finalMs":77.3,"firstPartialMs":1054.2,"locale":"de-DE"}
+{"id":"D009","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne","finalMs":20.6,"firstPartialMs":922.9,"locale":"de-DE"}
+{"id":"D009","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Vanilla","finalMs":32.6,"firstPartialMs":1158.5,"locale":"en-US"}
+{"id":"D010","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Starte den Browser","finalMs":59.3,"firstPartialMs":967.8,"locale":"de-DE"}
+{"id":"D010","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Browser","finalMs":31.5,"firstPartialMs":1655.3,"locale":"en-US"}
+{"id":"D011","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Mach aus","finalMs":164.8,"firstPartialMs":1052.3,"locale":"de-DE"}
+{"id":"D011","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"March 45","finalMs":57.6,"firstPartialMs":929.8,"locale":"en-US"}
+{"id":"D012","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Kannst du ihn öffnen","finalMs":15,"firstPartialMs":994.4,"locale":"de-DE"}
+{"id":"D012","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Can't do a new person","finalMs":138,"firstPartialMs":938,"locale":"en-US"}
+{"id":"D013","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Kannst du mir Numas","finalMs":237.8,"firstPartialMs":1020.1,"locale":"de-DE"}
+{"id":"D013","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Us","finalMs":48.3,"firstPartialMs":1847.4,"locale":"en-US"}
+{"id":"D014","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Oben Nation bitte","finalMs":41.6,"firstPartialMs":1040.3,"locale":"de-DE"}
+{"id":"D014","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open not better","finalMs":95.1,"firstPartialMs":937.2,"locale":"en-US"}
+{"id":"D015","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Suche die Canutt Präsentation vom Montag","finalMs":50.8,"firstPartialMs":974.8,"locale":"de-DE"}
+{"id":"D015","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"So that you can do Crescent for moon","finalMs":96,"firstPartialMs":1131,"locale":"en-US"}
+{"id":"D016","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Finde die Rechnung vom Klinikum","finalMs":176.9,"firstPartialMs":1885.8,"locale":"de-DE"}
+{"id":"D016","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Baby I'm home","finalMs":102.8,"firstPartialMs":1830.3,"locale":"en-US"}
+{"id":"D017","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Go live with arm work","finalMs":32.6,"firstPartialMs":915.3,"locale":"en-US"}
+{"id":"D017","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Wetter Hamburg","finalMs":93.3,"firstPartialMs":1344.9,"locale":"de-DE"}
+{"id":"D018","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Wo sind die Einstellungen","finalMs":154.2,"firstPartialMs":991.1,"locale":"de-DE"}
+{"id":"D018","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"","finalMs":23.6,"locale":"en-US"}
+{"id":"D019","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Was ist 20 % von 80 €","finalMs":19.2,"firstPartialMs":971.3,"locale":"de-DE"}
+{"id":"D019","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"What is 16% for oil","finalMs":69.6,"firstPartialMs":915.7,"locale":"en-US"}
+{"id":"D020","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne WhatsApp","finalMs":33,"firstPartialMs":1034.7,"locale":"de-DE"}
+{"id":"D020","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"WhatsApp","finalMs":31.2,"firstPartialMs":1333.8,"locale":"en-US"}
+{"id":"D021","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"The club","finalMs":134.8,"firstPartialMs":1129.2,"locale":"en-US"}
+{"id":"D021","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne Telegram","finalMs":60.1,"firstPartialMs":1067,"locale":"de-DE"}
+{"id":"D022","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Negotiate","finalMs":9.6,"firstPartialMs":1210.6,"locale":"en-US"}
+{"id":"D022","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Kussi","finalMs":105,"firstPartialMs":1314,"locale":"de-DE"}
+{"id":"D023","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne das Terminal","finalMs":16.3,"firstPartialMs":646.8,"locale":"de-DE"}
+{"id":"D023","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Industrial","finalMs":21.3,"firstPartialMs":1143.5,"locale":"en-US"}
+{"id":"D024","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Bitte","finalMs":233.2,"firstPartialMs":1727.6,"locale":"de-DE"}
+{"id":"D024","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open update","finalMs":82.7,"firstPartialMs":917,"locale":"en-US"}
+{"id":"D025","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Wechsel zu Prime","finalMs":284.7,"firstPartialMs":948.3,"locale":"de-DE"}
+{"id":"D025","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Mix a new pile","finalMs":16,"firstPartialMs":919.8,"locale":"en-US"}
+{"id":"D026","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"The jet game please","finalMs":54.7,"firstPartialMs":1110.6,"locale":"en-US"}
+{"id":"D026","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne ChatGPT","finalMs":239.9,"firstPartialMs":987,"locale":"de-DE"}
+{"id":"D027","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne mich","finalMs":21.1,"firstPartialMs":1333.3,"locale":"de-DE"}
+{"id":"D027","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Calendar","finalMs":11,"firstPartialMs":1356.1,"locale":"en-US"}
+{"id":"D028","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"45,000","finalMs":14.4,"firstPartialMs":1106,"locale":"en-US"}
+{"id":"D028","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Spotify Pause","finalMs":164.7,"firstPartialMs":1003,"locale":"de-DE"}
+{"id":"E001","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Schieß","finalMs":17.4,"firstPartialMs":1718,"locale":"de-DE"}
+{"id":"E001","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"White cheese","finalMs":27.4,"firstPartialMs":1399.5,"locale":"en-US"}
+{"id":"E002","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Oben","finalMs":10,"firstPartialMs":1414.1,"locale":"de-DE"}
+{"id":"E002","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open inward","finalMs":15.7,"firstPartialMs":927.5,"locale":"en-US"}
+{"id":"E003","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"The numbers","finalMs":42.8,"firstPartialMs":916.2,"locale":"en-US"}
+{"id":"E003","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"The Numbers","finalMs":13,"firstPartialMs":914.8,"locale":"de-DE"}
+{"id":"E004","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Sigma","finalMs":29.1,"firstPartialMs":1122.4,"locale":"en-US"}
+{"id":"E004","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Louis Sigma","finalMs":24.2,"firstPartialMs":1227.1,"locale":"de-DE"}
+{"id":"E005","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Drei","finalMs":14.5,"firstPartialMs":1151,"locale":"de-DE"}
+{"id":"E005","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open file","finalMs":11.1,"firstPartialMs":909.6,"locale":"en-US"}
+{"id":"E006","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open","finalMs":23.6,"firstPartialMs":921.6,"locale":"en-US"}
+{"id":"E006","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"","finalMs":17.1,"locale":"de-DE"}
+{"id":"E007","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Wie es tut","finalMs":36.5,"firstPartialMs":1321.8,"locale":"de-DE"}
+{"id":"E007","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"VS code","finalMs":219.7,"firstPartialMs":1415.4,"locale":"en-US"}
+{"id":"E008","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"The next court","finalMs":11.8,"firstPartialMs":913.2,"locale":"en-US"}
+{"id":"E008","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"The Next","finalMs":13,"firstPartialMs":916.3,"locale":"de-DE"}
+{"id":"E009","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"List","finalMs":28.4,"firstPartialMs":1232.2,"locale":"en-US"}
+{"id":"E009","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Test","finalMs":14.2,"firstPartialMs":1218.6,"locale":"de-DE"}
+{"id":"E010","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Start 45","finalMs":59.2,"firstPartialMs":973.9,"locale":"en-US"}
+{"id":"E010","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Starte Spotify","finalMs":24.8,"firstPartialMs":929.3,"locale":"de-DE"}
+{"id":"E011","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Guten Morgen","finalMs":12.8,"firstPartialMs":920.3,"locale":"de-DE"}
+{"id":"E011","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open","finalMs":48.1,"firstPartialMs":927.2,"locale":"en-US"}
+{"id":"E012","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Nächste","finalMs":25.2,"firstPartialMs":1728.7,"locale":"de-DE"}
+{"id":"E012","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Emergency","finalMs":114.9,"firstPartialMs":1341.2,"locale":"en-US"}
+{"id":"E013","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open calendar","finalMs":14.2,"firstPartialMs":908.4,"locale":"en-US"}
+{"id":"E013","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Kalender","finalMs":13.7,"firstPartialMs":1513.3,"locale":"de-DE"}
+{"id":"E014","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Switch to Safari","finalMs":21.5,"firstPartialMs":920.2,"locale":"en-US"}
+{"id":"E014","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Willst du Safari","finalMs":14.6,"firstPartialMs":1122.7,"locale":"de-DE"}
+{"id":"E015","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open ChatGPT","finalMs":13.6,"firstPartialMs":917.9,"locale":"en-US"}
+{"id":"E015","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"ChatGPT","finalMs":14.4,"firstPartialMs":1321,"locale":"de-DE"}
+{"id":"E016","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"What is 17×23","finalMs":21.8,"firstPartialMs":918.5,"locale":"en-US"}
+{"id":"E016","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Wall Time See","finalMs":56.4,"firstPartialMs":931.9,"locale":"de-DE"}
+{"id":"E017","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Convert 5 miles to kilometers","finalMs":25.7,"firstPartialMs":1133,"locale":"en-US"}
+{"id":"E017","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Con Wild meinst du Kilometer","finalMs":49.2,"firstPartialMs":915.7,"locale":"de-DE"}
+{"id":"E018","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"What time is it in Tokyo","finalMs":14.9,"firstPartialMs":906,"locale":"en-US"}
+{"id":"E018","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"What time is it in Tokio","finalMs":14.2,"firstPartialMs":1110.6,"locale":"de-DE"}
+{"id":"E019","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Soll Schnee vor Pizza in Berlin","finalMs":19.1,"firstPartialMs":910.3,"locale":"de-DE"}
+{"id":"E019","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Search the web for best pizza in Berlin","finalMs":17.1,"firstPartialMs":920.4,"locale":"en-US"}
+{"id":"E020","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Mein mein wo","finalMs":40.8,"firstPartialMs":1175.4,"locale":"de-DE"}
+{"id":"E020","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Find my invoice for March","finalMs":18.8,"firstPartialMs":911.4,"locale":"en-US"}
+{"id":"E021","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Turn wollen wir down","finalMs":42.3,"firstPartialMs":916.4,"locale":"de-DE"}
+{"id":"E021","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Turn the volume down","finalMs":15.1,"firstPartialMs":925.2,"locale":"en-US"}
+{"id":"E022","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Wo ist die","finalMs":40.1,"firstPartialMs":910.3,"locale":"de-DE"}
+{"id":"E022","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"What do you see tomorrow","finalMs":33.6,"firstPartialMs":927.1,"locale":"en-US"}
+{"id":"E023","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"How do I take a screenshot on a Mac","finalMs":24.3,"firstPartialMs":905.9,"locale":"en-US"}
+{"id":"E023","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"How do I I get on iMac","finalMs":55.6,"firstPartialMs":918.6,"locale":"de-DE"}
+{"id":"E024","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Sommerreifen ist falsch","finalMs":98,"firstPartialMs":912.2,"locale":"de-DE"}
+{"id":"E024","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Summarize this pic","finalMs":92.9,"firstPartialMs":931.2,"locale":"en-US"}
+{"id":"E025","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Was ist von Mike Kellen da du","finalMs":56.8,"firstPartialMs":922.3,"locale":"de-DE"}
+{"id":"E025","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"What is on my calendar tonight","finalMs":16.8,"firstPartialMs":913.5,"locale":"en-US"}
+{"id":"E026","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Jetzt und Spotify","finalMs":16.4,"firstPartialMs":1632.9,"locale":"de-DE"}
+{"id":"E026","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Liza on Spotify","finalMs":23.7,"firstPartialMs":1134.1,"locale":"en-US"}
+{"id":"E027","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Remind me to call Anna at 5 PM","finalMs":17.2,"firstPartialMs":1110.2,"locale":"en-US"}
+{"id":"E027","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Remind meto Call annaat Five PM","finalMs":52.7,"firstPartialMs":910.3,"locale":"de-DE"}
+{"id":"E028","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"How many days until Christmas","finalMs":13.3,"firstPartialMs":909.2,"locale":"en-US"}
+{"id":"E028","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"How many dies Till Christmas","finalMs":49.1,"firstPartialMs":919.9,"locale":"de-DE"}
+{"id":"E029","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Gruß eure","finalMs":37.5,"firstPartialMs":915.4,"locale":"de-DE"}
+{"id":"E029","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"How was all you find love in those","finalMs":94.6,"firstPartialMs":925.5,"locale":"en-US"}
+{"id":"E030","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Dann geht ab.com","finalMs":20.1,"firstPartialMs":916.3,"locale":"de-DE"}
+{"id":"E030","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"thegate.com","finalMs":22.3,"firstPartialMs":1158.2,"locale":"en-US"}
+{"id":"F001","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open this","finalMs":18.6,"firstPartialMs":910.9,"locale":"en-US"}
+{"id":"F001","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Open Pages","finalMs":10.2,"firstPartialMs":914.4,"locale":"de-DE"}
+{"id":"F002","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open Keynote","finalMs":21.4,"firstPartialMs":910.7,"locale":"en-US"}
+{"id":"F002","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Open Keynote","finalMs":20.1,"firstPartialMs":915.7,"locale":"de-DE"}
+{"id":"F003","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Both numbers","finalMs":25.1,"firstPartialMs":919.7,"locale":"en-US"}
+{"id":"F003","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Oben Numbers","finalMs":21.8,"firstPartialMs":912.6,"locale":"de-DE"}
+{"id":"F004","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Launch Fisher","finalMs":34.1,"firstPartialMs":909.6,"locale":"en-US"}
+{"id":"F004","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Lunch","finalMs":18.4,"firstPartialMs":917.3,"locale":"de-DE"}
+{"id":"F005","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Oben Brief","finalMs":17.9,"firstPartialMs":917.6,"locale":"de-DE"}
+{"id":"F005","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open breathe","finalMs":22.1,"firstPartialMs":917,"locale":"en-US"}
+{"id":"F006","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Operation","finalMs":26.8,"firstPartialMs":912.3,"locale":"de-DE"}
+{"id":"F006","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open Nazi","finalMs":55.4,"firstPartialMs":925.2,"locale":"en-US"}
+{"id":"F007","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Escort","finalMs":18.9,"firstPartialMs":1319.1,"locale":"en-US"}
+{"id":"F007","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Boden VS","finalMs":29.6,"firstPartialMs":912.6,"locale":"de-DE"}
+{"id":"F008","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open export","finalMs":41.5,"firstPartialMs":937,"locale":"en-US"}
+{"id":"F008","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Open Ex","finalMs":20.5,"firstPartialMs":616.9,"locale":"de-DE"}
+{"id":"F009","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open that","finalMs":23.7,"firstPartialMs":1223.4,"locale":"en-US"}
+{"id":"F009","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Oben","finalMs":19.5,"firstPartialMs":910,"locale":"de-DE"}
+{"id":"F010","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Start Spotify","finalMs":12.2,"firstPartialMs":907,"locale":"en-US"}
+{"id":"F010","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Starte Spotify","finalMs":17.3,"firstPartialMs":913.1,"locale":"de-DE"}
+{"id":"F011","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Oben","finalMs":14.1,"firstPartialMs":1016.1,"locale":"de-DE"}
+{"id":"F011","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open app","finalMs":54.4,"firstPartialMs":919.6,"locale":"en-US"}
+{"id":"F012","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Notensystem Settings","finalMs":18.4,"firstPartialMs":917.3,"locale":"de-DE"}
+{"id":"F012","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Steam seating","finalMs":104.7,"firstPartialMs":1188.1,"locale":"en-US"}
+{"id":"F013","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Oben","finalMs":16.9,"firstPartialMs":919.4,"locale":"de-DE"}
+{"id":"F013","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open calendar","finalMs":13.1,"firstPartialMs":908.6,"locale":"en-US"}
+{"id":"F014","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Switch to Safari","finalMs":9.7,"firstPartialMs":908.4,"locale":"en-US"}
+{"id":"F014","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Switch to Safari","finalMs":18.5,"firstPartialMs":912.2,"locale":"de-DE"}
+{"id":"F015","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Oben Chat GPT","finalMs":17.4,"firstPartialMs":909.2,"locale":"de-DE"}
+{"id":"F015","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open gate","finalMs":99.6,"firstPartialMs":918.8,"locale":"en-US"}
+{"id":"F016","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open activity monitor","finalMs":24,"firstPartialMs":916.7,"locale":"en-US"}
+{"id":"F016","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Open Activity Monitor","finalMs":12.7,"firstPartialMs":613.1,"locale":"de-DE"}
+{"id":"F017","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"That is 17×23","finalMs":30.5,"firstPartialMs":910,"locale":"en-US"}
+{"id":"F017","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Was ist Seventeen Times tree","finalMs":40.4,"firstPartialMs":916.1,"locale":"de-DE"}
+{"id":"F018","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Convict fever mild to kilos","finalMs":25.8,"firstPartialMs":1110.9,"locale":"en-US"}
+{"id":"F018","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Convert Five milesto Kilometers","finalMs":24.9,"firstPartialMs":915.9,"locale":"de-DE"}
+{"id":"F019","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"What time is it in Tokyo","finalMs":21.2,"firstPartialMs":907.6,"locale":"en-US"}
+{"id":"F019","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"In Tokio","finalMs":24.9,"firstPartialMs":1720.5,"locale":"de-DE"}
+{"id":"F020","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Search the web for best pizza in Berlin","finalMs":13.6,"firstPartialMs":909.5,"locale":"en-US"}
+{"id":"F020","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Search for best Pizza in Berlin","finalMs":44,"firstPartialMs":921.5,"locale":"de-DE"}
+{"id":"F021","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Sent my invoice for March","finalMs":14.4,"firstPartialMs":914.5,"locale":"en-US"}
+{"id":"F021","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Find Mai in Voice for March","finalMs":70.5,"firstPartialMs":919.5,"locale":"de-DE"}
+{"id":"F022","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Search my computer for tax return 2020 fever","finalMs":27.6,"firstPartialMs":909.9,"locale":"en-US"}
+{"id":"F022","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Search my Computer vor Text Retourenventile","finalMs":51.6,"firstPartialMs":915.7,"locale":"de-DE"}
+{"id":"F023","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Turn the volume down","finalMs":11.1,"firstPartialMs":908.3,"locale":"en-US"}
+{"id":"F023","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"John the Volume down","finalMs":20.8,"firstPartialMs":921.6,"locale":"de-DE"}
+{"id":"F024","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open guitar.com","finalMs":12.2,"firstPartialMs":628.2,"locale":"en-US"}
+{"id":"F024","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":".com","finalMs":13.4,"firstPartialMs":1416.8,"locale":"de-DE"}
+{"id":"F025","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"That is the weather to Mahal","finalMs":63.7,"firstPartialMs":910.8,"locale":"en-US"}
+{"id":"F025","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"What is the Wetter Tomorrow","finalMs":31.2,"firstPartialMs":919,"locale":"de-DE"}
+{"id":"F026","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"How do you take a screenshot on a Mac","finalMs":20.5,"firstPartialMs":910.3,"locale":"en-US"}
+{"id":"F026","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Ethik Screenshot on iMac","finalMs":30,"firstPartialMs":1315.7,"locale":"de-DE"}
+{"id":"F027","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"So Marie zur Dispache","finalMs":16.5,"firstPartialMs":915.1,"locale":"de-DE"}
+{"id":"F027","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Zuma","finalMs":41.6,"firstPartialMs":926.4,"locale":"en-US"}
+{"id":"F028","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"That is on my calendar today","finalMs":18.1,"firstPartialMs":608.7,"locale":"en-US"}
+{"id":"F028","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Was ist on my","finalMs":26,"firstPartialMs":613.2,"locale":"de-DE"}
+{"id":"F029","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Please Undress on Spotify","finalMs":15.3,"firstPartialMs":914.5,"locale":"en-US"}
+{"id":"F029","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Lesen jazzon Spotify","finalMs":11.6,"firstPartialMs":920.8,"locale":"de-DE"}
+{"id":"F030","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Remind me to call Anna at 5 PM","finalMs":29.3,"firstPartialMs":919.7,"locale":"en-US"}
+{"id":"F030","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Raymond meto Call Anna@vier PM","finalMs":51.7,"firstPartialMs":920.4,"locale":"de-DE"}
+{"id":"F031","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"How many days until Christmas","finalMs":11.3,"firstPartialMs":916.5,"locale":"en-US"}
+{"id":"F031","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"How many Days und Christmas","finalMs":53.2,"firstPartialMs":917.8,"locale":"de-DE"}
+{"id":"F032","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Close it indoors","finalMs":95.9,"firstPartialMs":911.7,"locale":"en-US"}
+{"id":"F032","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Klose Al Finder Windows","finalMs":32.2,"firstPartialMs":914.2,"locale":"de-DE"}
+{"id":"G001","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Purchase","finalMs":32.6,"firstPartialMs":925,"locale":"en-US"}
+{"id":"G001","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Pages","finalMs":11.6,"firstPartialMs":1214.7,"locale":"de-DE"}
+{"id":"G002","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Rote","finalMs":26,"firstPartialMs":1234.7,"locale":"de-DE"}
+{"id":"G002","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open Keynote","finalMs":29.1,"firstPartialMs":936.7,"locale":"en-US"}
+{"id":"G003","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"What number","finalMs":36.3,"firstPartialMs":921.6,"locale":"en-US"}
+{"id":"G003","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Numbers","finalMs":16.7,"firstPartialMs":1118.7,"locale":"de-DE"}
+{"id":"G004","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Launch Fishman","finalMs":28.9,"firstPartialMs":907.8,"locale":"en-US"}
+{"id":"G004","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Lounge","finalMs":21.6,"firstPartialMs":1029.8,"locale":"de-DE"}
+{"id":"G005","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Blythe","finalMs":48.1,"firstPartialMs":1048.5,"locale":"en-US"}
+{"id":"G005","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Drive","finalMs":27.4,"firstPartialMs":1034.7,"locale":"de-DE"}
+{"id":"G006","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Guten","finalMs":20.2,"firstPartialMs":1028.8,"locale":"de-DE"}
+{"id":"G006","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Autumn Norton","finalMs":33.6,"firstPartialMs":923.3,"locale":"en-US"}
+{"id":"G007","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Gut","finalMs":14.7,"firstPartialMs":1214.8,"locale":"de-DE"}
+{"id":"G007","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Escort","finalMs":22,"firstPartialMs":1144.4,"locale":"en-US"}
+{"id":"G008","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Welcome export","finalMs":20.1,"firstPartialMs":921.1,"locale":"en-US"}
+{"id":"G008","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"","finalMs":12.9,"locale":"de-DE"}
+{"id":"G009","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"List","finalMs":18,"firstPartialMs":1222.3,"locale":"en-US"}
+{"id":"G009","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Test","finalMs":15.7,"firstPartialMs":1222.3,"locale":"de-DE"}
+{"id":"G010","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Start 45","finalMs":14.9,"firstPartialMs":911.8,"locale":"en-US"}
+{"id":"G010","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Start Spotify","finalMs":15.1,"firstPartialMs":916.1,"locale":"de-DE"}
+{"id":"G011","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Guten","finalMs":13.5,"firstPartialMs":1022.5,"locale":"de-DE"}
+{"id":"G011","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Welcome","finalMs":37.3,"firstPartialMs":921,"locale":"en-US"}
+{"id":"G012","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"System seatings","finalMs":20,"firstPartialMs":623.2,"locale":"en-US"}
+{"id":"G012","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Notensystem Settings","finalMs":20.1,"firstPartialMs":1123.6,"locale":"de-DE"}
+{"id":"G013","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Roten","finalMs":17.9,"firstPartialMs":925.1,"locale":"de-DE"}
+{"id":"G013","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open calendar","finalMs":12.5,"firstPartialMs":922.7,"locale":"en-US"}
+{"id":"G014","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Switch to Safari","finalMs":10.1,"firstPartialMs":907.8,"locale":"en-US"}
+{"id":"G014","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Switch to Safari","finalMs":15.9,"firstPartialMs":914.2,"locale":"de-DE"}
+{"id":"G015","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Tree pie Thai","finalMs":89.1,"firstPartialMs":1568.2,"locale":"en-US"}
+{"id":"G015","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Chat","finalMs":21.9,"firstPartialMs":1128.2,"locale":"de-DE"}
+{"id":"G016","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"What is 17×23","finalMs":14.9,"firstPartialMs":910.2,"locale":"en-US"}
+{"id":"G016","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"What","finalMs":19.7,"firstPartialMs":1828.8,"locale":"de-DE"}
+{"id":"G017","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Convert 5 miles to kilometers","finalMs":18.1,"firstPartialMs":918.5,"locale":"en-US"}
+{"id":"G017","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Convert Five Miles Two Kilometers","finalMs":16.3,"firstPartialMs":914.4,"locale":"de-DE"}
+{"id":"G018","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"What time is it in Tokyo","finalMs":15,"firstPartialMs":909,"locale":"en-US"}
+{"id":"G018","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"What time is it in Tokio","finalMs":19.1,"firstPartialMs":1110.6,"locale":"de-DE"}
+{"id":"G019","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Leave it for best pizza in Berlin","finalMs":25.2,"firstPartialMs":1129,"locale":"en-US"}
+{"id":"G019","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Pizza in Berlin","finalMs":21.3,"firstPartialMs":2120.8,"locale":"de-DE"}
+{"id":"G020","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Find my invoice for March","finalMs":18.2,"firstPartialMs":907.3,"locale":"en-US"}
+{"id":"G020","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Find my Info is for March","finalMs":36.3,"firstPartialMs":915.8,"locale":"de-DE"}
+{"id":"G021","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Turn the volume down","finalMs":32.1,"firstPartialMs":1319.3,"locale":"en-US"}
+{"id":"G021","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Sonnensee Volume down","finalMs":46.3,"firstPartialMs":921.2,"locale":"de-DE"}
+{"id":"G022","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"What is the versa model","finalMs":43.4,"firstPartialMs":908.3,"locale":"en-US"}
+{"id":"G022","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Silvester Tumor","finalMs":29.7,"firstPartialMs":1319.9,"locale":"de-DE"}
+{"id":"G023","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"How do I take a screenshot on iMac","finalMs":20,"firstPartialMs":609.6,"locale":"en-US"}
+{"id":"G023","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Screenshot on iMac","finalMs":27.9,"firstPartialMs":2619.6,"locale":"de-DE"}
+{"id":"G024","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Sommer reißt","finalMs":23.8,"firstPartialMs":1124.3,"locale":"de-DE"}
+{"id":"G024","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Summarize this page","finalMs":17.1,"firstPartialMs":1125.1,"locale":"en-US"}
+{"id":"G025","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"What is on my calendar today","finalMs":18.5,"firstPartialMs":911.3,"locale":"en-US"}
+{"id":"G025","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"What is on my","finalMs":14.5,"firstPartialMs":913.5,"locale":"de-DE"}
+{"id":"G026","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Lies am stress on Spotify","finalMs":60.2,"firstPartialMs":917.1,"locale":"en-US"}
+{"id":"G026","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Jazzon Spotify","finalMs":28,"firstPartialMs":1815.6,"locale":"de-DE"}
+{"id":"G027","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Remind me to call Anna at 5 PM","finalMs":12.6,"firstPartialMs":1111.3,"locale":"en-US"}
+{"id":"G027","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Remind meto Call annaat Five PM","finalMs":44.1,"firstPartialMs":912.7,"locale":"de-DE"}
+{"id":"G028","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"How many days until Christmas","finalMs":16,"firstPartialMs":908.6,"locale":"en-US"}
+{"id":"G028","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"How many Day is Until Christmas","finalMs":20.7,"firstPartialMs":909.6,"locale":"de-DE"}
+{"id":"G029","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Close all find our windows","finalMs":29,"firstPartialMs":905.7,"locale":"en-US"}
+{"id":"G029","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Plus Finder Windows","finalMs":41,"firstPartialMs":1319.2,"locale":"de-DE"}
+{"id":"G030","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"welcomeguitar.com","finalMs":23.2,"firstPartialMs":925.5,"locale":"en-US"}
+{"id":"G030","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":".com","finalMs":10.3,"firstPartialMs":1608.4,"locale":"de-DE"}
+{"id":"H001","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"This","finalMs":51.5,"firstPartialMs":1147.8,"locale":"en-US"}
+{"id":"H001","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne Pages","finalMs":11.4,"firstPartialMs":609.2,"locale":"de-DE"}
+{"id":"H002","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne Keynote","finalMs":11.4,"firstPartialMs":610,"locale":"de-DE"}
+{"id":"H002","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Keynote","finalMs":52.6,"firstPartialMs":1045.5,"locale":"en-US"}
+{"id":"H003","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Start Spotify","finalMs":20.1,"firstPartialMs":918.7,"locale":"en-US"}
+{"id":"H003","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Starte Spotify","finalMs":14,"firstPartialMs":909.9,"locale":"de-DE"}
+{"id":"H004","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne die Systemeinstellungen","finalMs":14.5,"firstPartialMs":609.5,"locale":"de-DE"}
+{"id":"H004","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Team stay long","finalMs":116.8,"firstPartialMs":1646.4,"locale":"en-US"}
+{"id":"H005","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne den Kalender","finalMs":14,"firstPartialMs":606.6,"locale":"de-DE"}
+{"id":"H005","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Listen in calendar","finalMs":28.7,"firstPartialMs":626.8,"locale":"en-US"}
+{"id":"H006","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne Safari","finalMs":10.6,"firstPartialMs":609.3,"locale":"de-DE"}
+{"id":"H006","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Listen","finalMs":35.1,"firstPartialMs":627.4,"locale":"en-US"}
+{"id":"H007","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne Notion","finalMs":11.3,"firstPartialMs":908.6,"locale":"de-DE"}
+{"id":"H007","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Not","finalMs":47.4,"firstPartialMs":1248.8,"locale":"en-US"}
+{"id":"H008","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne Brief","finalMs":17.5,"firstPartialMs":912,"locale":"de-DE"}
+{"id":"H008","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Please","finalMs":72.1,"firstPartialMs":1076.1,"locale":"en-US"}
+{"id":"H009","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne die Fotos","finalMs":9.6,"firstPartialMs":609.3,"locale":"de-DE"}
+{"id":"H009","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Definitely photos","finalMs":20.6,"firstPartialMs":938.2,"locale":"en-US"}
+{"id":"H010","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne die Erinnerungen","finalMs":14.5,"firstPartialMs":604.7,"locale":"de-DE"}
+{"id":"H010","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Listen","finalMs":40,"firstPartialMs":1342.1,"locale":"en-US"}
+{"id":"H011","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Was ist 17 × 23","finalMs":13.4,"firstPartialMs":607.4,"locale":"de-DE"}
+{"id":"H011","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Bus is deep in my own fancy","finalMs":54.6,"firstPartialMs":917,"locale":"en-US"}
+{"id":"H012","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Was sind 15 % von 240","finalMs":12.5,"firstPartialMs":607.9,"locale":"de-DE"}
+{"id":"H012","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Must put fonts by Honda filter","finalMs":56.6,"firstPartialMs":927.2,"locale":"en-US"}
+{"id":"H013","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Wie viel sind 100 $ in Euro","finalMs":10.9,"firstPartialMs":605.6,"locale":"de-DE"}
+{"id":"H013","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"The field in Honda dollar in oil","finalMs":128.7,"firstPartialMs":910.6,"locale":"en-US"}
+{"id":"H014","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Rechne 5 Meilen in Kilometer","finalMs":14.5,"firstPartialMs":908.9,"locale":"de-DE"}
+{"id":"H014","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Smiling in kilometer","finalMs":25.9,"firstPartialMs":1330.6,"locale":"en-US"}
+{"id":"H015","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Wie spät ist es in Tokio","finalMs":9.9,"firstPartialMs":604.5,"locale":"de-DE"}
+{"id":"H015","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"This is cool","finalMs":50.2,"firstPartialMs":923.9,"locale":"en-US"}
+{"id":"H016","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Wurzel aus 144","finalMs":16.3,"firstPartialMs":910,"locale":"de-DE"}
+{"id":"H016","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Vote","finalMs":16.4,"firstPartialMs":917.4,"locale":"en-US"}
+{"id":"H017","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Such im Internet nach Pizza in Berlin","finalMs":19.7,"firstPartialMs":908.1,"locale":"de-DE"}
+{"id":"H017","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Zoo in Internet pizza in Berlin","finalMs":31.2,"firstPartialMs":915.1,"locale":"en-US"}
+{"id":"H018","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Suche nach Rechnung März","finalMs":12.1,"firstPartialMs":907.4,"locale":"de-DE"}
+{"id":"H018","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Math","finalMs":25.5,"firstPartialMs":1629.8,"locale":"en-US"}
+{"id":"H019","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Finde meine Steuererklärung","finalMs":11.9,"firstPartialMs":909.2,"locale":"de-DE"}
+{"id":"H019","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Find a minor to","finalMs":90.3,"firstPartialMs":922.5,"locale":"en-US"}
+{"id":"H020","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Mach lauter","finalMs":9.7,"firstPartialMs":908.8,"locale":"de-DE"}
+{"id":"H020","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Mac Alta","finalMs":29.6,"firstPartialMs":914.4,"locale":"en-US"}
+{"id":"H021","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Stell die Lautstärke auf 50 %","finalMs":15.3,"firstPartialMs":911.5,"locale":"de-DE"}
+{"id":"H021","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Steady large often fish pots sent","finalMs":71.9,"firstPartialMs":917.7,"locale":"en-US"}
+{"id":"H022","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Leiser bitte","finalMs":15.7,"firstPartialMs":904.7,"locale":"de-DE"}
+{"id":"H022","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Lizza bitter","finalMs":29.2,"firstPartialMs":914.3,"locale":"en-US"}
+{"id":"H023","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Wie wird das Wetter morgen","finalMs":14.1,"firstPartialMs":606.6,"locale":"de-DE"}
+{"id":"H023","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Viva de Vita noggin","finalMs":108.6,"firstPartialMs":916.1,"locale":"en-US"}
+{"id":"H024","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Fasse diese Seite zusammen","finalMs":12.5,"firstPartialMs":906.3,"locale":"de-DE"}
+{"id":"H024","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"So is it Susan","finalMs":37.6,"firstPartialMs":926.4,"locale":"en-US"}
+{"id":"H025","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Was steht heute in meinem Kalender","finalMs":10.6,"firstPartialMs":606,"locale":"de-DE"}
+{"id":"H025","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Bus title in Minam calendar","finalMs":54.5,"firstPartialMs":917.4,"locale":"en-US"}
+{"id":"H026","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Erinnere mich morgen um neun an den Zahnarzt","finalMs":15.2,"firstPartialMs":904.3,"locale":"de-DE"}
+{"id":"H026","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Information or unknown and then asked","finalMs":70.9,"firstPartialMs":1337.5,"locale":"en-US"}
+{"id":"H027","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Wie viele Tage sind es bis Weihnachten","finalMs":14.3,"firstPartialMs":908.8,"locale":"de-DE"}
+{"id":"H027","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"We feel a target isn't a space by nothing","finalMs":51.1,"firstPartialMs":911.8,"locale":"en-US"}
+{"id":"H028","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Schreib eine Mail an Thomas","finalMs":16.8,"firstPartialMs":906.7,"locale":"de-DE"}
+{"id":"H028","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Strike and me and Thomas","finalMs":23.5,"firstPartialMs":916.9,"locale":"en-US"}
+{"id":"H029","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Übersetze guten Morgen ins Englische","finalMs":13.1,"firstPartialMs":1111.7,"locale":"de-DE"}
+{"id":"H029","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"It's a Guten Morgan in English","finalMs":69.6,"firstPartialMs":1122.4,"locale":"en-US"}
+{"id":"H030","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Zeige mir meine Downloads","finalMs":13.4,"firstPartialMs":909.3,"locale":"de-DE"}
+{"id":"H030","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Psych me a minor downloads","finalMs":16.4,"firstPartialMs":923.4,"locale":"en-US"}
+{"id":"H031","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne die Aktivitätsanzeige","finalMs":12.3,"firstPartialMs":909.2,"locale":"de-DE"}
+{"id":"H031","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Personality activity and Sega","finalMs":74.8,"firstPartialMs":1114.3,"locale":"en-US"}
+{"id":"H032","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Wie spät ist es","finalMs":10.2,"firstPartialMs":609.2,"locale":"de-DE"}
+{"id":"H032","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"This pet is","finalMs":42.9,"firstPartialMs":923.6,"locale":"en-US"}
+{"id":"I001","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne Pages","finalMs":13.8,"firstPartialMs":906.6,"locale":"de-DE"}
+{"id":"I001","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Naps","finalMs":28.4,"firstPartialMs":1227.9,"locale":"en-US"}
+{"id":"I002","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Open Pages bitte","finalMs":17.1,"firstPartialMs":932.2,"locale":"de-DE"}
+{"id":"I002","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open Jupiter","finalMs":28.5,"firstPartialMs":918.6,"locale":"en-US"}
+{"id":"I003","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Mach mich mal auf","finalMs":15.7,"firstPartialMs":909.1,"locale":"de-DE"}
+{"id":"I003","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"My fish my off","finalMs":33.1,"firstPartialMs":915.9,"locale":"en-US"}
+{"id":"I004","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Search my Computer vor Rechnung März","finalMs":21.1,"firstPartialMs":910.7,"locale":"de-DE"}
+{"id":"I004","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Search my computer for maths","finalMs":71.8,"firstPartialMs":910.3,"locale":"en-US"}
+{"id":"I005","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne VS","finalMs":11.8,"firstPartialMs":910.9,"locale":"de-DE"}
+{"id":"I005","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"","finalMs":25.1,"locale":"en-US"}
+{"id":"I006","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne WS Code","finalMs":23.9,"firstPartialMs":610.7,"locale":"de-DE"}
+{"id":"I006","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Listen","finalMs":33.7,"firstPartialMs":626.3,"locale":"en-US"}
+{"id":"I007","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne Xcode","finalMs":18.9,"firstPartialMs":607.6,"locale":"de-DE"}
+{"id":"I007","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Escort","finalMs":22.4,"firstPartialMs":1214.1,"locale":"en-US"}
+{"id":"I008","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne Reyplast","finalMs":41.1,"firstPartialMs":904.7,"locale":"de-DE"}
+{"id":"I008","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Personal","finalMs":15.4,"firstPartialMs":1219.4,"locale":"en-US"}
+{"id":"I009","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne Orca","finalMs":12.9,"firstPartialMs":609.4,"locale":"de-DE"}
+{"id":"I009","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"No","finalMs":37.2,"firstPartialMs":949,"locale":"en-US"}
+{"id":"I010","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Started in Blythe browser","finalMs":20.6,"firstPartialMs":905.7,"locale":"en-US"}
+{"id":"I010","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Starte den Browser","finalMs":21,"firstPartialMs":912.6,"locale":"de-DE"}
+{"id":"I011","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Mach Spotify auf","finalMs":11.7,"firstPartialMs":905.2,"locale":"de-DE"}
+{"id":"I011","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Mash fire off","finalMs":146.6,"firstPartialMs":919.8,"locale":"en-US"}
+{"id":"I012","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Kannst du Note öffnen","finalMs":18.2,"firstPartialMs":909.3,"locale":"de-DE"}
+{"id":"I012","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Cancel Keynote opening","finalMs":39.8,"firstPartialMs":913.4,"locale":"en-US"}
+{"id":"I013","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"In a bit","finalMs":28.4,"firstPartialMs":928.7,"locale":"en-US"}
+{"id":"I013","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne bitte Numbers","finalMs":17.6,"firstPartialMs":612.1,"locale":"de-DE"}
+{"id":"I014","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Oben Nation bitte","finalMs":33.6,"firstPartialMs":909.4,"locale":"de-DE"}
+{"id":"I014","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Not bitter","finalMs":73.7,"firstPartialMs":1133.9,"locale":"en-US"}
+{"id":"I015","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Suche die Keynote Präsentation vom Montag","finalMs":12.7,"firstPartialMs":907.7,"locale":"de-DE"}
+{"id":"I015","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Zudikey note presented from Montag","finalMs":54.9,"firstPartialMs":923.2,"locale":"en-US"}
+{"id":"I016","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Since the PD isolation form telecom","finalMs":65.2,"firstPartialMs":915,"locale":"en-US"}
+{"id":"I016","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Finste PDF Rechnung from Telekom","finalMs":21.7,"firstPartialMs":916.3,"locale":"de-DE"}
+{"id":"I017","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Google Wetter Hamburg","finalMs":20.1,"firstPartialMs":908.3,"locale":"de-DE"}
+{"id":"I017","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Google better handbook","finalMs":19.3,"firstPartialMs":616.7,"locale":"en-US"}
+{"id":"I018","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Oben die Einstellungen","finalMs":18.8,"firstPartialMs":606.8,"locale":"de-DE"}
+{"id":"I018","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open the login","finalMs":22.1,"firstPartialMs":615.6,"locale":"en-US"}
+{"id":"I019","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Was ist 20 % von 80 €","finalMs":14.2,"firstPartialMs":608.7,"locale":"de-DE"}
+{"id":"I019","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Bus is fun","finalMs":44.7,"firstPartialMs":919.1,"locale":"en-US"}
+{"id":"I020","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"What it","finalMs":49.6,"firstPartialMs":1137.9,"locale":"en-US"}
+{"id":"I020","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne WhatsApp","finalMs":15.4,"firstPartialMs":907.8,"locale":"de-DE"}
+{"id":"I021","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne Telegram","finalMs":8.8,"firstPartialMs":909,"locale":"de-DE"}
+{"id":"I021","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Telegram","finalMs":17.7,"firstPartialMs":1114,"locale":"en-US"}
+{"id":"I022","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne Gusti","finalMs":27.1,"firstPartialMs":606.8,"locale":"de-DE"}
+{"id":"I022","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Nichols tea","finalMs":42.6,"firstPartialMs":1020.6,"locale":"en-US"}
+{"id":"I023","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne das Terminal","finalMs":10.1,"firstPartialMs":911.8,"locale":"de-DE"}
+{"id":"I023","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Industrial","finalMs":14.1,"firstPartialMs":1135.7,"locale":"en-US"}
+{"id":"I024","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Oben Finder bitte","finalMs":14.1,"firstPartialMs":912.2,"locale":"de-DE"}
+{"id":"I024","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Open Finder bitter","finalMs":19.1,"firstPartialMs":907.9,"locale":"en-US"}
+{"id":"I025","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Wechsel zu Preis","finalMs":26.3,"firstPartialMs":905.8,"locale":"de-DE"}
+{"id":"I025","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Vixer life","finalMs":142.8,"firstPartialMs":947.8,"locale":"en-US"}
+{"id":"I026","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne ChatGPT","finalMs":14.8,"firstPartialMs":606.2,"locale":"de-DE"}
+{"id":"I026","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"PT","finalMs":40.5,"firstPartialMs":1356.6,"locale":"en-US"}
+{"id":"I027","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Öffne Notion Kalender","finalMs":17.2,"firstPartialMs":910.4,"locale":"de-DE"}
+{"id":"I027","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"In Ocean calendar","finalMs":67.9,"firstPartialMs":1544.9,"locale":"en-US"}
+{"id":"I028","variant":"clean","source":"apple-dt/en-US","role":"peer","text":"Spotify","finalMs":19.7,"firstPartialMs":1419.7,"locale":"en-US"}
+{"id":"I028","variant":"clean","source":"apple-dt/de-DE","role":"peer","text":"Spotify Pause","finalMs":16.1,"firstPartialMs":1416.4,"locale":"de-DE"}

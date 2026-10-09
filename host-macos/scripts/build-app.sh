@@ -10,7 +10,12 @@ fi
 if [[ -d "$OUTPUT" ]] && /usr/sbin/lsof -t "$OUTPUT/Contents/MacOS/pi-os" >/dev/null 2>&1; then
   echo "Quit the existing build of pi-os before replacing it." >&2; exit 1
 fi
-npm --prefix "$ROOT/node-harness" run build
+# A development build's Info.plist points at the checkout's node-harness/dist, which an installed app already runs:
+# refresh-install.sh skips this (PI_OS_SKIP_NODE_BUILD=1) and rebuilds dist only once its gates passed. A bundled
+# runtime copies dist into the app, so it is always built first.
+if [[ "${PI_OS_SKIP_NODE_BUILD:-}" != "1" || "${PI_OS_BUNDLE_RUNTIME:-}" == "1" ]]; then
+  npm --prefix "$ROOT/node-harness" run build
+fi
 swift build --jobs 2 --package-path "$ROOT/host-macos" -c release --product pi-os
 mkdir -p "$ROOT/host-macos/build"
 STAGE="$(mktemp -d "$ROOT/host-macos/build/.stage.XXXXXX")"
@@ -25,6 +30,20 @@ cp "$ROOT/host-macos/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.ic
 WEIGHTS="$ROOT/host-macos/Resources/context-scorer/context-scorer-weights.json"
 if [[ ! -f "$WEIGHTS" ]]; then echo "Missing $WEIGHTS" >&2; exit 1; fi
 cp "$WEIGHTS" "$APP/Contents/Resources/context-scorer-weights.json"
+# FluidAudio (Parakeet, DESIGN4 §4.2): its SwiftPM resource bundles go where Bundle.module looks in an app
+# (Contents/Resources), signed below with the app's identity. Its licence texts go beside THIRD_PARTY_NOTICES.md.
+for BUNDLE in "$ROOT/host-macos/.build/release/"FluidAudio_*.bundle; do
+  if [[ -d "$BUNDLE" ]]; then ditto "$BUNDLE" "$APP/Contents/Resources/$(basename "$BUNDLE")"; fi
+done
+NOTICES="$ROOT/host-macos/THIRD_PARTY_NOTICES.md"
+FLUIDAUDIO="$ROOT/host-macos/.build/checkouts/FluidAudio"
+if [[ ! -f "$NOTICES" || ! -f "$FLUIDAUDIO/LICENSE" ]]; then echo "Missing THIRD_PARTY_NOTICES.md or FluidAudio's LICENSE" >&2; exit 1; fi
+cp "$NOTICES" "$APP/Contents/Resources/THIRD_PARTY_NOTICES.md"
+mkdir -p "$APP/Contents/Resources/ThirdParty/FluidAudio"
+cp "$FLUIDAUDIO/LICENSE" "$APP/Contents/Resources/ThirdParty/FluidAudio/LICENSE"
+if [[ -d "$FLUIDAUDIO/ThirdPartyLicenses" ]]; then
+  ditto "$FLUIDAUDIO/ThirdPartyLicenses" "$APP/Contents/Resources/ThirdParty/FluidAudio/ThirdPartyLicenses"
+fi
 if [[ "${PI_OS_BUNDLE_RUNTIME:-}" == "1" ]]; then
   "$ROOT/host-macos/scripts/bundle-runtime.sh" "$APP"
 else
@@ -32,6 +51,10 @@ else
   /usr/libexec/PlistBuddy -c "Add :PiOSNodePath string $NODE" "$APP/Contents/Info.plist"
   /usr/libexec/PlistBuddy -c "Add :PiOSNodeEntry string $ROOT/node-harness/dist/index.js" "$APP/Contents/Info.plist"
 fi
+# Nested resource bundles before the app: SwiftPM signed them ad hoc; they carry the app's own identity instead.
+for BUNDLE in "$APP/Contents/Resources/"*.bundle; do
+  if [[ -d "$BUNDLE" ]]; then codesign --force --sign "$IDENTITY" "$BUNDLE"; fi
+done
 if [[ "$IDENTITY" == "-" ]]; then
   echo "WARNING: ad-hoc UI-only build. Its code identity changes on rebuild and invalidates existing TCC grants." >&2
   echo "Do not use it to refresh an authorized installation. Select PI_OS_SIGN_IDENTITY for stable installs." >&2

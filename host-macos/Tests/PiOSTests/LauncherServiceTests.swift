@@ -6,8 +6,17 @@ import XCTest
 @MainActor final class FakeLauncherEffects: LauncherEffects {
     var launched: [String] = [], opened: [String] = [], revealed: [String] = [], copied: [String] = []
     var inspections: [String: FileInspection] = [:]
+    /// A slow launch: `openApplication` waits for this before it returns (or throws `launchError`).
+    var launchGate: (() async -> Void)?
+    var launchError: Error?
+    private(set) var launchesFinished = 0
     var total: Int { launched.count + opened.count + revealed.count + copied.count }
-    func openApplication(at url: URL) async throws { launched.append(url.path) }
+    func openApplication(at url: URL) async throws {
+        launched.append(url.path)
+        await launchGate?()
+        launchesFinished += 1
+        if let launchError { throw launchError }
+    }
     func open(_ url: URL) -> Bool { opened.append(url.isFileURL ? url.path : url.absoluteString); return true }
     func reveal(_ url: URL) { revealed.append(url.path) }
     func copy(_ text: String) { copied.append(text) }
@@ -292,10 +301,12 @@ final class LauncherServiceTests: XCTestCase {
         let host = LauncherFixtures.host(effects: effects)
         let service = host.service
         var status = try await service.perform(.openApp(bundleId: "com.figma.Desktop"), contextId: nil, confirmed: false)
-        XCTAssertEqual(status, "Opened Figma")
+        XCTAssertEqual(status, "Opening Figma…", "The UI path never waits for the launch")
+        for _ in 0..<20 where effects.launched.isEmpty { await Task.yield() }
         XCTAssertEqual(effects.launched, ["/Applications/Figma.app"])
         status = try await service.perform(.openApp(bundleId: "com.apple.Terminal"), contextId: nil, confirmed: false)
-        XCTAssertEqual(status, "Opened Terminal")
+        XCTAssertEqual(status, "Opening Terminal…")
+        for _ in 0..<20 where effects.launched.count < 2 { await Task.yield() }
         await assertDomainError("app_not_found") { _ = try await service.perform(.openApp(bundleId: "com.example.Missing"), contextId: nil, confirmed: true) }
         status = try await service.perform(.openURL("https://example.com/x"), contextId: nil, confirmed: false)
         XCTAssertEqual(status, "Opened example.com")
@@ -336,6 +347,43 @@ final class LauncherServiceTests: XCTestCase {
         XCTAssertEqual(effects.copied, [script.path])
         service.revokeTokens(contextId: "ctx-1")
         await assertDomainError("token_expired") { _ = try await service.perform(.revealFile(token: script.token), contextId: "ctx-1", confirmed: false) }
+    }
+
+    /// DESIGN4 §7 item 1: "Opening Figma…" at once; the launch runs on, is traced once when macOS answers, and a launch
+    /// that fails afterwards reaches the app as a note. The agent route still waits for the outcome it reports.
+    @MainActor func testAnAppLaunchIsNotAwaitedAndALateFailureIsReported() async throws {
+        let effects = FakeLauncherEffects()
+        let host = LauncherFixtures.host(effects: effects)
+        let service = host.service
+        var events: [LauncherTraceEvent] = []
+        var failures: [DomainError] = []
+        service.trace = { events.append($0) }
+        service.onLaunchFailure = { failures.append($0) }
+        let (gate, open) = AsyncStream<Void>.makeStream()
+        effects.launchGate = { for await _ in gate { break } }
+        let status = try await service.perform(.openApp(bundleId: "com.figma.Desktop"), contextId: nil, confirmed: false)
+        XCTAssertEqual(status, "Opening Figma…")
+        for _ in 0..<20 where effects.launched.isEmpty { await Task.yield() }
+        XCTAssertEqual(effects.launched.count, 1, "the launch started")
+        XCTAssertEqual(effects.launchesFinished, 0, "…and perform returned before macOS answered")
+        XCTAssertTrue(events.isEmpty, "traced once, when the launch completes")
+        effects.launchError = DomainError("launch", "boom")
+        open.yield(); open.finish()
+        for _ in 0..<40 where failures.isEmpty { await Task.yield() }
+        XCTAssertEqual(failures.map(\.code), ["open_failed"])
+        XCTAssertEqual(failures.first?.message, "macOS could not open Figma.", "the note names the app, never a path")
+        XCTAssertEqual(events.map(\.outcome), ["open_failed"])
+        XCTAssertNil(events.first?.performed)
+        // Policy failures still throw at once: nothing is launched for an unknown app.
+        await assertDomainError("app_not_found") { _ = try await service.perform(.openApp(bundleId: "com.example.Missing"), contextId: nil, confirmed: false) }
+        XCTAssertEqual(effects.launched.count, 1)
+        // The agent's launcher.open keeps reporting the real outcome.
+        effects.launchGate = nil; effects.launchError = nil
+        let opened = try await host.open(LauncherOpenRequest(action: .openApp(bundleId: "com.figma.Desktop")))
+        XCTAssertEqual(opened, LauncherOpenResult(status: "Opened Figma", performed: .openApp))
+        effects.launchError = DomainError("launch", "boom")
+        await assertDomainError("open_failed") { _ = try await host.open(LauncherOpenRequest(action: .openApp(bundleId: "com.figma.Desktop"))) }
+        XCTAssertEqual(failures.count, 1, "the agent route reports through its result, not a note")
     }
 
     @MainActor func testUnknownTypesRevealAndOtherPerformPaths() async throws {

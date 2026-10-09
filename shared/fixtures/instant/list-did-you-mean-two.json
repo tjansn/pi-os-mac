@@ -1,0 +1,77 @@
+{
+  "seq": 4,
+  "elapsedMs": 1,
+  "source": "grammar",
+  "decision": "list",
+  "intent": "open_app",
+  "title": "Did you mean…",
+  "card": {
+    "format": "pi-os-ui/1",
+    "root": "root",
+    "elements": {
+      "root": {
+        "type": "Answer",
+        "props": {
+          "summary": "Did you mean…"
+        },
+        "children": [
+          "n1"
+        ]
+      },
+      "n1": {
+        "type": "ItemList",
+        "props": {
+          "title": "Applications"
+        },
+        "children": [
+          "n2",
+          "n3"
+        ]
+      },
+      "n2": {
+        "type": "Item",
+        "props": {
+          "title": "Notion",
+          "subtitle": "/Applications/Notion.app",
+          "icon": {
+            "kind": "app",
+            "bundleId": "notion.id"
+          }
+        },
+        "on": {
+          "primary": {
+            "action": "openApp",
+            "params": {
+              "bundleId": "notion.id"
+            }
+          }
+        }
+      },
+      "n3": {
+        "type": "Item",
+        "props": {
+          "title": "Notion Calendar",
+          "subtitle": "/Applications/Notion Calendar.app",
+          "icon": {
+            "kind": "app",
+            "bundleId": "com.cron.electron"
+          }
+        },
+        "on": {
+          "primary": {
+            "action": "openApp",
+            "params": {
+              "bundleId": "com.cron.electron"
+            }
+          }
+        }
+      }
+    }
+  },
+  "voice": {
+    "heard": "motion",
+    "source": "apple-dt/en-US",
+    "via": "peer",
+    "didYouMean": true
+  }
+}

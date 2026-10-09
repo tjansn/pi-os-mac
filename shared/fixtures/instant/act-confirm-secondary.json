@@ -1,0 +1,18 @@
+{
+  "seq": 8,
+  "elapsedMs": 1,
+  "source": "grammar",
+  "decision": "act",
+  "intent": "open_app",
+  "title": "Open Numbers",
+  "action": {
+    "type": "openApp",
+    "bundleId": "com.apple.Numbers"
+  },
+  "confirm": true,
+  "voice": {
+    "heard": "numbers",
+    "source": "apple-dt/de-DE",
+    "via": "secondary"
+  }
+}

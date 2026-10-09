@@ -1,0 +1,71 @@
+{
+  "seq": 5,
+  "elapsedMs": 2,
+  "source": "grammar",
+  "decision": "act",
+  "intent": "open_item",
+  "title": "Open Radfotos",
+  "action": {
+    "type": "openFile",
+    "token": "tok_7c1e0a9f3b2d"
+  },
+  "confirm": false,
+  "card": {
+    "format": "pi-os-ui/1",
+    "root": "root",
+    "elements": {
+      "root": {
+        "type": "Answer",
+        "props": {
+          "summary": "Open Radfotos"
+        },
+        "children": [
+          "n1"
+        ]
+      },
+      "n1": {
+        "type": "ItemList",
+        "props": {},
+        "children": [
+          "n2"
+        ]
+      },
+      "n2": {
+        "type": "Item",
+        "props": {
+          "title": "Radfotos",
+          "subtitle": "in Desktop",
+          "icon": {
+            "kind": "file",
+            "uti": "public.folder"
+          }
+        },
+        "on": {
+          "primary": {
+            "action": "openFile",
+            "params": {
+              "token": "tok_7c1e0a9f3b2d"
+            }
+          },
+          "secondary": {
+            "action": "revealFile",
+            "params": {
+              "token": "tok_7c1e0a9f3b2d"
+            }
+          },
+          "tertiary": {
+            "action": "copyPath",
+            "params": {
+              "token": "tok_7c1e0a9f3b2d"
+            }
+          }
+        }
+      }
+    }
+  },
+  "voice": {
+    "heard": "radfotos",
+    "source": "apple-dt/de-DE",
+    "via": "visible"
+  }
+}

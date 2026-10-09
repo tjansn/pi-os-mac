@@ -1,0 +1,9 @@
+{
+  "op": "upsert",
+  "entry": {
+    "list": "fixes",
+    "heard": "clod",
+    "intended": "Claude"
+  },
+  "source": "did-you-mean"
+}

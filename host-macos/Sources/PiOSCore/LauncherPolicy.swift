@@ -103,6 +103,128 @@ public struct LauncherOpenResult: Codable, Equatable {
     public init(status: String, performed: Performed) { self.status = status; self.performed = performed }
 }
 
+// MARK: - Visible items (POST /tools/launcher.visibleItems)
+
+/// VISIBLE_ITEMS_LIMITS in contracts/launcher.ts. Lengths are UTF-16 units.
+public enum VisibleItemsLimits {
+    public static let maxResults = 200
+    public static let defaultMaxResults = 100
+    public static let maxNameChars = 255
+    public static let maxContentTypeChars = 255
+}
+
+/// Where a visible item is shown (VISIBLE_SOURCE_KINDS): a desktop icon, or an item of the take's target Finder window.
+public enum VisibleSourceKind: String, Codable, CaseIterable, Sendable { case desktop, finderWindow }
+
+/// How the host read a source (VISIBLE_SOURCE_VIAS): the Accessibility tree, or a Spotlight query for the
+/// folder's direct children. Never FileManager enumeration (that raises the Desktop-folder privacy prompt).
+public enum VisibleSourceVia: String, Codable, CaseIterable, Sendable { case ax, spotlight }
+
+/// One source the host read for the context (at most one per kind).
+public struct VisibleSource: Codable, Equatable, Sendable {
+    public var kind: VisibleSourceKind
+    public var via: VisibleSourceVia
+    /// False when the host stopped early (AX budget, Spotlight deadline): a miss may be a false negative.
+    public var complete: Bool
+    public init(kind: VisibleSourceKind, via: VisibleSourceVia, complete: Bool) {
+        self.kind = kind; self.via = via; self.complete = complete
+    }
+}
+
+/// A file candidate plus where it is visible; encodes flat (`FileCandidate & {source}` in TypeScript).
+public struct VisibleItem: Codable, Equatable {
+    public var candidate: FileCandidate
+    public var source: VisibleSourceKind
+    public init(_ candidate: FileCandidate, source: VisibleSourceKind) { self.candidate = candidate; self.source = source }
+
+    private enum Keys: String, CodingKey { case source }
+    public init(from decoder: Decoder) throws {
+        candidate = try FileCandidate(from: decoder)
+        source = try decoder.container(keyedBy: Keys.self).decode(VisibleSourceKind.self, forKey: .source)
+    }
+    public func encode(to encoder: Encoder) throws {
+        try candidate.encode(to: encoder)
+        var c = encoder.container(keyedBy: Keys.self)
+        try c.encode(source, forKey: .source)
+    }
+}
+
+/// `{arguments}` of POST /tools/launcher.visibleItems: read-only, no prompt, no focus change. The host captured
+/// the context's visible items at key-down; tokens are minted with this contextId only when returned.
+public struct VisibleItemsRequest: Codable, Equatable {
+    public var contextId: String
+    /// 1…200; default 100.
+    public var maxResults: Int?
+    public init(contextId: String, maxResults: Int? = nil) { self.contextId = contextId; self.maxResults = maxResults }
+
+    private enum Keys: String, CodingKey { case contextId, maxResults }
+    /// The same rules as parseVisibleItemsRequest (the route answers 400 otherwise).
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        contextId = try c.decode(String.self, forKey: .contextId)
+        maxResults = try c.decodeIfPresent(Int.self, forKey: .maxResults)
+        guard AttachmentValidation.isContextId(contextId) else {
+            throw DecodingError.dataCorruptedError(forKey: .contextId, in: c, debugDescription: "invalid contextId")
+        }
+        if let maxResults, !(1...VisibleItemsLimits.maxResults).contains(maxResults) {
+            throw DecodingError.dataCorruptedError(forKey: .maxResults, in: c, debugDescription: "maxResults must be 1...200")
+        }
+    }
+}
+
+/// `launcher.visibleItems` result. No sources and no items when the target is neither the desktop nor a Finder
+/// window. Hidden files are never listed; `path` is for display and ranking only and is never logged.
+public struct VisibleItemsResult: Codable, Equatable {
+    public var sources: [VisibleSource]
+    /// ≤ maxResults (≤ 200); each item's source is one of `sources`; tokens are unique.
+    public var items: [VisibleItem]
+    /// True when the host stopped at maxResults.
+    public var truncated: Bool
+    public var elapsedMs: Double
+
+    public init(sources: [VisibleSource], items: [VisibleItem], truncated: Bool, elapsedMs: Double) {
+        self.sources = sources; self.items = items; self.truncated = truncated; self.elapsedMs = elapsedMs
+    }
+
+    private enum Keys: String, CodingKey { case sources, items, truncated, elapsedMs }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        sources = try c.decode([VisibleSource].self, forKey: .sources)
+        items = try c.decode([VisibleItem].self, forKey: .items)
+        truncated = try c.decode(Bool.self, forKey: .truncated)
+        elapsedMs = try c.decode(Double.self, forKey: .elapsedMs)
+        try validate()
+    }
+
+    /// The same checks as parseVisibleItemsResult; the host runs it before replying.
+    public func validate() throws {
+        func reject(_ reason: String) -> DomainError { DomainError("invalid_visible_items", reason) }
+        guard sources.count <= VisibleSourceKind.allCases.count, Set(sources.map(\.kind)).count == sources.count else {
+            throw reject("at most one source per kind")
+        }
+        guard items.count <= VisibleItemsLimits.maxResults else { throw reject("too many items") }
+        guard elapsedMs.isFinite, elapsedMs >= 0 else { throw reject("invalid elapsedMs") }
+        let kinds = Set(sources.map(\.kind))
+        var tokens = Set<String>()
+        for item in items {
+            guard kinds.contains(item.source) else { throw reject("item source is not one of the sources") }
+            guard tokens.insert(item.candidate.token).inserted else { throw reject("duplicate token") }
+            guard VisibleItemsResult.isCandidate(item.candidate) else { throw reject("invalid item") }
+        }
+    }
+
+    /// parseFileCandidate's rules: a host token, a single-line name (≤ 255), an absolute path, an optional
+    /// single-line UTI (≤ 255) and a non-negative useCount.
+    public static func isCandidate(_ candidate: FileCandidate) -> Bool {
+        guard LauncherPolicy.isToken(candidate.token), VoiceText.isValid(candidate.name, max: VisibleItemsLimits.maxNameChars),
+              AttachmentValidation.isAbsoluteHostPath(candidate.path) else { return false }
+        if let type = candidate.contentType, !VoiceText.isValid(type, max: VisibleItemsLimits.maxContentTypeChars) { return false }
+        if let count = candidate.useCount, count < 0 { return false }
+        return [candidate.createdMs, candidate.modifiedMs, candidate.lastUsedMs].allSatisfy { $0?.isFinite ?? true }
+    }
+}
+
 // MARK: - Policy
 
 /// Every effect the launcher can perform. Nothing here deletes, trashes, moves or writes files.
@@ -431,6 +553,15 @@ public protocol LauncherBackend: Sendable {
     func searchFiles(_ request: FileSearchRequest) async throws -> FileSearchResult
     func listApps(_ request: ListAppsRequest) async throws -> AppIndexResult
     func open(_ request: LauncherOpenRequest) async throws -> LauncherOpenResult
+    /// The take's visible items (protocol.md "Visible items"). Read-only; tokens are minted for `request.contextId`.
+    func visibleItems(_ request: VisibleItemsRequest) async throws -> VisibleItemsResult
+}
+
+extension LauncherBackend {
+    /// A backend without a visible-items provider: Node treats `unsupported` as "no visible items".
+    public func visibleItems(_ request: VisibleItemsRequest) async throws -> VisibleItemsResult {
+        throw DomainError("unsupported", "Visible items are not available on this host.")
+    }
 }
 
 /// Decoding/encoding for the launcher routes, shared by DesktopService and the --conformance
@@ -440,8 +571,18 @@ public enum LauncherRoutes {
     public static let searchFiles = "launcher.searchFiles"
     public static let listApps = "launcher.listApps"
     public static let open = "launcher.open"
+    /// Read route of the visible-items contract (VisibleItemsRequest → VisibleItemsResult, protocol.md "Visible
+    /// items"). Served (token-authed, read-only, also while computer control is off) but not advertised in
+    /// GET /tools: no agent tool uses it, and Node probes it directly (404 / not_found / unsupported = none).
+    public static let visibleItems = "launcher.visibleItems"
+    /// Advertised read routes (GET /tools): the agent's find_files and list_apps depend on exactly these.
     public static let readNames = [searchFiles, listApps]
+    /// Advertised routes.
     public static let names = [searchFiles, listApps, open]
+    /// Every read route this host serves; a read whose client went away is cancelled (LoopbackServer.launcherReads).
+    public static let servedReadNames = readNames + [visibleItems]
+    /// Every route this host serves.
+    public static let served = names + [visibleItems]
 
     /// Routes to advertise: the effect route only while computer control is enabled.
     public static func advertised(controlEnabled: Bool) -> [String] { controlEnabled ? names : readNames }
@@ -449,7 +590,7 @@ public enum LauncherRoutes {
     public static func name(forPath path: String) -> String? {
         guard path.hasPrefix("/tools/") else { return nil }
         let name = String(path.dropFirst(7))
-        return names.contains(name) ? name : nil
+        return served.contains(name) ? name : nil
     }
 
     public static func handle(_ name: String, body: Data, backend: LauncherBackend, controlEnabled: Bool) async -> HTTPResponse {
@@ -481,6 +622,18 @@ public enum LauncherRoutes {
                 }
                 let action = try LauncherPolicy.agentOpenAction(arguments.action)
                 return try await backend.open(LauncherOpenRequest(contextId: normalized(arguments.contextId), action: action))
+            }
+        case visibleItems:
+            // Strict decode (VisibleItemsRequest's own rules: contextId required, maxResults 1…200). Read-only, so it is
+            // served whether or not computer control is on; the result is validated before it leaves the host.
+            struct Body: Decodable { let arguments: VisibleItemsRequest }
+            guard let request = try? decoder.decode(Body.self, from: body).arguments else {
+                return .error(400, "invalid_arguments", "Expected arguments {contextId, maxResults?}")
+            }
+            return await outcome { () async throws -> VisibleItemsResult in
+                let result = try await backend.visibleItems(request)
+                try result.validate()
+                return result
             }
         default:
             return .error(404, "not_found", "Unknown launcher route")

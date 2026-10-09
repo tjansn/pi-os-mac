@@ -6,15 +6,33 @@ final class FixtureLauncherBackend: LauncherBackend, @unchecked Sendable {
     let files: FileSearchResult
     let apps: AppIndexResult
     let opened: LauncherOpenResult
+    /// launcher.visibleItems' answer; nil: `unsupported`.
+    let visible: VisibleItemsResult?
     private let lock = NSLock()
     private var searches: [FileSearchRequest] = [], listings: [ListAppsRequest] = [], opens: [LauncherOpenRequest] = []
-    init(files: FileSearchResult, apps: AppIndexResult, opened: LauncherOpenResult) { self.files = files; self.apps = apps; self.opened = opened }
+    private var visibles: [VisibleItemsRequest] = []
+    init(files: FileSearchResult, apps: AppIndexResult, opened: LauncherOpenResult, visible: VisibleItemsResult? = nil) {
+        self.files = files; self.apps = apps; self.opened = opened; self.visible = visible
+    }
     var searchRequests: [FileSearchRequest] { lock.withLock { searches } }
     var listRequests: [ListAppsRequest] { lock.withLock { listings } }
     var openRequests: [LauncherOpenRequest] { lock.withLock { opens } }
+    var visibleRequests: [VisibleItemsRequest] { lock.withLock { visibles } }
     func searchFiles(_ request: FileSearchRequest) async throws -> FileSearchResult { lock.withLock { searches.append(request) }; return files }
     func listApps(_ request: ListAppsRequest) async throws -> AppIndexResult { lock.withLock { listings.append(request) }; return apps }
     func open(_ request: LauncherOpenRequest) async throws -> LauncherOpenResult { lock.withLock { opens.append(request) }; return opened }
+    func visibleItems(_ request: VisibleItemsRequest) async throws -> VisibleItemsResult {
+        guard let visible else { throw DomainError("unsupported", "Visible items are not available on this host.") }
+        lock.withLock { visibles.append(request) }
+        return visible
+    }
+}
+
+/// Implements only the original three routes: launcher.visibleItems falls back to the protocol's `unsupported`.
+struct ThreeRouteLauncherBackend: LauncherBackend {
+    func searchFiles(_ request: FileSearchRequest) async throws -> FileSearchResult { FileSearchResult(items: [], truncated: false, elapsedMs: 0) }
+    func listApps(_ request: ListAppsRequest) async throws -> AppIndexResult { AppIndexResult(version: "apps-0", apps: []) }
+    func open(_ request: LauncherOpenRequest) async throws -> LauncherOpenResult { LauncherOpenResult(status: "Opened", performed: .openApp) }
 }
 
 /// Cross-language conformance for the launcher routes: the host must accept exactly the

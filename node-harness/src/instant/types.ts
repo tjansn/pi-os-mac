@@ -1,4 +1,5 @@
 import type { SystemOp } from "../contracts/actions.js";
+import type { InstantResponse } from "../contracts/instant.js";
 import type { CalendarUnit, DateTarget, MsRange } from "./engines/dates.js";
 import type { PlaceZone } from "./engines/timezones.js";
 
@@ -47,8 +48,16 @@ export type Parsed =
   | { kind: "time_diff"; from: PlaceZone | null; to: PlaceZone }
   | { kind: "date"; query: DateQuery }
   | { kind: "file_search"; query: FileQuery }
-  /** "open X": an app from the host index, else `siteUrl` when X names a well-known site. */
-  | { kind: "open"; target: string; siteUrl?: string }
+  /**
+   * "open X": an app from the host index, else `siteUrl` when X names a well-known site. `strength` is set
+   * only by the voice grammar for weak verbs and bare names (grammar/launch.ts `openStrength`).
+   */
+  | { kind: "open"; target: string; siteUrl?: string; strength?: "weak" | "bare" }
   | { kind: "url"; url: string; label: string }
   | { kind: "web"; url: string; query: string; engine: string }
   | { kind: "system"; op: SystemOp; value?: number | boolean; title: string };
+
+type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
+
+/** A decision before the dispatcher adds `seq`, `elapsedMs`, `source` and `scope` (one per InstantResponse variant). */
+export type InstantBody = DistributiveOmit<InstantResponse, "seq" | "elapsedMs" | "source" | "scope">;

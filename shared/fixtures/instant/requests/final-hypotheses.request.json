@@ -1,0 +1,45 @@
+{
+  "text": "open recast",
+  "phase": "final",
+  "seq": 7,
+  "takeId": "take-42",
+  "contextId": "ctx-123",
+  "locale": "en-US",
+  "inputMode": "voice",
+  "hypotheses": [
+    {
+      "text": "open recast",
+      "source": "parakeet-v3",
+      "role": "primary",
+      "confidence": 0.71,
+      "locale": "en-US"
+    },
+    {
+      "text": "Open Raycast.",
+      "source": "apple-dt/en-US",
+      "role": "secondary",
+      "confidence": 0.64,
+      "minConfidence": 0.31,
+      "locale": "en-US"
+    },
+    {
+      "text": "Öffne Recast.",
+      "source": "apple-dt/de-DE",
+      "role": "secondary",
+      "confidence": 0.42,
+      "minConfidence": 0.18,
+      "locale": "de-DE"
+    },
+    {
+      "text": "Open we cast.",
+      "source": "apple-dt/en-US",
+      "role": "secondary",
+      "confidence": 0.33
+    }
+  ],
+  "accept": [
+    "suggest",
+    "check",
+    "confirm"
+  ]
+}

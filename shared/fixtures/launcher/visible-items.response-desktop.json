@@ -1,0 +1,15 @@
+{
+  "ok": true,
+  "result": {
+    "sources": [{ "kind": "desktop", "via": "ax", "complete": true }],
+    "items": [
+      { "token": "tok_7c1e0a9f3b2d", "name": "Radfotos", "path": "/Users/fixture/Desktop/Radfotos", "contentType": "public.folder", "createdMs": 1781913600000, "modifiedMs": 1783209600000, "isDirectory": true, "isPackage": false, "source": "desktop" },
+      { "token": "tok_2b8d4f6a1c3e", "name": "Fotos", "path": "/Users/fixture/Desktop/Fotos", "contentType": "public.folder", "modifiedMs": 1780531200000, "isDirectory": true, "isPackage": false, "source": "desktop" },
+      { "token": "tok_5e0c9a7b3d1f", "name": "Rad-Tour 2026.pdf", "path": "/Users/fixture/Desktop/Rad-Tour 2026.pdf", "contentType": "com.adobe.pdf", "modifiedMs": 1782950400000, "lastUsedMs": 1783036800000, "useCount": 2, "isDirectory": false, "isPackage": false, "source": "desktop" },
+      { "token": "tok_8a3f1e5c7b9d", "name": "Präsentation.key", "path": "/Users/fixture/Desktop/Präsentation.key", "contentType": "com.apple.iwork.keynote.sffkey", "isDirectory": false, "isPackage": true, "source": "desktop" },
+      { "token": "tok_4d6b2a0e8c1f", "name": "Notizen.txt", "path": "/Users/fixture/Desktop/Notizen.txt", "contentType": "public.plain-text", "isDirectory": false, "isPackage": false, "source": "desktop" }
+    ],
+    "truncated": false,
+    "elapsedMs": 12.4
+  }
+}

@@ -195,5 +195,128 @@
       "action": "press",
       "verification": "Pressed button \"Like\"."
     }
+  },
+  "voiceHypothesis": {
+    "wire": {
+      "text": "open Pages",
+      "source": "apple-dt/en-US",
+      "role": "peer",
+      "confidence": null,
+      "minConfidence": null,
+      "locale": null
+    },
+    "normalized": {
+      "text": "open Pages",
+      "source": "apple-dt/en-US",
+      "role": "peer"
+    }
+  },
+  "instantRequest": {
+    "wire": {
+      "text": "open Pages",
+      "phase": "final",
+      "seq": 3,
+      "takeId": null,
+      "contextId": null,
+      "locale": null,
+      "inputMode": null,
+      "silenceMs": null,
+      "hypotheses": null,
+      "accept": null
+    },
+    "normalized": {
+      "text": "open Pages",
+      "phase": "final",
+      "seq": 3
+    }
+  },
+  "voiceMeta": {
+    "wire": {
+      "heard": "recast",
+      "source": null,
+      "via": null,
+      "didYouMean": true,
+      "check": null,
+      "learnedEntryId": null,
+      "correctsTakeId": null
+    },
+    "normalized": {
+      "heard": "recast",
+      "didYouMean": true
+    }
+  },
+  "learnRequest": {
+    "wire": {
+      "takeId": "take-42",
+      "kind": "pick",
+      "bundleId": "com.raycast.macos",
+      "correctedText": null,
+      "entryId": null,
+      "confirmed": null,
+      "regression": null
+    },
+    "normalized": {
+      "takeId": "take-42",
+      "kind": "pick",
+      "bundleId": "com.raycast.macos"
+    }
+  },
+  "visibleItemsRequest": {
+    "wire": {
+      "contextId": "ctx-123",
+      "maxResults": null
+    },
+    "normalized": {
+      "contextId": "ctx-123"
+    }
+  },
+  "visibleItemsResult": {
+    "wire": {
+      "sources": [
+        {
+          "kind": "desktop",
+          "via": "ax",
+          "complete": true
+        }
+      ],
+      "items": [
+        {
+          "token": "tok_7c1e0a9f3b2d",
+          "name": "Radfotos",
+          "path": "/Users/fixture/Desktop/Radfotos",
+          "contentType": null,
+          "createdMs": null,
+          "modifiedMs": null,
+          "lastUsedMs": null,
+          "useCount": null,
+          "isDirectory": true,
+          "isPackage": false,
+          "source": "desktop"
+        }
+      ],
+      "truncated": false,
+      "elapsedMs": 4.2
+    },
+    "normalized": {
+      "sources": [
+        {
+          "kind": "desktop",
+          "via": "ax",
+          "complete": true
+        }
+      ],
+      "items": [
+        {
+          "token": "tok_7c1e0a9f3b2d",
+          "name": "Radfotos",
+          "path": "/Users/fixture/Desktop/Radfotos",
+          "isDirectory": true,
+          "isPackage": false,
+          "source": "desktop"
+        }
+      ],
+      "truncated": false,
+      "elapsedMs": 4.2
+    }
   }
 }

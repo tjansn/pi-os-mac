@@ -1,0 +1,576 @@
+{"id":"A001","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open Pages","locale":"en-US"}
+{"id":"A001","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Open Pages","locale":"de-DE"}
+{"id":"A002","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Irgend","locale":"de-DE"}
+{"id":"A002","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open kilos","locale":"en-US"}
+{"id":"A003","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne number","locale":"de-DE"}
+{"id":"A003","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open Numbers","locale":"en-US"}
+{"id":"A004","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Launch Sigma","locale":"en-US"}
+{"id":"A004","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Lounge Filme","locale":"de-DE"}
+{"id":"A005","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open brave","locale":"en-US"}
+{"id":"A005","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Open Rain","locale":"de-DE"}
+{"id":"A006","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Übersetzen","locale":"de-DE"}
+{"id":"A006","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open notion","locale":"en-US"}
+{"id":"A007","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Aber mir ist kalt","locale":"de-DE"}
+{"id":"A007","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open VSCO","locale":"en-US"}
+{"id":"A008","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open code","locale":"en-US"}
+{"id":"A008","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Open Scout","locale":"de-DE"}
+{"id":"A009","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open recap","locale":"en-US"}
+{"id":"A009","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Open","locale":"de-DE"}
+{"id":"A010","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Stolz","locale":"de-DE"}
+{"id":"A010","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Start Spotify","locale":"en-US"}
+{"id":"A011","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffnen","locale":"de-DE"}
+{"id":"A011","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open walker","locale":"en-US"}
+{"id":"A012","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Rufen Settings","locale":"de-DE"}
+{"id":"A012","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open system settings","locale":"en-US"}
+{"id":"A013","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open calendar","locale":"en-US"}
+{"id":"A013","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Open Kalender","locale":"de-DE"}
+{"id":"A014","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Switch to Safari","locale":"en-US"}
+{"id":"A014","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Switch the Safari","locale":"de-DE"}
+{"id":"A015","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open telegram","locale":"en-US"}
+{"id":"A015","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Telegram","locale":"de-DE"}
+{"id":"A016","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open Gosti","locale":"en-US"}
+{"id":"A016","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Open Gusti","locale":"de-DE"}
+{"id":"A017","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open ChatGPT","locale":"en-US"}
+{"id":"A017","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Open ChatGPT","locale":"de-DE"}
+{"id":"A018","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Übersetzt","locale":"de-DE"}
+{"id":"A018","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open that","locale":"en-US"}
+{"id":"A019","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open motion calendar","locale":"en-US"}
+{"id":"A019","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Open","locale":"de-DE"}
+{"id":"A020","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open activity monitor","locale":"en-US"}
+{"id":"A020","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Open Night Mother","locale":"de-DE"}
+{"id":"A021","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"What is 17×23","locale":"en-US"}
+{"id":"A021","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"What is seven ein Sweety","locale":"de-DE"}
+{"id":"A022","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"What is 15% of 240","locale":"en-US"}
+{"id":"A022","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"What is fifty Prozent of hundred","locale":"de-DE"}
+{"id":"A023","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Weit mal zu Kilometer","locale":"de-DE"}
+{"id":"A023","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Convert 5 miles to kilometers","locale":"en-US"}
+{"id":"A024","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"How much is $100 in euros","locale":"en-US"}
+{"id":"A024","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"How much is one hundred Dollars in Euro","locale":"de-DE"}
+{"id":"A025","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"What time is it in Tokyo","locale":"en-US"}
+{"id":"A025","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"What time is it in Tokio","locale":"de-DE"}
+{"id":"A026","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Square root of 144","locale":"en-US"}
+{"id":"A026","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"One hundred forty Four","locale":"de-DE"}
+{"id":"A027","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"250÷8","locale":"en-US"}
+{"id":"A027","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"404 ÷","locale":"de-DE"}
+{"id":"A028","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Search the web for best pizza in Berlin","locale":"en-US"}
+{"id":"A028","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Search the World for best fit in Berlin","locale":"de-DE"}
+{"id":"A029","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Du leihst du Lesben","locale":"de-DE"}
+{"id":"A029","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Google flights to Lisbon","locale":"en-US"}
+{"id":"A030","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Wein wo ist Rom","locale":"de-DE"}
+{"id":"A030","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Find my invoice from March","locale":"en-US"}
+{"id":"A031","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Search my computer protector 2025","locale":"en-US"}
+{"id":"A031","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"George Michael","locale":"de-DE"}
+{"id":"A032","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Turn the volume down","locale":"en-US"}
+{"id":"A032","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Volume Down","locale":"de-DE"}
+{"id":"A033","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Set volume to 50%","locale":"en-US"}
+{"id":"A033","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"","locale":"de-DE"}
+{"id":"A034","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open youtube.com","locale":"en-US"}
+{"id":"A034","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"open youtube.com","locale":"de-DE"}
+{"id":"A035","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"What is the weather tomorrow","locale":"en-US"}
+{"id":"A035","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"What is the with Tomorrow","locale":"de-DE"}
+{"id":"A036","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"How do I take a screenshot on the","locale":"en-US"}
+{"id":"A036","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"How do I Take a Screenshot on the","locale":"de-DE"}
+{"id":"A037","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Summarize this page","locale":"en-US"}
+{"id":"A037","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Sunrise the Page","locale":"de-DE"}
+{"id":"A038","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Reply to this email and say I will be late","locale":"en-US"}
+{"id":"A038","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"E-Mail an Immobilien","locale":"de-DE"}
+{"id":"A039","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"What is on my calendar today","locale":"en-US"}
+{"id":"A039","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Madison Marc Helen the today","locale":"de-DE"}
+{"id":"A040","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Play some jazz on Spotify","locale":"en-US"}
+{"id":"A040","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Play on Spotify","locale":"de-DE"}
+{"id":"A041","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Remind me to call Anna at 5 PM","locale":"en-US"}
+{"id":"A041","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Reminder Niederer 2 PM","locale":"de-DE"}
+{"id":"A042","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"How many days until Christmas","locale":"en-US"}
+{"id":"A042","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Merry Christmas","locale":"de-DE"}
+{"id":"A043","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Translate good morning in the Japanese","locale":"en-US"}
+{"id":"A043","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Morning","locale":"de-DE"}
+{"id":"A044","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Klaus weiter Windlos","locale":"de-DE"}
+{"id":"A044","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Close all my windows","locale":"en-US"}
+{"id":"B001","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Oben Tages","locale":"de-DE"}
+{"id":"B001","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open podcasts","locale":"en-US"}
+{"id":"B002","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Oben","locale":"de-DE"}
+{"id":"B002","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open","locale":"en-US"}
+{"id":"B003","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Oben Nummer","locale":"de-DE"}
+{"id":"B003","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open Uber","locale":"en-US"}
+{"id":"B004","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Loudspeaker","locale":"en-US"}
+{"id":"B004","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Lounge","locale":"de-DE"}
+{"id":"B005","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Oben Farbe","locale":"de-DE"}
+{"id":"B005","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open app","locale":"en-US"}
+{"id":"B006","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open resume","locale":"en-US"}
+{"id":"B006","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Motion","locale":"de-DE"}
+{"id":"B007","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open file escort","locale":"en-US"}
+{"id":"B007","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Oben VS gut","locale":"de-DE"}
+{"id":"B008","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open today","locale":"en-US"}
+{"id":"B008","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Oben","locale":"de-DE"}
+{"id":"B009","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Oben bei","locale":"de-DE"}
+{"id":"B009","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open podcasts","locale":"en-US"}
+{"id":"B010","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Start 40","locale":"en-US"}
+{"id":"B010","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"TV","locale":"de-DE"}
+{"id":"B011","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Guten Morgen","locale":"de-DE"}
+{"id":"B011","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open","locale":"en-US"}
+{"id":"B012","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Oben Settings","locale":"de-DE"}
+{"id":"B012","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open the settings","locale":"en-US"}
+{"id":"B013","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Oben kalt blau","locale":"de-DE"}
+{"id":"B013","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open Colo","locale":"en-US"}
+{"id":"B014","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Sitzt vor Safari","locale":"de-DE"}
+{"id":"B014","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Switch to Safari","locale":"en-US"}
+{"id":"B015","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Oben KGP","locale":"de-DE"}
+{"id":"B015","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open page","locale":"en-US"}
+{"id":"B016","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open activity monitor network","locale":"en-US"}
+{"id":"B016","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Ofen Activity Monitor","locale":"de-DE"}
+{"id":"B017","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Waggy 23","locale":"en-US"}
+{"id":"B017","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Maggie nehmen Tee Tee Tee","locale":"de-DE"}
+{"id":"B018","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Umwelt bei mir ist viel Kilometer","locale":"de-DE"}
+{"id":"B018","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Tumi","locale":"en-US"}
+{"id":"B019","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"What team is it in Tokyo","locale":"en-US"}
+{"id":"B019","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Martina ist in Tokio","locale":"de-DE"}
+{"id":"B020","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"JP is not coming","locale":"en-US"}
+{"id":"B020","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Siri spiel Fortnite","locale":"de-DE"}
+{"id":"B021","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Sind nie in Europa","locale":"de-DE"}
+{"id":"B021","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Send me invite March","locale":"en-US"}
+{"id":"B022","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Ask me confused for tax later on empty empty people","locale":"en-US"}
+{"id":"B022","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Wie kommt Ruhetag Rentiere","locale":"de-DE"}
+{"id":"B023","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Bezahlen","locale":"de-DE"}
+{"id":"B023","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"20","locale":"en-US"}
+{"id":"B024","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open tiktok.com","locale":"en-US"}
+{"id":"B024","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Video","locale":"de-DE"}
+{"id":"B025","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Was ist das Wetter Tom","locale":"de-DE"}
+{"id":"B025","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"But is the weather tomorrow","locale":"en-US"}
+{"id":"B026","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Who you eat a ice cream for milk","locale":"en-US"}
+{"id":"B026","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Foto AKA Creme","locale":"de-DE"}
+{"id":"B027","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Somebody read that his part","locale":"en-US"}
+{"id":"B027","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Sommer","locale":"de-DE"}
+{"id":"B028","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Maggie Omi laut","locale":"de-DE"}
+{"id":"B028","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Mai Po Mika Dadi","locale":"en-US"}
+{"id":"B029","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Nein","locale":"de-DE"}
+{"id":"B029","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Nice","locale":"en-US"}
+{"id":"B030","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"I need all of me","locale":"en-US"}
+{"id":"B030","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Metal Art","locale":"de-DE"}
+{"id":"B031","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Oh Mann hier Christmas","locale":"de-DE"}
+{"id":"B031","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Call mommy blow something until Christmas","locale":"en-US"}
+{"id":"B032","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Große Alpen Window","locale":"de-DE"}
+{"id":"B032","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Close the window","locale":"en-US"}
+{"id":"C001","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne Pages","locale":"de-DE"}
+{"id":"C001","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Ethnic","locale":"en-US"}
+{"id":"C002","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne kein Mode","locale":"de-DE"}
+{"id":"C002","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"At the key motor","locale":"en-US"}
+{"id":"C003","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Start a food meeting","locale":"en-US"}
+{"id":"C003","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Starte","locale":"de-DE"}
+{"id":"C004","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne die Systemeinstellungen","locale":"de-DE"}
+{"id":"C004","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Add the username in London","locale":"en-US"}
+{"id":"C005","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne den Kalender","locale":"de-DE"}
+{"id":"C005","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open in","locale":"en-US"}
+{"id":"C006","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"At the party","locale":"en-US"}
+{"id":"C006","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne Safari","locale":"de-DE"}
+{"id":"C007","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Resume","locale":"en-US"}
+{"id":"C007","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne Motion","locale":"de-DE"}
+{"id":"C008","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne Farbe","locale":"de-DE"}
+{"id":"C008","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"At the top","locale":"en-US"}
+{"id":"C009","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne die Fotos","locale":"de-DE"}
+{"id":"C009","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Add the photos","locale":"en-US"}
+{"id":"C010","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne die Erinnerungen","locale":"de-DE"}
+{"id":"C010","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Ethnicity in a woman","locale":"en-US"}
+{"id":"C011","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Was ist 17 × 23","locale":"de-DE"}
+{"id":"C011","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"What is in multi","locale":"en-US"}
+{"id":"C012","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Was sind 15 % von 240","locale":"de-DE"}
+{"id":"C012","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"What's 6.94 cents","locale":"en-US"}
+{"id":"C013","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Wie viel sind 100 $ in Euro","locale":"de-DE"}
+{"id":"C013","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"The appeal of the door in Boyle","locale":"en-US"}
+{"id":"C014","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Rechne mit meine Kilometer um","locale":"de-DE"}
+{"id":"C014","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Krishna my name","locale":"en-US"}
+{"id":"C015","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Wie spät ist es in Tokio","locale":"de-DE"}
+{"id":"C015","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Mina is an important","locale":"en-US"}
+{"id":"C016","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Wurzel aus 144","locale":"de-DE"}
+{"id":"C016","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"What","locale":"en-US"}
+{"id":"C017","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Suche im Internet nach Pizza in Berlin","locale":"de-DE"}
+{"id":"C017","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Zoos are in Berlin","locale":"en-US"}
+{"id":"C018","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Suche nach Rechnung März","locale":"de-DE"}
+{"id":"C018","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"No","locale":"en-US"}
+{"id":"C019","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Finde meine Steuererklärung","locale":"de-DE"}
+{"id":"C019","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Finder Minto","locale":"en-US"}
+{"id":"C020","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Mach lauter","locale":"de-DE"}
+{"id":"C020","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"More louder","locale":"en-US"}
+{"id":"C021","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Stell die Lautstärke auf 50 %","locale":"de-DE"}
+{"id":"C021","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Tell me","locale":"en-US"}
+{"id":"C022","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Leiser bitte","locale":"de-DE"}
+{"id":"C022","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Lie","locale":"en-US"}
+{"id":"C023","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Wie wird das Wetter morgen","locale":"de-DE"}
+{"id":"C023","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"","locale":"en-US"}
+{"id":"C024","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Also diese Seite zusammen","locale":"de-DE"}
+{"id":"C024","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"What's it like in New Zealand","locale":"en-US"}
+{"id":"C025","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Was steht heute in meinem Kalender","locale":"de-DE"}
+{"id":"C025","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"What's the total in my calendar","locale":"en-US"}
+{"id":"C026","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Erinnere mich morgen um neun an den Zahnarzt","locale":"de-DE"}
+{"id":"C026","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"They are in the margins","locale":"en-US"}
+{"id":"C027","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Wie viele Tage sind es mit Weihnachten","locale":"de-DE"}
+{"id":"C027","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Me as often","locale":"en-US"}
+{"id":"C028","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Schreib eine Mail an Thomas","locale":"de-DE"}
+{"id":"C028","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Type and me and Thomas","locale":"en-US"}
+{"id":"C029","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Übersetze guten Morgen ins Englisch","locale":"de-DE"}
+{"id":"C029","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"That's a good and more inlay","locale":"en-US"}
+{"id":"C030","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Zeige mir meine Nummer raus","locale":"de-DE"}
+{"id":"C030","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Psych me at 9 o'clock","locale":"en-US"}
+{"id":"C031","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne die Aktivität Seite","locale":"de-DE"}
+{"id":"C031","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"At the deactivate at some","locale":"en-US"}
+{"id":"C032","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Wie spät ist es","locale":"de-DE"}
+{"id":"C032","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"This is","locale":"en-US"}
+{"id":"D001","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"At the party","locale":"en-US"}
+{"id":"D001","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne Fight","locale":"de-DE"}
+{"id":"D002","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Oben Park","locale":"de-DE"}
+{"id":"D002","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open podcasts","locale":"en-US"}
+{"id":"D003","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Mach mich auf","locale":"de-DE"}
+{"id":"D003","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"My big mouth","locale":"en-US"}
+{"id":"D004","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Ja kommt immer mehr","locale":"de-DE"}
+{"id":"D004","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Yaya me come in the mail","locale":"en-US"}
+{"id":"D005","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne V ist gut","locale":"de-DE"}
+{"id":"D005","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Lethal is called","locale":"en-US"}
+{"id":"D006","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Wie ist Code","locale":"de-DE"}
+{"id":"D006","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"At the court","locale":"en-US"}
+{"id":"D007","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"At the export","locale":"en-US"}
+{"id":"D007","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne Export","locale":"de-DE"}
+{"id":"D008","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"At the right cast","locale":"en-US"}
+{"id":"D008","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Drei","locale":"de-DE"}
+{"id":"D009","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne","locale":"de-DE"}
+{"id":"D009","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"America","locale":"en-US"}
+{"id":"D010","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Start browser","locale":"en-US"}
+{"id":"D010","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Starte den Pause","locale":"de-DE"}
+{"id":"D011","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Mach Spotify auf","locale":"de-DE"}
+{"id":"D011","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Bob file out","locale":"en-US"}
+{"id":"D012","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Kannst du dir nur das","locale":"de-DE"}
+{"id":"D012","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Can you do that then","locale":"en-US"}
+{"id":"D013","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"At the numbers","locale":"en-US"}
+{"id":"D013","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne Mamas","locale":"de-DE"}
+{"id":"D014","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Ofen Nation bitte","locale":"de-DE"}
+{"id":"D014","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open not better","locale":"en-US"}
+{"id":"D015","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Suche die Keynote Präsentation vom Montag","locale":"de-DE"}
+{"id":"D015","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Zuza Inwood Crescent for moon Park","locale":"en-US"}
+{"id":"D016","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Mit PDF Rechnung. Telekom","locale":"de-DE"}
+{"id":"D016","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Didi Nuku Ilium","locale":"en-US"}
+{"id":"D017","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"To weather work","locale":"en-US"}
+{"id":"D017","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Dunkle Wetter Hamburg","locale":"de-DE"}
+{"id":"D018","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Und die Einstellungen","locale":"de-DE"}
+{"id":"D018","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open the gentleman","locale":"en-US"}
+{"id":"D019","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Was ist 20 % von 80 €","locale":"de-DE"}
+{"id":"D019","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"What is 26% for the oil","locale":"en-US"}
+{"id":"D020","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne WhatsApp","locale":"de-DE"}
+{"id":"D020","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"WhatsApp","locale":"en-US"}
+{"id":"D021","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"That's the come","locale":"en-US"}
+{"id":"D021","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne Telegram","locale":"de-DE"}
+{"id":"D022","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne Musik","locale":"de-DE"}
+{"id":"D022","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Add magazine","locale":"en-US"}
+{"id":"D023","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne das Al","locale":"de-DE"}
+{"id":"D023","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Tell me","locale":"en-US"}
+{"id":"D024","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Oben bitte","locale":"de-DE"}
+{"id":"D024","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open Finder","locale":"en-US"}
+{"id":"D025","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Wechsel frei","locale":"de-DE"}
+{"id":"D025","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Mix pie","locale":"en-US"}
+{"id":"D026","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"At the jet game please","locale":"en-US"}
+{"id":"D026","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne ChatGPT","locale":"de-DE"}
+{"id":"D027","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Musik im Kalender","locale":"de-DE"}
+{"id":"D027","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Calendar","locale":"en-US"}
+{"id":"D028","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"40,000","locale":"en-US"}
+{"id":"D028","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Spotify Pause","locale":"de-DE"}
+{"id":"E001","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Guten Appetit","locale":"de-DE"}
+{"id":"E001","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open pie cheese","locale":"en-US"}
+{"id":"E002","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Oben","locale":"de-DE"}
+{"id":"E002","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open Keynote","locale":"en-US"}
+{"id":"E003","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"All the Numbers","locale":"en-US"}
+{"id":"E003","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Google number","locale":"de-DE"}
+{"id":"E004","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Lupe","locale":"en-US"}
+{"id":"E004","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Lookma","locale":"de-DE"}
+{"id":"E005","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Oben","locale":"de-DE"}
+{"id":"E005","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open file","locale":"en-US"}
+{"id":"E006","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Oben duschen","locale":"de-DE"}
+{"id":"E006","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open motion","locale":"en-US"}
+{"id":"E007","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Sie ist gut","locale":"de-DE"}
+{"id":"E007","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open VS code","locale":"en-US"}
+{"id":"E008","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"The next","locale":"en-US"}
+{"id":"E008","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Echt","locale":"de-DE"}
+{"id":"E009","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Unten rechts","locale":"de-DE"}
+{"id":"E009","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"","locale":"en-US"}
+{"id":"E010","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Start 45","locale":"en-US"}
+{"id":"E010","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Starte Spotify","locale":"de-DE"}
+{"id":"E011","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Guten Morgen","locale":"de-DE"}
+{"id":"E011","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open","locale":"en-US"}
+{"id":"E012","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Guten","locale":"de-DE"}
+{"id":"E012","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open the settings","locale":"en-US"}
+{"id":"E013","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Oben","locale":"de-DE"}
+{"id":"E013","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open Canada","locale":"en-US"}
+{"id":"E014","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Switch to the party","locale":"en-US"}
+{"id":"E014","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Willst du Safari","locale":"de-DE"}
+{"id":"E015","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open ChatGPT","locale":"en-US"}
+{"id":"E015","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"ChatGPT","locale":"de-DE"}
+{"id":"E016","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"What is 17×23","locale":"en-US"}
+{"id":"E016","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Maggie hier eins","locale":"de-DE"}
+{"id":"E017","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Con weltweit meinst du Kilometer","locale":"de-DE"}
+{"id":"E017","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Convert 5-2 km","locale":"en-US"}
+{"id":"E018","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"What time is it in Tokyo","locale":"en-US"}
+{"id":"E018","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"What time is it in Tokio","locale":"de-DE"}
+{"id":"E019","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Soll Schnee vor bleibt Pizza in Berlin","locale":"de-DE"}
+{"id":"E019","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Search the web for best pizza in Berlin","locale":"en-US"}
+{"id":"E020","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Moin moin wo vom Arsch","locale":"de-DE"}
+{"id":"E020","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Find my invoice for March","locale":"en-US"}
+{"id":"E021","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Termin wollen wir down","locale":"de-DE"}
+{"id":"E021","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Turn volume down","locale":"en-US"}
+{"id":"E022","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"What do you see tomorrow","locale":"en-US"}
+{"id":"E022","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Musik mit","locale":"de-DE"}
+{"id":"E023","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"How do I type a clean image","locale":"en-US"}
+{"id":"E023","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"How do I Clean","locale":"de-DE"}
+{"id":"E024","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Sommer ist sie falsch","locale":"de-DE"}
+{"id":"E024","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Number six point","locale":"en-US"}
+{"id":"E025","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"What is on my calendar to die","locale":"en-US"}
+{"id":"E025","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Maggie von Mike Kelly","locale":"de-DE"}
+{"id":"E026","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Play some on Spotify","locale":"en-US"}
+{"id":"E026","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Leiser Spotify","locale":"de-DE"}
+{"id":"E027","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Remind me to call Anna at 5 PM","locale":"en-US"}
+{"id":"E027","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Remind meto Call annaat Five PM","locale":"de-DE"}
+{"id":"E028","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"How many flights until Christmas","locale":"en-US"}
+{"id":"E028","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Armen bleibt Hill Christmas","locale":"de-DE"}
+{"id":"E029","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Gruß mein Freund Gruß","locale":"de-DE"}
+{"id":"E029","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Close all kinds of news","locale":"en-US"}
+{"id":"E030","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Google geht ab.com","locale":"de-DE"}
+{"id":"E030","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"oh getup.com","locale":"en-US"}
+{"id":"F001","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open Pages","locale":"en-US"}
+{"id":"F001","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Open Pages","locale":"de-DE"}
+{"id":"F002","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open Keynote","locale":"en-US"}
+{"id":"F002","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Open Keynote","locale":"de-DE"}
+{"id":"F003","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open Numbers","locale":"en-US"}
+{"id":"F003","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Oben Numbers","locale":"de-DE"}
+{"id":"F004","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Launch Fama","locale":"en-US"}
+{"id":"F004","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Lunch Wismar","locale":"de-DE"}
+{"id":"F005","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Oben Brief","locale":"de-DE"}
+{"id":"F005","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open breathe","locale":"en-US"}
+{"id":"F006","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Oh not","locale":"en-US"}
+{"id":"F006","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Ofen Nation","locale":"de-DE"}
+{"id":"F007","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open file escort","locale":"en-US"}
+{"id":"F007","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Oben VS gut","locale":"de-DE"}
+{"id":"F008","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Oben ist gut","locale":"de-DE"}
+{"id":"F008","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open Xcode","locale":"en-US"}
+{"id":"F009","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open podcasts","locale":"en-US"}
+{"id":"F009","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Ofen Reika","locale":"de-DE"}
+{"id":"F010","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Start Spotify","locale":"en-US"}
+{"id":"F010","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Starte Spotify","locale":"de-DE"}
+{"id":"F011","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open Alka","locale":"en-US"}
+{"id":"F011","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Oben A","locale":"de-DE"}
+{"id":"F012","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open the steam settings","locale":"en-US"}
+{"id":"F012","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Ofensystem Settings","locale":"de-DE"}
+{"id":"F013","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open calendar","locale":"en-US"}
+{"id":"F013","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Ofen","locale":"de-DE"}
+{"id":"F014","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Switch to Safari","locale":"en-US"}
+{"id":"F014","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Switch to Safari","locale":"de-DE"}
+{"id":"F015","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open ChatGPT","locale":"en-US"}
+{"id":"F015","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Ofen-Chat GP","locale":"de-DE"}
+{"id":"F016","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Oben Activity Monitor","locale":"de-DE"}
+{"id":"F016","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open activity monitor","locale":"en-US"}
+{"id":"F017","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Was ist sieben Times twenty","locale":"de-DE"}
+{"id":"F017","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"What is 70×23","locale":"en-US"}
+{"id":"F018","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Convert Fieber meinst du Kilometers","locale":"de-DE"}
+{"id":"F018","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Convert fee to kilometers","locale":"en-US"}
+{"id":"F019","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Was ist in Tokio","locale":"de-DE"}
+{"id":"F019","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"What time is it in Tokyo","locale":"en-US"}
+{"id":"F020","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Such der West Pizza in Berlin","locale":"de-DE"}
+{"id":"F020","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Search the web for best picture in Berlin","locale":"en-US"}
+{"id":"F021","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Sind Mai in Voice for March","locale":"de-DE"}
+{"id":"F021","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Send my invoice for March","locale":"en-US"}
+{"id":"F022","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Search my computer for tax return 2020 fever","locale":"en-US"}
+{"id":"F022","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Search my Computer for Sex Return twenty twenty Five","locale":"de-DE"}
+{"id":"F023","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Schon sie wollen Daumen","locale":"de-DE"}
+{"id":"F023","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Turn the volume down","locale":"en-US"}
+{"id":"F024","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open gutar.com","locale":"en-US"}
+{"id":"F024","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"obengetappt.com","locale":"de-DE"}
+{"id":"F025","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Was ist der Wetter Tomorrow","locale":"de-DE"}
+{"id":"F025","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"But is the weather tomorrow","locale":"en-US"}
+{"id":"F026","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"How do it take a screenshot on iMac","locale":"en-US"}
+{"id":"F026","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"How do Ethik a Screenshot on iMac","locale":"de-DE"}
+{"id":"F027","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Zoom read the deposit","locale":"en-US"}
+{"id":"F027","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"So Marie Dispache","locale":"de-DE"}
+{"id":"F028","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"But it's on my calendar today","locale":"en-US"}
+{"id":"F028","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Was ist on my Kalender","locale":"de-DE"}
+{"id":"F029","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Lesen jazzon Spotify","locale":"de-DE"}
+{"id":"F029","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Please send Jess on Spotify","locale":"en-US"}
+{"id":"F030","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Raymond me to call Anna at 5 PM","locale":"en-US"}
+{"id":"F030","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Raymond meto Call Anna@Five PM","locale":"de-DE"}
+{"id":"F031","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"How many days until Christmas","locale":"en-US"}
+{"id":"F031","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"How many Day und Christmas","locale":"de-DE"}
+{"id":"F032","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Close the Alfida windows","locale":"en-US"}
+{"id":"F032","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Klose Al Finder Windows","locale":"de-DE"}
+{"id":"G001","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open Pirates","locale":"en-US"}
+{"id":"G001","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Open Pages","locale":"de-DE"}
+{"id":"G002","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Unten","locale":"de-DE"}
+{"id":"G002","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open Keynote","locale":"en-US"}
+{"id":"G003","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Phone numbers","locale":"en-US"}
+{"id":"G003","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Ruf Numbers","locale":"de-DE"}
+{"id":"G004","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Lohn Wismar","locale":"de-DE"}
+{"id":"G004","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Launch Fama","locale":"en-US"}
+{"id":"G005","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Und Preis","locale":"de-DE"}
+{"id":"G005","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open price","locale":"en-US"}
+{"id":"G006","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Guten löschen","locale":"de-DE"}
+{"id":"G006","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open notion","locale":"en-US"}
+{"id":"G007","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Würden wir es gut","locale":"de-DE"}
+{"id":"G007","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open the escort","locale":"en-US"}
+{"id":"G008","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Export","locale":"en-US"}
+{"id":"G008","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Open Export","locale":"de-DE"}
+{"id":"G009","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Oben Rallye","locale":"de-DE"}
+{"id":"G009","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"","locale":"en-US"}
+{"id":"G010","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Start 45","locale":"en-US"}
+{"id":"G010","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Start Spotify","locale":"de-DE"}
+{"id":"G011","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Guten Tag","locale":"de-DE"}
+{"id":"G011","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open car","locale":"en-US"}
+{"id":"G012","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"What consist settings","locale":"en-US"}
+{"id":"G012","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Bodensystem Settings","locale":"de-DE"}
+{"id":"G013","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Unten fehlender","locale":"de-DE"}
+{"id":"G013","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open calendar","locale":"en-US"}
+{"id":"G014","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Switch to Safari","locale":"en-US"}
+{"id":"G014","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Switch to Safari","locale":"de-DE"}
+{"id":"G015","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open set pie","locale":"en-US"}
+{"id":"G015","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"O Chat-Ski Partei","locale":"de-DE"}
+{"id":"G016","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Was ist sieben Times twenty","locale":"de-DE"}
+{"id":"G016","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"What is the times 23","locale":"en-US"}
+{"id":"G017","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Convert 5 miles to kilometers","locale":"en-US"}
+{"id":"G017","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Convert Five milesto Kilometers","locale":"de-DE"}
+{"id":"G018","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"What time is it in Tokyo","locale":"en-US"}
+{"id":"G018","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"What time is it in Tokio","locale":"de-DE"}
+{"id":"G019","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Salz steht vor West Pizza in Berlin","locale":"de-DE"}
+{"id":"G019","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Search the web for best picture in Berlin","locale":"en-US"}
+{"id":"G020","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Find my invoice for March","locale":"en-US"}
+{"id":"G020","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Find my Info is for Match","locale":"de-DE"}
+{"id":"G021","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Turn the volume down","locale":"en-US"}
+{"id":"G021","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Zahlen Sie Volume Down","locale":"de-DE"}
+{"id":"G022","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Was ist die Wassertumor","locale":"de-DE"}
+{"id":"G022","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"What is the versa level","locale":"en-US"}
+{"id":"G023","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"How do I type a screenshot on iMac","locale":"en-US"}
+{"id":"G023","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"How do I Tide is Screenshot on iMac","locale":"de-DE"}
+{"id":"G024","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Sommer weiß ist falsch","locale":"de-DE"}
+{"id":"G024","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Buy this page","locale":"en-US"}
+{"id":"G025","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"What is on my calendar today","locale":"en-US"}
+{"id":"G025","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Was ist on my Kalender","locale":"de-DE"}
+{"id":"G026","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Blei Jazz und Spotify","locale":"de-DE"}
+{"id":"G026","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Play some dress on Spotify","locale":"en-US"}
+{"id":"G027","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Remind me to call Anna at 5 PM","locale":"en-US"}
+{"id":"G027","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Remind meto Call annaat Five PM","locale":"de-DE"}
+{"id":"G028","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"How many days until Christmas","locale":"en-US"}
+{"id":"G028","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"How many Day is Until Christmas","locale":"de-DE"}
+{"id":"G029","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Close all Finder windows","locale":"en-US"}
+{"id":"G029","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Plus All Finder Window","locale":"de-DE"}
+{"id":"G030","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open gutar.com","locale":"en-US"}
+{"id":"G030","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":".com","locale":"de-DE"}
+{"id":"H001","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne Pages","locale":"de-DE"}
+{"id":"H001","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open the page","locale":"en-US"}
+{"id":"H002","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne Keynote","locale":"de-DE"}
+{"id":"H002","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open Keynote","locale":"en-US"}
+{"id":"H003","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Start a Spotify","locale":"en-US"}
+{"id":"H003","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Starte Spotify","locale":"de-DE"}
+{"id":"H004","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne die Systemeinstellungen","locale":"de-DE"}
+{"id":"H004","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open the steam and stay long","locale":"en-US"}
+{"id":"H005","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne den Kalender","locale":"de-DE"}
+{"id":"H005","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open it in calendar","locale":"en-US"}
+{"id":"H006","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne Safari","locale":"de-DE"}
+{"id":"H006","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open Safari","locale":"en-US"}
+{"id":"H007","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne Notion","locale":"de-DE"}
+{"id":"H007","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"No","locale":"en-US"}
+{"id":"H008","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne Brief","locale":"de-DE"}
+{"id":"H008","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open please","locale":"en-US"}
+{"id":"H009","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne die Fotos","locale":"de-DE"}
+{"id":"H009","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Adi photos","locale":"en-US"}
+{"id":"H010","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne die Erinnerungen","locale":"de-DE"}
+{"id":"H010","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Ethnicity in a woman","locale":"en-US"}
+{"id":"H011","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Was ist 17 × 23","locale":"de-DE"}
+{"id":"H011","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Bus is deep in my fancy","locale":"en-US"}
+{"id":"H012","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Was sind 15 % von 240","locale":"de-DE"}
+{"id":"H012","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Bus 15 point font 50","locale":"en-US"}
+{"id":"H013","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Wie viel sind 100 $ in Euro","locale":"de-DE"}
+{"id":"H013","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Field in dollar in oval","locale":"en-US"}
+{"id":"H014","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Rechne 5 Meilen in Kilometer","locale":"de-DE"}
+{"id":"H014","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Smiling in kilometer on","locale":"en-US"}
+{"id":"H015","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Wie spät ist es in Tokio","locale":"de-DE"}
+{"id":"H015","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Which pet is in Tokyo","locale":"en-US"}
+{"id":"H016","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Wurzel aus 144","locale":"de-DE"}
+{"id":"H016","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Both outfield 30","locale":"en-US"}
+{"id":"H017","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Such im Internet nach Pizza in Berlin","locale":"de-DE"}
+{"id":"H017","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Zoo Internet in Berlin","locale":"en-US"}
+{"id":"H018","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Suche nach Rechnung März","locale":"de-DE"}
+{"id":"H018","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Maths","locale":"en-US"}
+{"id":"H019","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Finde meine Steuererklärung","locale":"de-DE"}
+{"id":"H019","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Find a minor to home","locale":"en-US"}
+{"id":"H020","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Mach lauter","locale":"de-DE"}
+{"id":"H020","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Mata","locale":"en-US"}
+{"id":"H021","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Stell die Lautstärke auf 50 %","locale":"de-DE"}
+{"id":"H021","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Study loud often fish pot","locale":"en-US"}
+{"id":"H022","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Leiser bitte","locale":"de-DE"}
+{"id":"H022","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Laza","locale":"en-US"}
+{"id":"H023","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Wie wird das Wetter morgen","locale":"de-DE"}
+{"id":"H023","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Viva just better noggin","locale":"en-US"}
+{"id":"H024","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Fasse diese Seite zusammen","locale":"de-DE"}
+{"id":"H024","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"First design Susan","locale":"en-US"}
+{"id":"H025","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Was steht heute in meinem Kalender","locale":"de-DE"}
+{"id":"H025","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Bati Hotel in Minam calendar","locale":"en-US"}
+{"id":"H026","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Erinnere mich morgen um neun an den Zahnarzt","locale":"de-DE"}
+{"id":"H026","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"The information organ unknown and then asked","locale":"en-US"}
+{"id":"H027","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Wie viele Tage sind es bis Weihnachten","locale":"de-DE"}
+{"id":"H027","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"We feel attack isn't a space","locale":"en-US"}
+{"id":"H028","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Schreib eine Mail an Thomas","locale":"de-DE"}
+{"id":"H028","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Strike and me and Thomas","locale":"en-US"}
+{"id":"H029","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Übersetze guten Morgen ins Englische","locale":"de-DE"}
+{"id":"H029","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Do good login in English","locale":"en-US"}
+{"id":"H030","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Zeige mir meine Downloads","locale":"de-DE"}
+{"id":"H030","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Take me a minor downloads","locale":"en-US"}
+{"id":"H031","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne die Aktivitätsanzeige","locale":"de-DE"}
+{"id":"H031","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Activity and cycle","locale":"en-US"}
+{"id":"H032","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Wie spät ist es","locale":"de-DE"}
+{"id":"H032","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Which state is","locale":"en-US"}
+{"id":"I001","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne Pages","locale":"de-DE"}
+{"id":"I001","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open iTunes","locale":"en-US"}
+{"id":"I002","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Oben Peter bitte","locale":"de-DE"}
+{"id":"I002","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open Pages speaker","locale":"en-US"}
+{"id":"I003","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Mach mich mal auf","locale":"de-DE"}
+{"id":"I003","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"My fish my off","locale":"en-US"}
+{"id":"I004","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Search my Computer vor Rechnung März","locale":"de-DE"}
+{"id":"I004","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Search my computer for rational math","locale":"en-US"}
+{"id":"I005","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"F is good","locale":"en-US"}
+{"id":"I005","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne VS gut","locale":"de-DE"}
+{"id":"I006","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne wie ist Code","locale":"de-DE"}
+{"id":"I006","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Escort","locale":"en-US"}
+{"id":"I007","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"As export","locale":"en-US"}
+{"id":"I007","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne Export","locale":"de-DE"}
+{"id":"I008","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne Realist","locale":"de-DE"}
+{"id":"I008","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Request","locale":"en-US"}
+{"id":"I009","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne AK","locale":"de-DE"}
+{"id":"I009","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Personal Alka","locale":"en-US"}
+{"id":"I010","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Started in brief browser","locale":"en-US"}
+{"id":"I010","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Starte den Drive Browser","locale":"de-DE"}
+{"id":"I011","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Mach Spotify auf","locale":"de-DE"}
+{"id":"I011","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Max fan off","locale":"en-US"}
+{"id":"I012","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Can't do a note often","locale":"en-US"}
+{"id":"I012","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Kannst du Keynote öffnen","locale":"de-DE"}
+{"id":"I013","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne bitte Numbers","locale":"de-DE"}
+{"id":"I013","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Abi numbers","locale":"en-US"}
+{"id":"I014","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Oben Nation bitte","locale":"de-DE"}
+{"id":"I014","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open not better","locale":"en-US"}
+{"id":"I015","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Suche die Key Notpräsentation von Montag","locale":"de-DE"}
+{"id":"I015","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Zuhdi Ki note present from Montag","locale":"en-US"}
+{"id":"I016","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Sind die PDF Rechnung vom Telekom","locale":"de-DE"}
+{"id":"I016","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Think the PD is national for telecom","locale":"en-US"}
+{"id":"I017","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Google Wetter Hamburg","locale":"de-DE"}
+{"id":"I017","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Google better Hamburg","locale":"en-US"}
+{"id":"I018","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Oben die Einstellungen","locale":"de-DE"}
+{"id":"I018","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open the login","locale":"en-US"}
+{"id":"I019","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Was ist 20 % von 80 €","locale":"de-DE"}
+{"id":"I019","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Bus is 20% oval","locale":"en-US"}
+{"id":"I020","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne WhatsApp","locale":"de-DE"}
+{"id":"I020","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Box","locale":"en-US"}
+{"id":"I021","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne Telegram","locale":"de-DE"}
+{"id":"I021","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open telegram","locale":"en-US"}
+{"id":"I022","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne Gusti","locale":"de-DE"}
+{"id":"I022","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Negotiate","locale":"en-US"}
+{"id":"I023","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne das Terminal","locale":"de-DE"}
+{"id":"I023","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Dust","locale":"en-US"}
+{"id":"I024","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Oben Finder bitte","locale":"de-DE"}
+{"id":"I024","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Open Finder","locale":"en-US"}
+{"id":"I025","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Wechsel zu Preis","locale":"de-DE"}
+{"id":"I025","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"Vexes surprise","locale":"en-US"}
+{"id":"I026","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne ChatGPT","locale":"de-DE"}
+{"id":"I026","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"","locale":"en-US"}
+{"id":"I027","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"As a notion calendar","locale":"en-US"}
+{"id":"I027","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Öffne Notion Kalender","locale":"de-DE"}
+{"id":"I028","variant":"ptt2","source":"apple-dt/en-US","role":"peer","text":"45,000","locale":"en-US"}
+{"id":"I028","variant":"ptt2","source":"apple-dt/de-DE","role":"peer","text":"Spotify Pause","locale":"de-DE"}

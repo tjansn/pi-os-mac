@@ -1,0 +1,10 @@
+{
+  "op": "upsert",
+  "entry": {
+    "list": "terms",
+    "text": "Finder",
+    "soundsLike": [
+      "Papierkorb"
+    ]
+  }
+}

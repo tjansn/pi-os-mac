@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "result": {
+    "sources": [{ "kind": "desktop", "via": "spotlight", "complete": true }],
+    "items": [
+      { "token": "tok_7c1e0a9f3b2d", "name": "Radfotos", "path": "/Users/fixture/Desktop/Radfotos", "contentType": "public.folder", "isDirectory": true, "isPackage": false, "source": "desktop" },
+      { "token": "tok_4d6b2a0e8c1f", "name": "Notizen.txt", "path": "/Users/fixture/Desktop/Notizen.txt", "contentType": "public.plain-text", "isDirectory": false, "isPackage": false, "source": "desktop" }
+    ],
+    "truncated": false,
+    "elapsedMs": 61.0
+  }
+}

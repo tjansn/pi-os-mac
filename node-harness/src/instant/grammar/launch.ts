@@ -1,5 +1,5 @@
 import { isHttpUrl } from "../../contracts/actions.js";
-import { normalizeSpokenUrl, type Normalized } from "../normalize.js";
+import { normalizeSpokenUrl, spokenCore, type Normalized } from "../normalize.js";
 import type { MatchContext, Parsed } from "../types.js";
 
 /**
@@ -20,8 +20,8 @@ const VOLUME_SET = [
 const VOLUME_MAX = /^(?:set |turn )?(?:the )?volume (?:to )?(?:max|maximum|full)$|^(?:lautstärke|lautstaerke) (?:auf )?(?:maximum|max|voll)$/;
 const MUTE = /^(?:mute|mute (?:the |my )?(?:sound|audio|volume|mac|computer|speakers?)|silence|stumm|stumm schalten|stummschalten|ton aus|sound aus|(?:schalte|mach|mache) (?:den )?ton aus)$/;
 const UNMUTE = /^(?:unmute|unmute (?:the |my )?(?:sound|audio|volume|mac|computer|speakers?)|sound on|ton an|ton wieder an|sound an|stummschaltung aufheben|(?:schalte|mach|mache) (?:den )?ton (?:wieder )?an)$/;
-const LOUDER = /^(?:volume up|louder|(?:a bit |a little )?louder|turn (?:it|the volume|the sound|the music) up|increase (?:the )?volume|raise (?:the )?volume|lauter|(?:etwas |ein bisschen )?lauter|mach lauter|mach (?:es |das )?lauter|lautstärke (?:hoch|erhöhen|rauf))$/;
-const QUIETER = /^(?:volume down|quieter|softer|(?:a bit |a little )?quieter|turn (?:it|the volume|the sound|the music) down|decrease (?:the )?volume|lower (?:the )?volume|leiser|(?:etwas |ein bisschen )?leiser|mach leiser|mach (?:es |das )?leiser|lautstärke (?:runter|verringern|senken))$/;
+const LOUDER = /^(?:volume up|louder|make it louder|turn up the (?:volume|sound|music)|(?:a bit |a little )?louder|turn (?:it|the volume|the sound|the music) up|increase (?:the )?volume|raise (?:the )?volume|lauter|(?:etwas |ein bisschen )?lauter|mach lauter|mach (?:es |das )?lauter|lautstärke (?:hoch|erhöhen|rauf))$/;
+const QUIETER = /^(?:volume down|quieter|softer|make it quieter|make it softer|turn down the (?:volume|sound|music)|(?:a bit |a little )?quieter|turn (?:it|the volume|the sound|the music) down|decrease (?:the )?volume|lower (?:the )?volume|leiser|(?:etwas |ein bisschen )?leiser|mach leiser|mach (?:es |das )?leiser|lautstärke (?:runter|verringern|senken))$/;
 const DISPLAY_SLEEP = /^(?:(?:sleep|turn off|switch off|put)(?: the| my)? (?:display|displays|screen|screens|monitor|monitors)(?: to sleep| off)?|(?:display|displays|screen) (?:sleep|off)|(?:bildschirm|display|monitor|bildschirme) (?:aus|ausschalten|schlafen legen|in den ruhezustand)|(?:schalte|mach|mache) (?:den |die )?(?:bildschirm|monitor|display|bildschirme) aus)$/;
 
 export function matchSystem(n: Normalized): Parsed | null {
@@ -75,6 +75,31 @@ const SITE_ALIASES: Readonly<Record<string, string>> = {
   google: "google", youtube: "youtube", wikipedia: "wikipedia", github: "github", amazon: "amazon", reddit: "reddit",
   twitter: "x", x: "x", "apple maps": "maps", maps: "maps", karten: "maps", duckduckgo: "duckduckgo",
 };
+
+/**
+ * Domains a spoken URL may open without asking (DESIGN4 §5.4): the site tables plus common sites. A voice
+ * final that names any other domain ("Open guests.com" for "open github dot com") gets a one-Return
+ * confirm instead, because recognizers turn spoken domains into real but wrong ones.
+ */
+export const KNOWN_SPOKEN_DOMAINS: ReadonlySet<string> = new Set([
+  "google.com", "google.de", "youtube.com", "github.com", "wikipedia.org", "amazon.com", "amazon.de", "reddit.com", "x.com",
+  "twitter.com", "linkedin.com", "facebook.com", "instagram.com", "netflix.com", "apple.com", "icloud.com", "chatgpt.com",
+  "openai.com", "claude.ai", "anthropic.com", "notion.so", "figma.com", "duckduckgo.com", "spiegel.de", "zeit.de", "heise.de",
+  "tagesschau.de", "faz.net", "sueddeutsche.de", "bild.de", "web.de", "gmx.net", "gmx.de", "ebay.de", "ebay.com", "paypal.com",
+  "dhl.de", "deutschebahn.com", "bahn.de", "news.ycombinator.com", "stackoverflow.com", "medium.com", "twitch.tv", "spotify.com",
+  "maps.google.com", "mail.google.com", "drive.google.com", "docs.google.com", "calendar.google.com", "wetter.com", "dict.cc", "leo.org",
+]);
+
+/**
+ * True when a spoken URL's host is a known site (`KNOWN_SPOKEN_DOMAINS`, `www.` ignored) or a subdomain of
+ * one ("de.wikipedia.org"). Case-insensitive; a trailing dot is ignored.
+ */
+export function isKnownSpokenHost(host: string): boolean {
+  const bare = host.toLowerCase().replace(/\.$/, "").replace(/^www\./, "");
+  if (KNOWN_SPOKEN_DOMAINS.has(bare)) return true;
+  const parts = bare.split(".");
+  return parts.length > 2 && KNOWN_SPOKEN_DOMAINS.has(parts.slice(-2).join("."));
+}
 
 /**
  * Hosts a spoken site name stands for ("youtube" → www.youtube.com), from the home and search
@@ -163,24 +188,92 @@ function urlLabel(url: string): string {
   return url.replace(/^https?:\/\//, "").replace(/\/$/, "");
 }
 
-const OPEN_EN = /^(?:open|launch|start|run|switch to|go to|goto|bring up|pull up|fire up|activate|visit|navigate to|browse to|take me to)(?: the)? (?:app |application |website |site |page )?(.+?)(?: app| application| website| site)?$/;
-const OPEN_DE = /^(?:öffne|oeffne|öffnen|starte|start|wechsle (?:zu|zur|zum|in|auf)|wechsel (?:zu|zur|zum)|geh(?:e)? (?:zu|zur|zum|auf)|zeig(?:e)? mir|besuche|navigiere zu)(?: die| das| den| der| dem)? (?:app |programm |webseite |seite )?(.+?)(?: app)?$/;
-const OPEN_DE_SPLIT = /^(?:ruf(?:e)?|mach(?:e)?|hol(?:e)?) (?:die |das |den )?(?:app |webseite |seite )?(.+?) (?:auf|nach vorne|in den vordergrund)$/;
+// Typed open forms (today's grammar). No "page "/"app " target prefix: it ate names ("open App Store" →
+// "store", "open page is" → "is"); a leading "app" word is the app matcher's job (AppMatcher.match).
+const OPEN_EN = /^(?:open|launch|start|run|switch to|go to|goto|bring up|pull up|fire up|activate|visit|navigate to|browse to|take me to)(?: the)? (?:application |website |site )?(.+?)(?: app| application| website| site)?$/;
+const OPEN_DE = /^(?:öffne|oeffne|öffnen|starte|start|wechsle (?:zu|zur|zum|in|auf)|wechsel (?:zu|zur|zum)|geh(?:e)? (?:zu|zur|zum|auf)|zeig(?:e)? mir|besuche|navigiere zu)(?: die| das| den| der| dem)? (?:programm |webseite |seite )?(.+?)(?: app)?$/;
+const OPEN_DE_SPLIT = /^(?:ruf(?:e)?|mach(?:e)?|hol(?:e)?) (?:die |das |den )?(?:webseite |seite )?(.+?) (?:auf|nach vorne|in den vordergrund)$/;
+
+// Spoken open forms (voice only, DESIGN4 §5.1), tried on the spoken core first, then on the raw text.
+const SPOKEN_OPEN_EN = /^(?:open up|open|launch|start up|start|run|switch over to|switch back to|switch to|go back to|go to|goto|bring up|pull up|fire up|boot up|load up|activate|jump into|jump to|flip to|change to|visit|navigate to|browse to|take me to)(?: the)? (?:application |website |site )?(.+?)(?: app| application| website| site| window)?$/;
+const SPOKEN_OPEN_DE = /^(?:öffne|oeffne|öffnen|starte|start|wechsle (?:zu|zur|zum|in|auf)|wechsel (?:zu|zur|zum|in|auf)|geh(?:e)? (?:zu|zur|zum|auf|in)|besuche|navigiere zu)(?: die| das| den| der| dem)? (?:programm |anwendung |webseite |seite )?(.+?)(?: app)?$/;
+const SPOKEN_OPEN_DE_SPLIT = /^(?:ruf(?:e)?|mach(?:e)?|hol(?:e)?) (?:mir )?(?:die |das |den )?(?:programm |webseite |seite )?(.+?) (?:auf|nach vorne|in den vordergrund|her)$/;
+/** German verb-final ("Pages öffnen", "kannst du (mir bitte) Pages aufmachen" once the wrapper is gone). */
+const SPOKEN_OPEN_DE_FINAL = /^(?:(?:mir|uns) )?(?:(?:bitte|mal|doch|jetzt|schnell|kurz|gleich|eben|einfach) )*(?:die |das |den |der |dem )?(?:app |programm )?(.+?)(?: (?:bitte|mal|doch|jetzt|schnell|kurz|gleich))* (?:öffnen|oeffnen|starten|aufmachen|aufrufen|hochfahren|anmachen)$/;
+/** "Bring Pages to the front", "pull Pages up", "get Pages up". */
+const SPOKEN_OPEN_EN_SPLIT = /^(?:bring|pull|get|put) (?:the )?(.+?) (?:to the front|up|forward|to front)$/;
+/** Weak verbs: they open only an exact name ("show me Pages", "zeig mir Pages", "focus Ghostty"). */
+const SPOKEN_OPEN_WEAK = /^(?:show me|show|get me|get|focus|focus on|zeig(?:e)? mir|zeig(?:e)?|hol(?:e)? mir)(?: the| die| das| den)? (?:app |programm )?(.+?)(?: app)?$/;
+/** Bare utterances that are answers, verbs or noise, never an app name. */
+const BARE_NOT_NAMES = /^(?:yes|yeah|yep|no|nope|ok|okay|thanks|thank you|danke|ja|nein|nö|hm+|um+|uh+|äh+|open|launch|start|run|öffne|öffnen|starte|starten|go|stop|cancel|help|hilfe|hello|hallo|hi|hey|test|testing)$/;
+/** An indefinite noun phrase is a thing to create, not an app name ("open a new window", "starte einen Timer"). */
+const INDEFINITE = /^(?:a|an|ein|eine|einen|einem|some|another|new|neue[nsm]?)\s/;
+/** A bare name is at most this many words ("Notion Calendar", "QuickTime Player"). */
+const BARE_MAX_WORDS = 3;
 
 /**
- * "open github dot com" → url; "open figma" / "öffne die Systemeinstellungen"
- * → open (resolved against the host app index by the dispatcher; known site
- * names carry a fallback URL).
+ * How firmly an open form asks to open: "strong" open/launch/switch verbs, "weak" show/get/focus verbs and
+ * indefinite objects, "bare" a name said alone (voice only). Typed open forms are always strong.
  */
-export function matchOpen(n: Normalized): Parsed | null {
-  const m = OPEN_EN.exec(n.lower) ?? OPEN_DE.exec(n.lower) ?? OPEN_DE_SPLIT.exec(n.lower);
-  if (!m) return null;
-  const target = m[1]!.trim().replace(/\.app$/, "");
+export type OpenStrength = "strong" | "weak" | "bare";
+
+/** The open parse with its strength; `strength` is present only when it is not "strong". */
+export type OpenParse = Extract<Parsed, { kind: "open" }> & { strength?: OpenStrength };
+
+/** The strength of an open parse (`parseInstant` with `voice` marks weak and bare forms). */
+export function openStrength(parsed: Extract<Parsed, { kind: "open" }>): OpenStrength {
+  return (parsed as OpenParse).strength ?? "strong";
+}
+
+export interface OpenMatchOptions {
+  /** Voice transcript: spoken core, spoken verb families, verb-final German, weak verbs. */
+  voice?: boolean;
+  /** Voice only: also accept a name said alone (the grammar's last resort). */
+  bare?: boolean;
+}
+
+/** `strength` undefined: a typed form (today's shape, no strength). */
+function openResult(rawTarget: string, strength?: OpenStrength): Parsed | null {
+  const target = rawTarget.trim().replace(/\.app$/, "");
   if (!target || target.length > 80) return null;
-  const url = toWebUrl(target);
-  if (url) return { kind: "url", url, label: urlLabel(url) };
-  const site = SITE_HOME[target];
-  return site ? { kind: "open", target, siteUrl: site } : { kind: "open", target };
+  const effective: OpenStrength = strength === undefined ? "strong" : strength === "strong" && INDEFINITE.test(target) ? "weak" : strength;
+  // The "page"/"app" word stays in the target ("page is", "app store"), but a URL after it still opens
+  // ("open page github.com"), and typed "open the app YouTube" keeps today's known-site fallback.
+  const named = /^(?:app|page) \S/.test(target) ? target.slice(target.indexOf(" ") + 1) : undefined;
+  const url = toWebUrl(target) ?? (named ? toWebUrl(named) : null);
+  if (url) return effective === "bare" ? null : { kind: "url", url, label: urlLabel(url) };
+  const site = effective === "bare" ? undefined : SITE_HOME[target] ?? (named && strength === undefined ? SITE_HOME[named] : undefined);
+  const parsed: OpenParse = site ? { kind: "open", target, siteUrl: site } : { kind: "open", target };
+  if (effective !== "strong") parsed.strength = effective;
+  return parsed;
+}
+
+function matchSpokenOpen(n: Normalized, bare: boolean): Parsed | null {
+  const core = spokenCore(n.lower);
+  // The core first: on the raw text a wrapper would end up in the target ("öffne mir bitte Pages").
+  for (const text of core === n.lower ? [n.lower] : [core, n.lower]) {
+    const m = SPOKEN_OPEN_EN.exec(text) ?? SPOKEN_OPEN_DE.exec(text) ?? SPOKEN_OPEN_DE_SPLIT.exec(text)
+      ?? SPOKEN_OPEN_EN_SPLIT.exec(text) ?? SPOKEN_OPEN_DE_FINAL.exec(text);
+    if (m) return openResult(m[1]!, "strong");
+  }
+  const weak = SPOKEN_OPEN_WEAK.exec(core);
+  if (weak) return openResult(weak[1]!, "weak");
+  // A name said alone: the dispatcher accepts it only for an exact, unmistakable installed name.
+  if (bare && core && core.split(" ").length <= BARE_MAX_WORDS && !/\d/.test(core) && !BARE_NOT_NAMES.test(core)) return openResult(core, "bare");
+  return null;
+}
+
+/**
+ * "open github dot com" → url; "open figma" / "öffne die Systemeinstellungen" → open (resolved against
+ * the host app index by the dispatcher; known site names carry a fallback URL). With `voice`, spoken
+ * wrappers ("okay, can you open Pages for me", "öffne mir bitte mal Pages", "Pages öffnen", "mach mal
+ * Pages auf", "bring Pages to the front") are reduced to their command core first, weak verbs and
+ * indefinite objects are marked "weak", and `bare` accepts a name said alone.
+ */
+export function matchOpen(n: Normalized, options: OpenMatchOptions = {}): Parsed | null {
+  if (options.voice) return matchSpokenOpen(n, options.bare === true);
+  const m = OPEN_EN.exec(n.lower) ?? OPEN_DE.exec(n.lower) ?? OPEN_DE_SPLIT.exec(n.lower);
+  return m ? openResult(m[1]!) : null;
 }
 
 /** A bare typed or spoken URL ("github.com", "example dot com slash docs"). */

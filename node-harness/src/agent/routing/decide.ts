@@ -1,3 +1,4 @@
+import { isUnclearShortUtterance } from "./heuristics.js";
 import {
   MODEL_TIERS, modelKey, sameTarget, targetKey, tierRank,
   type AgentIntent, type Classification, type LatencyView, type ModelTier, type Profile, type RouteDecision,
@@ -37,6 +38,12 @@ export const INTENT_TOOL_HINTS: Readonly<Partial<Record<AgentIntent, readonly st
   open_launch: ["list_apps", "open_item"],
 };
 
+/**
+ * Tools a short spoken request no rule places keeps on its quick lane (DESIGN4 §5.5): check the
+ * installed apps, open the plausible reading, or offer at most three concrete choices as a card.
+ */
+export const VOICE_OPTION_TOOLS: readonly string[] = ["list_apps", "open_item", "show_result"];
+
 /** Local measurements are trusted from this many samples on. */
 export const TRUSTED_SAMPLES = 3;
 /** Bad news is believed at once: a single measurement this many times worse than the prior is trusted. */
@@ -74,6 +81,13 @@ export interface DecideOptions {
   stats?: LatencyView;
   /** Instant-lane gate (the instant engine can answer without a model). */
   instantOk?: (input: RouteInput) => boolean;
+  /**
+   * The request was spoken (POST /invoke `input.mode: "voice"`), with its word count (utteranceWords).
+   * A short one no rule places (isUnclearShortUtterance) is most likely misheard: it runs on the quick
+   * lane with VOICE_OPTION_TOOLS whatever the bias or the complexity words in the garble. Explicit depth
+   * words, advisory floors and a follow-up's thread tier still raise it (DESIGN4 §5.5).
+   */
+  spoken?: { words: number };
 }
 
 interface Need {
@@ -82,12 +96,19 @@ interface Need {
   outTokens: number;
 }
 
-/** The decided tier and its cap: base tier plus settings, follow-up and explicit-word modifiers. */
-function tierFor(c: Classification, input: RouteInput, settings: RoutingSettings, reasons?: string[]): { tier: ModelTier; cap: ModelTier } {
+/**
+ * The decided tier and its cap: base tier plus settings, follow-up and explicit-word modifiers. An unclear
+ * spoken request starts on quick (or its advisory floor) and skips the bias and complexity modifiers.
+ */
+function tierFor(c: Classification, input: RouteInput, settings: RoutingSettings, reasons?: string[],
+  unclearSpoken = false): { tier: ModelTier; cap: ModelTier } {
   let rank = tierRank(intrinsicTier(c, input.selectionChars));
   if (c.intentConfidence < LOW_CONFIDENCE) reasons?.push("low-confidence");
   if (c.tierFloor) reasons?.push(`floor=${c.tierFloor}`);
-  if (!c.explicitDeep && (c.explicitFast || settings.bias === "speed")) {
+  if (unclearSpoken) {
+    rank = Math.max(tierRank("quick"), c.tierFloor ? tierRank(c.tierFloor) : 0);
+    reasons?.push("voice-unclear");
+  } else if (!c.explicitDeep && (c.explicitFast || settings.bias === "speed")) {
     rank = Math.max(tierRank("quick"), rank - 1);
     reasons?.push(c.explicitFast ? "explicit-fast" : "bias=speed");
   } else if (settings.bias === "quality") {
@@ -133,7 +154,8 @@ export function decide(input: RouteInput, catalog: RoutingCatalog, settings: Rou
       ...scope, bias: settings.bias, reasons: [...reasons, "instant"] };
   }
 
-  const decided = tierFor(c, input, settings, reasons);
+  const unclearSpoken = options.spoken !== undefined && isUnclearShortUtterance(options.spoken.words, c);
+  const decided = tierFor(c, input, settings, reasons, unclearSpoken);
   const cap = decided.cap;
   let tier = decided.tier;
 
@@ -171,7 +193,7 @@ export function decide(input: RouteInput, catalog: RoutingCatalog, settings: Rou
 
   // Cross-tier latency guard: never pay a much slower model for a soft signal alone.
   if (model && c.complexity === 1) {
-    const plain = tierFor({ ...c, complexity: 0 }, input, settings).tier;
+    const plain = tierFor({ ...c, complexity: 0 }, input, settings, undefined, unclearSpoken).tier;
     if (tierRank(plain) < tierRank(tier)) {
       const notes: string[] = [];
       const alternative = pickNearest(plain, cap, need, catalog, settings, stats, notes);
@@ -201,7 +223,7 @@ export function decide(input: RouteInput, catalog: RoutingCatalog, settings: Rou
   if (model) reasons.push(`model=${targetKey(model)}`);
   return {
     lane: "agent", tier, model, alternates, ladder,
-    toolsAdd: [...(INTENT_TOOL_HINTS[c.intent] ?? [])],
+    toolsAdd: [...new Set([...(INTENT_TOOL_HINTS[c.intent] ?? []), ...(unclearSpoken ? VOICE_OPTION_TOOLS : [])])],
     attachScreenshot, vision: !!model && (catalog.candidates.get(modelKey(model.provider, model.id))?.vision ?? false),
     ...scope, bias: settings.bias, reasons,
   };

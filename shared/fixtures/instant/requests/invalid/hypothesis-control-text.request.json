@@ -1,0 +1,14 @@
+{
+  "text": "open recast",
+  "phase": "final",
+  "seq": 7,
+  "takeId": "take-42",
+  "inputMode": "voice",
+  "hypotheses": [
+    {
+      "text": "open\nPages",
+      "source": "parakeet-v3",
+      "role": "primary"
+    }
+  ]
+}

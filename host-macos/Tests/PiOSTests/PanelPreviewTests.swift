@@ -404,6 +404,189 @@ import XCTest
         assertRenders(panel, "voice-denied")
     }
 
+    // MARK: Voice decisions (DESIGN4 §5.3, §6.6, §7)
+
+    private func didYouMean(_ name: String, numbered: Bool) throws -> VoiceDecisionPresentation {
+        let response = try instant(name)
+        let card = try XCTUnwrap(response.card)
+        let rows = card.openAppRows
+        return VoiceDecisionPresentation(kind: .didYouMean, title: VoiceCopy.didYouMean(rows.map(\.title)),
+                                         subtitle: VoiceCopy.heard(response.voice?.heard ?? ""), card: card.choiceCard(numbered: numbered),
+                                         footer: VoiceCopy.choicesFooter(rows: rows.count))
+    }
+    private let check = VoiceDecisionPresentation(kind: .check, title: VoiceCopy.checkTitle, subtitle: VoiceCopy.checkPick,
+                                                  alternatives: ["Öffne den Kalender bitte für morgen früh"], footer: VoiceCopy.checkFooter)
+    /// Every piece of a shown decision is inside the reading surface, none overlaps another, and the bar keeps its place.
+    private func assertDecisionLayout(_ panel: PromptPanel, _ name: String, file: StaticString = #filePath, line: UInt = #line) throws {
+        let reading = try XCTUnwrap(panel.readingFrame, name, file: file, line: line)
+        let frames = panel.decisionFrames
+        XCTAssertFalse(frames.isEmpty, name, file: file, line: line)
+        for (index, frame) in frames.enumerated() {
+            XCTAssertTrue(reading.insetBy(dx: -0.5, dy: -0.5).contains(frame), "\(name): piece \(index) \(frame) outside \(reading)", file: file, line: line)
+            for other in frames[(index + 1)...] {
+                XCTAssertFalse(frame.insetBy(dx: 0.5, dy: 0.5).intersects(other), "\(name): \(frame) overlaps \(other)", file: file, line: line)
+            }
+        }
+        XCTAssertLessThan(reading.maxY, panel.composerFrame.minY, "\(name): above the bar", file: file, line: line)
+        XCTAssertTrue(panel.composerHasFocus, "\(name): the composer keeps focus", file: file, line: line)
+    }
+
+    func testVoiceDecisionsSitAboveTheBarInEveryPresetAndTextSize() throws {
+        for preset in AppearancePreset.allCases {
+            for larger in [false, true] {
+                try withAppearance(preset, larger: larger) {
+                    let name = "\(preset.rawValue)-\(larger)"
+                    let panel = panel(); defer { panel.hide() }
+                    let bottom = panel.displayedFrame.minY
+                    let bar = panel.displayedFrame.height
+                    panel.setComposerText("open recast")
+                    let one = try didYouMean("list-did-you-mean", numbered: false)
+                    panel.presentVoiceDecision(one, onChip: nil)
+                    XCTAssertEqual(panel.displayedDecision, one, name)
+                    XCTAssertEqual(panel.decisionTexts.title, "Did you mean Raycast?"); XCTAssertEqual(panel.decisionTexts.subtitle, "Heard “recast”")
+                    XCTAssertEqual(panel.decisionTexts.footer, "↩ Open  ·  ⌥↩ Ask pi instead")
+                    XCTAssertEqual(panel.displayedFrame.minY, bottom, "\(name): grows upward only")
+                    XCTAssertEqual(panel.composerFrame.height, bar, "\(name): the bar keeps its height")
+                    XCTAssertEqual(panel.composerText, "open recast", "\(name): the heard words stay")
+                    try assertDecisionLayout(panel, "did-you-mean-" + name)
+                    assertRenders(panel, "did-you-mean-" + name)
+
+                    panel.setComposerText("open motion")
+                    panel.presentVoiceDecision(try didYouMean("list-did-you-mean-two", numbered: true), onChip: nil)
+                    XCTAssertEqual(panel.decisionTexts.title, "Did you mean…")
+                    try assertDecisionLayout(panel, "did-you-mean-two-" + name)
+                    assertRenders(panel, "did-you-mean-two-" + name)
+
+                    panel.setComposerText("Oh, then kind order.")
+                    panel.presentVoiceDecision(check, onChip: { _ in })
+                    panel.selectComposerText()
+                    XCTAssertEqual(panel.decisionChipTitles, ["Öffne den Kalender bitte für morgen früh"], name)
+                    XCTAssertEqual(panel.composerSelection, NSRange(location: 0, length: 20), "\(name): the heard text is selected")
+                    XCTAssertNil(panel.displayedCard, "\(name): a check has no rows")
+                    try assertDecisionLayout(panel, "check-" + name)
+                    assertRenders(panel, "check-" + name)
+
+                    panel.presentVoiceDecision(nil, onChip: nil)
+                    XCTAssertNil(panel.readingFrame, "\(name): removed")
+                    XCTAssertEqual(panel.displayedFrame.height, bar)
+                    panel.setInstantPreview(.hint(VoiceCopy.confirmHint("Open Numbers")))
+                    let hint = try XCTUnwrap(panel.displayedPreviewText, name)
+                    XCTAssertTrue(hint.string.hasSuffix("Open Numbers? ↩"), "\(name): \(hint.string)")
+                    XCTAssertLessThanOrEqual(ceil(hint.size().width), try XCTUnwrap(panel.displayedPreviewFrame).width, name)
+                    assertRenders(panel, "confirm-" + name)
+                }
+            }
+        }
+    }
+
+    func testDidntCatchThatKeepsTheBarAndClearsOnTheFirstKeystroke() {
+        for preset in AppearancePreset.allCases {
+            for larger in [false, true] {
+                withAppearance(preset, larger: larger) {
+                    let panel = panel(); defer { panel.hide() }
+                    var spoken: [String] = []
+                    panel.announce = { _, notification, info in
+                        if notification == .announcementRequested, let text = info?[.announcement] as? String { spoken.append(text) }
+                    }
+                    panel.setListening(.listening); panel.setVoiceTranscript(finalized: "", volatile: "uh")
+                    panel.setListening(.off)
+                    panel.showHeardNothing(VoiceCopy.heardNothing)
+                    XCTAssertEqual(panel.placeholderText, VoiceCopy.heardNothing)
+                    XCTAssertEqual(panel.composerText, "", "the stray partial is cleared")
+                    XCTAssertEqual(panel.displayedFrame.height, larger ? 62 : 50, "the bar stays as it is")
+                    XCTAssertTrue(panel.composerHasFocus)
+                    XCTAssertEqual(spoken.last, VoiceCopy.heardNothing)
+                    assertRenders(panel, "heard-nothing-\(preset.rawValue)-\(larger)")
+                    panel.setDraft("o")
+                    XCTAssertEqual(panel.placeholderText, "Ask anything…")
+                }
+            }
+        }
+    }
+
+    func testOpeningIsAQuietCapsuleThatNeverTakesKeys() {
+        for preset in AppearancePreset.allCases {
+            withAppearance(preset, larger: false) {
+                let panel = panel(); defer { panel.hide() }
+                panel.presentActing("Opening Pages…")
+                XCTAssertEqual(panel.mode, .confirmation); XCTAssertEqual(panel.activityText, "Opening Pages…")
+                XCTAssertNotNil(panel.capsuleSymbol)
+                XCTAssertFalse(panel.composerHasFocus)
+                XCTAssertLessThan(panel.displayedFrame.width, 480)
+                assertRenders(panel, "acting-\(preset.rawValue)")
+            }
+        }
+    }
+
+    func testTheKeysAndClicksOfAShownDecisionReportWithoutActing() throws {
+        let panel = panel(); defer { panel.hide() }
+        var actions: [HostAction] = []
+        panel.onCardAction = { action, fromAgent in XCTAssertFalse(fromAgent); actions.append(action) }
+        panel.setComposerText("open motion")
+        panel.presentVoiceDecision(try didYouMean("list-did-you-mean-two", numbered: true), onChip: nil)
+        XCTAssertTrue(panel.pickRow(1), "2 picks the second row")
+        XCTAssertEqual(actions, [.openApp(bundleId: "com.cron.electron")])
+        XCTAssertFalse(panel.pickRow(2), "there is no third row: the key is typed")
+        XCTAssertTrue(panel.performPreview(.previous)); XCTAssertTrue(panel.performPreview(.primary), "↑ then Return")
+        XCTAssertEqual(actions.last, .openApp(bundleId: "notion.id"))
+        XCTAssertEqual(ComposerKeyPolicy.pickedRow(characters: "3", modifiers: [], composing: false), 2)
+        XCTAssertNil(ComposerKeyPolicy.pickedRow(characters: "4", modifiers: [], composing: false))
+        XCTAssertNil(ComposerKeyPolicy.pickedRow(characters: "1", modifiers: .command, composing: false))
+        XCTAssertNil(ComposerKeyPolicy.pickedRow(characters: "1", modifiers: [], composing: true), "never with marked IME text")
+        var chips: [Int] = []
+        panel.presentVoiceDecision(check, onChip: { chips.append($0) })
+        XCTAssertFalse(panel.pickRow(0), "a check has no rows")
+        panel.pressDecisionChip(0)
+        XCTAssertEqual(chips, [0])
+        // A typed list preview after the decision is untouched by it.
+        panel.presentVoiceDecision(nil, onChip: nil)
+        panel.setDraft("find invoice")
+        panel.setInstantPreview(.list(try XCTUnwrap(try instant("list-files").card)))
+        XCTAssertNotNil(panel.displayedCard); XCTAssertNil(panel.displayedDecision)
+    }
+
+    func testVoiceNotesKeepTheirWordsAndButtonsInEveryPreset() {
+        let toasts = [VoiceToast(kind: .notThis, text: "Opened Keynote (heard “kein note”)", actions: ["Not this"], dwell: 4),
+                      VoiceToast(kind: .learned, text: "Learned: “recast” → Raycast", actions: ["Undo"], dwell: 4),
+                      VoiceToast(kind: .ask, text: "Remember “motion” → Notion?", actions: ["Remember", "Not now"], dwell: 4)]
+        for preset in AppearancePreset.allCases {
+            for larger in [false, true] {
+                withAppearance(preset, larger: larger) {
+                    let panel = panel(); defer { panel.hide(); panel.dismissVoiceToast() }
+                    for toast in toasts {
+                        var pressed: [Int] = []
+                        panel.presentVoiceToast(toast) { pressed.append($0) }
+                        XCTAssertEqual(panel.displayedVoiceToast, toast)
+                        let label = panel.voiceToastLabel
+                        XCTAssertGreaterThanOrEqual(label.frame.width + 0.5, label.needed, "\(toast.kind) \(preset) \(larger): never truncated")
+                        let surface = panel.voiceToastSnapshot
+                        guard let rep = surface.content.bitmapImageRepForCachingDisplay(in: surface.content.bounds) else { return XCTFail() }
+                        surface.content.cacheDisplay(in: surface.content.bounds, to: rep)
+                        XCTAssertGreaterThan(rep.pixelsWide, 200)
+                        panel.pressVoiceToast(toast.actions.count - 1)
+                        XCTAssertEqual(pressed, [toast.actions.count - 1], "\(toast.kind): the button reports its index")
+                    }
+                }
+            }
+        }
+    }
+
+    func testAVoiceNoteStaysClearOfTheBarWhenItComesBackOrGrows() throws {
+        let panel = panel(); defer { panel.hide(); panel.dismissVoiceToast() }
+        panel.hide()
+        panel.presentVoiceToast(VoiceToast(kind: .notThis, text: "Opened Keynote (heard “kein note”)", actions: ["Not this"], dwell: 4)) { _ in }
+        XCTAssertNil(panel.voiceToastAnchor, "the bar went away: the note sits where the bar was")
+        panel.prompt(snapshot: Snapshot(cursor: Point(x: 0, y: 0), target: nil, underCursor: nil, monitors: []), appName: "Fixture")
+        XCTAssertEqual(panel.voiceToastAnchor, panel.displayedFrame, "the bar came back: the note moves above it")
+        panel.setComposerText("open motion")
+        panel.presentVoiceDecision(try didYouMean("list-did-you-mean-two", numbered: true), onChip: nil)
+        XCTAssertEqual(panel.voiceToastAnchor, panel.displayedFrame, "and above the decision as the bar grows")
+        panel.dismissVoiceToast()
+        XCTAssertNil(panel.voiceToastAnchor)
+        panel.presentVoiceDecision(nil, onChip: nil)
+        XCTAssertNil(panel.voiceToastAnchor, "a dismissed note never comes back")
+    }
+
     func testEveryPresetAndAppearanceLaysOutTheNewStates() throws {
         let defaults = UserDefaults.standard
         let old = defaults.volatileDomain(forName: UserDefaults.argumentDomain)

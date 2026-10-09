@@ -1,0 +1,14 @@
+{
+  "text": "mach Keynote auf",
+  "phase": "final",
+  "seq": 9,
+  "takeId": "take-44",
+  "contextId": "ctx-123",
+  "locale": "de-DE",
+  "inputMode": "text",
+  "accept": [
+    "suggest",
+    "check",
+    "confirm"
+  ]
+}

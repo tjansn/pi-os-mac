@@ -1,0 +1,29 @@
+{
+  "takeId": "take-44",
+  "kind": "edit",
+  "correctedText": "mach Keynote auf",
+  "confirmed": true,
+  "regression": [
+    {
+      "text": "open pages",
+      "source": "parakeet-v3",
+      "target": {
+        "kind": "openApp",
+        "bundleId": "com.apple.Pages"
+      }
+    },
+    {
+      "text": "wie spät ist es in Tokio",
+      "source": "apple-dt/de-DE"
+    },
+    {
+      "text": "etwas leiser",
+      "source": "apple-dt/de-DE",
+      "target": {
+        "kind": "system",
+        "op": "volume.step",
+        "value": -0.1
+      }
+    }
+  ]
+}

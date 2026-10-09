@@ -1,0 +1,32 @@
+{
+  "text": "Of the bitter safari.",
+  "phase": "final",
+  "seq": 6,
+  "takeId": "take-45",
+  "contextId": "ctx-123",
+  "locale": "en-US",
+  "inputMode": "voice",
+  "hypotheses": [
+    {
+      "text": "Of the bitter safari.",
+      "source": "apple-dt/en-US",
+      "role": "peer",
+      "confidence": 0.52,
+      "minConfidence": 0.21,
+      "locale": "en-US"
+    },
+    {
+      "text": "Öffne bitte Safari.",
+      "source": "apple-dt/de-DE",
+      "role": "peer",
+      "confidence": 0.34,
+      "minConfidence": 0.22,
+      "locale": "de-DE"
+    }
+  ],
+  "accept": [
+    "suggest",
+    "check",
+    "confirm"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "op": "upsert",
+  "entry": {
+    "list": "aliases",
+    "phrase": "etwas leiser",
+    "target": {
+      "kind": "system",
+      "op": "volume.step",
+      "value": -0.1
+    }
+  },
+  "source": "manual"
+}

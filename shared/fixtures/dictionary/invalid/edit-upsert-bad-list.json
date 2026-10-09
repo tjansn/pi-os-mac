@@ -1,0 +1,7 @@
+{
+  "op": "upsert",
+  "entry": {
+    "list": "shortcuts",
+    "phrase": "x"
+  }
+}

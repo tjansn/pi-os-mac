@@ -1,0 +1,183 @@
+{
+  "version": 1,
+  "revision": 42,
+  "settings": {
+    "learn": "picks",
+    "applyToRecognizer": true,
+    "explainToAgent": true
+  },
+  "terms": [
+    {
+      "id": "t_ghostty01",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 3,
+      "createdAt": "2026-10-01T09:00:00Z",
+      "lastUsedAt": "2026-10-06T18:12:03.120+02:00",
+      "pinned": true,
+      "text": "Ghostty",
+      "soundsLike": [
+        "gousti"
+      ],
+      "lang": "any",
+      "kind": "app",
+      "bundleId": "com.mitchellh.ghostty"
+    },
+    {
+      "id": "t_draco0001",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-02T10:00:00Z",
+      "text": "DRACO",
+      "soundsLike": [],
+      "lang": "en",
+      "kind": "word"
+    }
+  ],
+  "appNames": [
+    {
+      "id": "n_8f3a2c1d",
+      "recognizer": "parakeet-v3",
+      "source": "did-you-mean",
+      "count": 2,
+      "rejections": 0,
+      "uses": 5,
+      "createdAt": "2026-10-03T08:30:00Z",
+      "lastUsedAt": "2026-10-07T07:45:00Z",
+      "heard": "recast",
+      "bundleId": "com.raycast.macos",
+      "display": "Raycast"
+    },
+    {
+      "id": "n_nummer001",
+      "recognizer": "apple-dt/de-DE",
+      "source": "confirm",
+      "count": 1,
+      "rejections": 1,
+      "uses": 1,
+      "createdAt": "2026-10-04T12:00:00Z",
+      "heard": "nummer",
+      "bundleId": "com.apple.Numbers",
+      "display": "Numbers"
+    },
+    {
+      "id": "n_siri00001",
+      "recognizer": "apple-dt/en-US",
+      "source": "list-pick",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T12:00:00Z",
+      "heard": "siri",
+      "bundleId": "com.spotify.client",
+      "display": "Spotify",
+      "shadows": "com.apple.Siri"
+    },
+    {
+      "id": "n_recastold",
+      "recognizer": "parakeet-v3",
+      "source": "did-you-mean",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-02T08:30:00Z",
+      "disabledAt": "2026-10-03T08:30:00Z",
+      "heard": "recast",
+      "bundleId": "com.example.Recast",
+      "display": "Recast"
+    }
+  ],
+  "aliases": [
+    {
+      "id": "a_keynote01",
+      "recognizer": "apple-dt/de-DE",
+      "source": "transcript-edit",
+      "count": 1,
+      "rejections": 0,
+      "uses": 2,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "phrase": "mach kein note auf",
+      "target": {
+        "kind": "openApp",
+        "bundleId": "com.apple.Keynote"
+      }
+    },
+    {
+      "id": "a_leiser001",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:01:00Z",
+      "phrase": "etwas leiser",
+      "target": {
+        "kind": "system",
+        "op": "volume.step",
+        "value": -0.1
+      }
+    },
+    {
+      "id": "a_ruhe00001",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:02:00Z",
+      "phrase": "ruhe bitte",
+      "target": {
+        "kind": "system",
+        "op": "volume.mute",
+        "value": true
+      }
+    },
+    {
+      "id": "a_halb00001",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:02:30Z",
+      "phrase": "halbe lautstarke",
+      "target": {
+        "kind": "system",
+        "op": "volume.set",
+        "value": 0.5
+      }
+    },
+    {
+      "id": "a_news00001",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:03:00Z",
+      "phrase": "meine nachrichten",
+      "target": {
+        "kind": "openURL",
+        "url": "https://news.example.com/"
+      }
+    }
+  ],
+  "fixes": [
+    {
+      "id": "f_clod00001",
+      "recognizer": "apple-dt/en-US",
+      "source": "transcript-edit",
+      "count": 1,
+      "rejections": 0,
+      "uses": 4,
+      "createdAt": "2026-10-06T10:00:00Z",
+      "heard": "clod",
+      "intended": "Claude"
+    }
+  ]
+}

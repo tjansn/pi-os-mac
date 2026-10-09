@@ -1,27 +1,32 @@
 import AppKit
 import PiOSCore
 
-/// The small "Added to pi" confirmation after ⌃⌥⌘C or a drop on the menu-bar icon (DESIGN3 §A). A
-/// borderless, non-activating panel at the bottom of the screen with the pointer: it never becomes key or
-/// main, so the user's app keeps focus and its selection. Whisper materials, no animation; it goes away
-/// by itself. With an action ("Grab Area") it accepts one click, still without activating pi-os.
+/// The small "Added to pi" confirmation after ⌃⌥⌘C or a drop on the menu-bar icon (DESIGN3 §A), and the bar's voice
+/// notes ("Not this", "Learned … · Undo", "Remember …? · Remember · Not now"). A borderless, non-activating panel at
+/// the bottom of the screen with the pointer: it never becomes key or main, so the user's app keeps focus and its
+/// selection. Whisper materials, no animation; it goes away by itself. With actions it accepts clicks, still without
+/// activating pi-os; a click runs its action and dismisses the note.
 @MainActor public final class ShelfToast {
     static let dwell: TimeInterval = 1.4
     static let actionDwell: TimeInterval = 3
+    /// The widest note; a longer line is truncated (its full text is the tooltip and the VoiceOver label).
+    static let maximumWidth: CGFloat = 600
     public var presentsOnScreen = PromptPanel.defaultPresentsOnScreen
     private let panel: ToastPanel
     private let root = FlippedView()
     private let surface = PanelSurface()
     private let icon = NSImageView()
     private let label = PanelStyle.label("", size: 13, weight: .medium, color: .labelColor)
-    private var actionHandler: (() -> Void)?
-    private lazy var action = PanelButton("", kind: .filled) { [weak self] in
-        let handler = self?.actionHandler
-        self?.hide(); handler?()
-    }
+    private var buttons: [PanelButton] = []
     private var dismissal: Task<Void, Never>?
     private(set) var text = ""
-    private(set) var actionTitle: String?
+    private(set) var actionTitles: [String] = []
+    /// The first button's title (the single-action form).
+    var actionTitle: String? { actionTitles.first }
+    private(set) var shownDwell: TimeInterval = 0
+    /// The bar frame the note sits above (nil: bottom-centre, where the bar would appear), while it is up.
+    private(set) var anchor: NSRect?
+    private(set) var showing = false
     var isVisible: Bool { panel.isVisible }
     public var announce: AccessibilityAnnouncer = Accessibility.system
 
@@ -33,32 +38,62 @@ import PiOSCore
         panel.hidesOnDeactivate = false; panel.isReleasedWhenClosed = false; panel.animationBehavior = .none
         panel.contentView = root
         root.addSubview(surface)
-        [icon, label, action].forEach(surface.embedded.addSubview)
+        [icon, label].forEach(surface.embedded.addSubview)
         icon.imageScaling = .scaleProportionallyDown; icon.setAccessibilityElement(false)
-        action.rounded = true
     }
 
     /// `symbol`: SF Symbol; `action`: an optional one-click follow-up (title, handler).
     /// `above`: the bar's frame while it is open; the note then sits just above it instead of over it.
     public func show(_ text: String, symbol: String = "checkmark.circle.fill", action: (title: String, handler: () -> Void)? = nil,
                      above: NSRect? = nil) {
+        show(text, symbol: symbol, actions: action.map { [$0] } ?? [], dwell: nil, above: above)
+    }
+    /// Up to two buttons; `dwell` nil uses 1.4 s without and 3 s with buttons.
+    public func show(_ text: String, symbol: String, actions: [(title: String, handler: () -> Void)], dwell: TimeInterval?,
+                     above: NSRect? = nil) {
         dismissal?.cancel()
-        self.text = text; actionTitle = action?.title; actionHandler = action?.handler
-        label.stringValue = text; label.toolTip = text
+        self.text = text
+        let actions = Array(actions.prefix(2))
+        actionTitles = actions.map(\.title)
+        buttons.forEach { $0.removeFromSuperview() }
+        buttons = actions.enumerated().map { index, action in
+            let button = PanelButton(action.title, kind: index == 0 ? .filled : .quiet) { [weak self] in
+                self?.hide(); action.handler()
+            }
+            button.rounded = true; button.setAccessibilityLabel(action.title)
+            surface.embedded.addSubview(button)
+            return button
+        }
+        label.stringValue = text; label.toolTip = text; label.setAccessibilityLabel(text)
         icon.image = PanelStyle.symbol(symbol, size: 16); icon.contentTintColor = symbol.hasPrefix("checkmark") ? PanelStyle.accent : PanelStyle.secondaryInk
         panel.appearance = AppearanceSettings.shared.appearance
         surface.updateColors()
         layout()
-        panel.ignoresMouseEvents = action == nil
+        panel.ignoresMouseEvents = actions.isEmpty
+        anchor = above.flatMap { $0.width > 0 ? $0 : nil }; showing = true
         if presentsOnScreen { place(above: above); panel.orderFrontRegardless() }
-        Accessibility.announce(text, on: label, priority: .medium, using: announce)
-        let dwell = action == nil ? Self.dwell : Self.actionDwell
+        Accessibility.announce(([text] + actionTitles).joined(separator: ". "), on: label, priority: .medium, using: announce)
+        let dwell = dwell ?? (actions.isEmpty ? Self.dwell : Self.actionDwell)
+        shownDwell = dwell
         dismissal = Task { [weak self] in
             do { try await Task.sleep(nanoseconds: UInt64(dwell * 1_000_000_000)) } catch { return }
             self?.hide()
         }
     }
-    public func hide() { dismissal?.cancel(); dismissal = nil; panel.orderOut(nil) }
+    public func hide() { dismissal?.cancel(); dismissal = nil; showing = false; anchor = nil; panel.orderOut(nil) }
+    /// The bar opened (or grew) while this note is up: the note moves just above it, never under or over it (a note
+    /// shown after the bar went away sits where the bar comes back).
+    func follow(above bar: NSRect) {
+        guard showing, bar.width > 0, anchor != bar else { return }
+        anchor = bar
+        if presentsOnScreen { place(above: bar) }
+    }
+    /// Presses a button as a click would (tests and previews).
+    func press(_ index: Int) { if buttons.indices.contains(index) { buttons[index].performClick(nil) } }
+    /// The label's frame and the text width it needs (tests: short notes are never truncated).
+    var labelLayout: (frame: NSRect, needed: CGFloat) {
+        (label.frame, ceil((label.stringValue as NSString).size(withAttributes: [.font: label.font!]).width))
+    }
 
     private func layout() {
         let larger = PanelStyle.preferences.largerText
@@ -66,19 +101,24 @@ import PiOSCore
         label.font = .systemFont(ofSize: larger ? 15 : 13, weight: .medium)
         // + the label cell's own padding, so short messages are never truncated.
         let textWidth = ceil((label.stringValue as NSString).size(withAttributes: [.font: label.font!]).width) + 6
-        var buttonWidth: CGFloat = 0
-        if let title = actionTitle {
-            action.title = title; action.setAccessibilityLabel(title)
-            buttonWidth = ceil((title as NSString).size(withAttributes: [.font: action.font!]).width) + 28
+        let widths: [CGFloat] = buttons.map { button in
+            button.font = .systemFont(ofSize: larger ? 14 : 12, weight: .medium)
+            return ceil((button.title as NSString).size(withAttributes: [.font: button.font!]).width) + 28
         }
-        let width = min(460, 16 + 20 + 8 + textWidth + 16 + (buttonWidth > 0 ? buttonWidth + 8 : 0))
+        let buttonsWidth = widths.reduce(0) { $0 + $1 + 8 }
+        let width = min(Self.maximumWidth, 16 + 20 + 8 + textWidth + 16 + buttonsWidth)
         panel.setContentSize(NSSize(width: width, height: height))
         root.frame = NSRect(x: 0, y: 0, width: width, height: height)
         surface.frame = root.bounds; surface.radius = height / 2
         icon.frame = NSRect(x: 16, y: (height - 20) / 2, width: 20, height: 20)
-        label.frame = NSRect(x: 44, y: (height - 18) / 2, width: max(0, width - 44 - 16 - (buttonWidth > 0 ? buttonWidth + 8 : 0)), height: 18)
-        action.isHidden = buttonWidth == 0
-        action.frame = NSRect(x: width - buttonWidth - 8, y: (height - 30) / 2, width: buttonWidth, height: 30)
+        let labelHeight = ceil(label.font!.ascender - label.font!.descender) + 2
+        label.frame = NSRect(x: 44, y: (height - labelHeight) / 2, width: max(0, width - 44 - 16 - buttonsWidth), height: labelHeight)
+        var x = width - 8
+        for (button, buttonWidth) in zip(buttons, widths).reversed() {
+            x -= buttonWidth
+            button.frame = NSRect(x: x, y: (height - 30) / 2, width: buttonWidth, height: 30)
+            x -= 8
+        }
         root.layoutSubtreeIfNeeded()
     }
     /// Bottom-centre of the screen with the pointer, where the bar would appear.

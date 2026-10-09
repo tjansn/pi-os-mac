@@ -212,6 +212,90 @@ final class VoiceCaptureTests: XCTestCase {
         capture.stop(discard: true)
     }
 
+    // MARK: Release order and the capture tee (DESIGN4 §4.1, §7 item 4)
+
+    /// Key-up ends the analyzer's input right away; the audio engine stops later on the capture queue. Holding that
+    /// queue proves the stream (and so finalization) never waits for the engine to stop.
+    func testKeyUpEndsTheStreamBeforeTheEngineStops() async throws {
+        guard #available(macOS 26, *) else { throw XCTSkip("SpeechAnalyzer needs macOS 26") }
+        let capture = MicrophoneCapture(maximumSeconds: 10, microphone: false)
+        capture.setAnalyzerFormat(analyzerFormat)
+        capture.start()
+        capture.ingest(tone(seconds: 0.2), owned: true)
+        capture.queue.suspend()
+        capture.stop()
+        let drained = await drain(capture)
+        capture.queue.resume()
+        let result = try XCTUnwrap(drained, "the stream finished while the engine queue was still held")
+        XCTAssertEqual(Double(result.frames), 3_200, accuracy: 64)
+        XCTAssertEqual(capture.deliveredSeconds, 0.2, accuracy: 0.005)
+    }
+
+    func testTheTeeSeesEveryChunkAs16kMonoAndTheTakeIsKept() async throws {
+        guard #available(macOS 26, *) else { throw XCTSkip("SpeechAnalyzer needs macOS 26") }
+        let capture = MicrophoneCapture(maximumSeconds: 10, microphone: false)
+        let events = AudioEvents()
+        capture.onAudio = { events.append($0) }
+        capture.setAnalyzerFormat(analyzerFormat)
+        capture.start()
+        for _ in 0..<3 { capture.ingest(tone(seconds: 0.1), owned: false) }
+        capture.stop()
+        _ = await drain(capture)
+        let values = events.values
+        XCTAssertEqual(values.first, .began)
+        XCTAssertEqual(values.last, .ended(discarded: false))
+        let teed = values.flatMap { event -> [Int16] in if case .samples(let samples) = event { return samples }; return [] }
+        XCTAssertEqual(Double(teed.count), 4_800, accuracy: 64, "0.3 s at 16 kHz")
+        XCTAssertEqual(capture.takeAudio()?.samples, teed, "VoiceFinal.audio is exactly what the recognizers heard")
+        XCTAssertGreaterThan(teed.map { abs(Int($0)) }.max() ?? 0, 8_000, "a -6 dB tone, not silence")
+    }
+
+    /// An analyzer format other than 16 kHz mono is converted once more for the tee (Phase B and the journal).
+    func testTheTeeConvertsAnotherAnalyzerFormatTo16k() async throws {
+        guard #available(macOS 26, *) else { throw XCTSkip("SpeechAnalyzer needs macOS 26") }
+        let capture = MicrophoneCapture(maximumSeconds: 10, microphone: false)
+        let events = AudioEvents()
+        capture.onAudio = { events.append($0) }
+        capture.setAnalyzerFormat(micFormat)   // normalized to 48 kHz Int16
+        for _ in 0..<3 { capture.ingest(tone(seconds: 0.1), owned: false) }
+        capture.stop()
+        let drained = await drain(capture)
+        XCTAssertEqual(Double(try XCTUnwrap(drained).frames), 14_400, accuracy: 64, "the recognizers get 48 kHz")
+        XCTAssertEqual(Double(capture.takeAudio()?.samples.count ?? 0), 4_800, accuracy: 64, "the tee gets 16 kHz")
+        XCTAssertEqual(capture.deliveredSeconds, 0.3, accuracy: 0.005)
+    }
+
+    func testKeptAudioIsCappedButTheTeeIsNot() async throws {
+        guard #available(macOS 26, *) else { throw XCTSkip("SpeechAnalyzer needs macOS 26") }
+        let capture = MicrophoneCapture(maximumSeconds: 0.25, microphone: false)
+        let events = AudioEvents()
+        capture.onAudio = { events.append($0) }
+        capture.setAnalyzerFormat(analyzerFormat)
+        for _ in 0..<5 { capture.ingest(tone(seconds: 0.1), owned: true) }
+        capture.stop()
+        _ = await drain(capture)
+        let teed = events.values.reduce(0) { total, event in if case .samples(let samples) = event { return total + samples.count }; return total }
+        XCTAssertEqual(Double(teed), 8_000, accuracy: 64)
+        XCTAssertEqual(capture.takeAudio()?.samples.count, 4_000, "kept audio stops at the capture cap")
+    }
+
+    func testDiscardDropsTheKeptAudio() async throws {
+        guard #available(macOS 26, *) else { throw XCTSkip("SpeechAnalyzer needs macOS 26") }
+        let capture = MicrophoneCapture(maximumSeconds: 10, microphone: false)
+        let events = AudioEvents()
+        capture.onAudio = { events.append($0) }
+        capture.setAnalyzerFormat(analyzerFormat)
+        capture.ingest(tone(seconds: 0.1), owned: true)
+        capture.stop(discard: true)
+        _ = await drain(capture)
+        XCTAssertNil(capture.takeAudio(), "a tap or Escape keeps no audio")
+        XCTAssertEqual(events.values.last, .ended(discarded: true))
+        let silent = MicrophoneCapture(maximumSeconds: 10, microphone: false)
+        silent.start()
+        silent.stop()
+        XCTAssertNil(silent.takeAudio())
+    }
+
     private final class LevelLog: @unchecked Sendable {
         private let lock = NSLock()
         private var stored: [Float] = []

@@ -1,0 +1,4122 @@
+{
+ "version": 1,
+ "items": [
+  {
+   "id": "A001",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Samantha",
+   "rate": 175,
+   "gold": "open Pages",
+   "say": "open Pages",
+   "kw": [
+    "open|launch|start|switch|go",
+    "pages"
+   ],
+   "expect": "app:com.apple.Pages"
+  },
+  {
+   "id": "A002",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Daniel (English (UK))",
+   "rate": 185,
+   "gold": "open Keynote",
+   "say": "open Keynote",
+   "kw": [
+    "open|launch|start|switch|go",
+    "keynote"
+   ],
+   "expect": "app:com.apple.Keynote"
+  },
+  {
+   "id": "A003",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Karen",
+   "rate": 195,
+   "gold": "open Numbers",
+   "say": "open Numbers",
+   "kw": [
+    "open|launch|start|switch|go",
+    "numbers"
+   ],
+   "expect": "app:com.apple.Numbers"
+  },
+  {
+   "id": "A004",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Moira",
+   "rate": 205,
+   "gold": "launch Figma",
+   "say": "launch Figma",
+   "kw": [
+    "open|launch|start|switch|go",
+    "figma"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "A005",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Reed (English (US))",
+   "rate": 175,
+   "gold": "open Brave",
+   "say": "open Brave",
+   "kw": [
+    "open|launch|start|switch|go",
+    "brave"
+   ],
+   "expect": "app:com.brave.Browser"
+  },
+  {
+   "id": "A006",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Flo (English (US))",
+   "rate": 185,
+   "gold": "open Notion",
+   "say": "open Notion",
+   "kw": [
+    "open|launch|start|switch|go",
+    "notion"
+   ],
+   "expect": "app:notion.id"
+  },
+  {
+   "id": "A007",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Shelley (English (US))",
+   "rate": 195,
+   "gold": "open VS Code",
+   "say": "open VS Code",
+   "kw": [
+    "open|launch|start|switch|go",
+    "vscode"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "A008",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Eddy (English (US))",
+   "rate": 205,
+   "gold": "open Xcode",
+   "say": "open Xcode",
+   "kw": [
+    "open|launch|start|switch|go",
+    "xcode"
+   ],
+   "expect": "app:com.apple.dt.Xcode"
+  },
+  {
+   "id": "A009",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Sandy (English (US))",
+   "rate": 175,
+   "gold": "open Raycast",
+   "say": "open Raycast",
+   "kw": [
+    "open|launch|start|switch|go",
+    "raycast"
+   ],
+   "expect": "app:com.raycast.macos"
+  },
+  {
+   "id": "A010",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Rocko (English (US))",
+   "rate": 185,
+   "gold": "start Spotify",
+   "say": "start Spotify",
+   "kw": [
+    "open|launch|start|switch|go",
+    "spotify"
+   ],
+   "expect": "app:com.spotify.client"
+  },
+  {
+   "id": "A011",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Tessa",
+   "rate": 195,
+   "gold": "open Orca",
+   "say": "open Orca",
+   "kw": [
+    "open|launch|start|switch|go",
+    "orca"
+   ],
+   "expect": "app:com.stablyai.orca"
+  },
+  {
+   "id": "A012",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Rishi",
+   "rate": 205,
+   "gold": "open System Settings",
+   "say": "open System Settings",
+   "kw": [
+    "open|launch|start|switch|go",
+    "system settings"
+   ],
+   "expect": "app:com.apple.systempreferences"
+  },
+  {
+   "id": "A013",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Samantha",
+   "rate": 175,
+   "gold": "open Calendar",
+   "say": "open Calendar",
+   "kw": [
+    "open|launch|start|switch|go",
+    "calendar"
+   ],
+   "expect": "app:com.apple.iCal"
+  },
+  {
+   "id": "A014",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Daniel (English (UK))",
+   "rate": 185,
+   "gold": "switch to Safari",
+   "say": "switch to Safari",
+   "kw": [
+    "open|launch|start|switch|go",
+    "safari"
+   ],
+   "expect": "app:com.apple.Safari"
+  },
+  {
+   "id": "A015",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Karen",
+   "rate": 195,
+   "gold": "open Telegram",
+   "say": "open Telegram",
+   "kw": [
+    "open|launch|start|switch|go",
+    "telegram"
+   ],
+   "expect": "app:ru.keepcoder.Telegram"
+  },
+  {
+   "id": "A016",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Moira",
+   "rate": 205,
+   "gold": "open Ghostty",
+   "say": "open Ghostty",
+   "kw": [
+    "open|launch|start|switch|go",
+    "ghostty"
+   ],
+   "expect": "app:com.mitchellh.ghostty"
+  },
+  {
+   "id": "A017",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Reed (English (US))",
+   "rate": 175,
+   "gold": "open ChatGPT",
+   "say": "open ChatGPT",
+   "kw": [
+    "open|launch|start|switch|go",
+    "chatgpt"
+   ],
+   "expect": "app:com.openai.codex"
+  },
+  {
+   "id": "A018",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Flo (English (US))",
+   "rate": 185,
+   "gold": "open Zed",
+   "say": "open Zed",
+   "kw": [
+    "open|launch|start|switch|go",
+    "zed"
+   ],
+   "expect": "app:dev.zed.Zed"
+  },
+  {
+   "id": "A019",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Shelley (English (US))",
+   "rate": 195,
+   "gold": "open Notion Calendar",
+   "say": "open Notion Calendar",
+   "kw": [
+    "open|launch|start|switch|go",
+    "notion calendar"
+   ],
+   "expect": "app:com.cron.electron"
+  },
+  {
+   "id": "A020",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Eddy (English (US))",
+   "rate": 205,
+   "gold": "open Activity Monitor",
+   "say": "open Activity Monitor",
+   "kw": [
+    "open|launch|start|switch|go",
+    "activity monitor"
+   ],
+   "expect": "app:com.apple.ActivityMonitor"
+  },
+  {
+   "id": "A021",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Sandy (English (US))",
+   "rate": 175,
+   "gold": "what is 17 times 23",
+   "say": "what is seventeen times twenty three",
+   "kw": [
+    "17",
+    "23",
+    "times|x|*"
+   ],
+   "expect": "answer:calc"
+  },
+  {
+   "id": "A022",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Rocko (English (US))",
+   "rate": 185,
+   "gold": "what is 15 % of 240",
+   "say": "what is fifteen percent of two hundred forty",
+   "kw": [
+    "15",
+    "%",
+    "240"
+   ],
+   "expect": "answer:calc"
+  },
+  {
+   "id": "A023",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Tessa",
+   "rate": 195,
+   "gold": "convert 5 miles to kilometers",
+   "say": "convert five miles to kilometers",
+   "kw": [
+    "5",
+    "miles",
+    "kilometers|km"
+   ],
+   "expect": "answer:unit"
+  },
+  {
+   "id": "A024",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Rishi",
+   "rate": 205,
+   "gold": "how much is 100 dollars in euros",
+   "say": "how much is one hundred dollars in euros",
+   "kw": [
+    "100",
+    "dollars|$|usd",
+    "euros|euro|eur"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "A025",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Samantha",
+   "rate": 175,
+   "gold": "what time is it in Tokyo",
+   "say": "what time is it in Tokyo",
+   "kw": [
+    "time",
+    "tokyo"
+   ],
+   "expect": "answer:time"
+  },
+  {
+   "id": "A026",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Daniel (English (UK))",
+   "rate": 185,
+   "gold": "square root of 144",
+   "say": "square root of one hundred forty four",
+   "kw": [
+    "square root",
+    "144"
+   ],
+   "expect": "answer:calc"
+  },
+  {
+   "id": "A027",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Karen",
+   "rate": 195,
+   "gold": "250 divided by 8",
+   "say": "two hundred fifty divided by eight",
+   "kw": [
+    "250",
+    "divided|/",
+    "8"
+   ],
+   "expect": "answer:calc"
+  },
+  {
+   "id": "A028",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Moira",
+   "rate": 205,
+   "gold": "search the web for best pizza in Berlin",
+   "say": "search the web for best pizza in Berlin",
+   "kw": [
+    "search",
+    "pizza",
+    "berlin"
+   ],
+   "expect": "url:duckduckgo.com"
+  },
+  {
+   "id": "A029",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Reed (English (US))",
+   "rate": 175,
+   "gold": "google flights to Lisbon",
+   "say": "google flights to Lisbon",
+   "kw": [
+    "google",
+    "flights",
+    "lisbon"
+   ],
+   "expect": "url:www.google.com"
+  },
+  {
+   "id": "A030",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Flo (English (US))",
+   "rate": 185,
+   "gold": "find my invoice from March",
+   "say": "find my invoice from March",
+   "kw": [
+    "find",
+    "invoice",
+    "march"
+   ],
+   "expect": "files"
+  },
+  {
+   "id": "A031",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Shelley (English (US))",
+   "rate": 195,
+   "gold": "search my computer for tax return 2025",
+   "say": "search my computer for tax return twenty twenty five",
+   "kw": [
+    "search",
+    "tax return",
+    "2025"
+   ],
+   "expect": "files"
+  },
+  {
+   "id": "A032",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Eddy (English (US))",
+   "rate": 205,
+   "gold": "turn the volume down",
+   "say": "turn the volume down",
+   "kw": [
+    "volume",
+    "down"
+   ],
+   "expect": "sys:volume.step"
+  },
+  {
+   "id": "A033",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Sandy (English (US))",
+   "rate": 175,
+   "gold": "set volume to 50 %",
+   "say": "set volume to fifty percent",
+   "kw": [
+    "volume",
+    "50"
+   ],
+   "expect": "sys:volume.set"
+  },
+  {
+   "id": "A034",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Rocko (English (US))",
+   "rate": 185,
+   "gold": "open github.com",
+   "say": "open github dot com",
+   "kw": [
+    "open|launch|start|switch|go",
+    "github"
+   ],
+   "expect": "url:github.com"
+  },
+  {
+   "id": "A035",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Tessa",
+   "rate": 195,
+   "gold": "what is the weather tomorrow",
+   "say": "what is the weather tomorrow",
+   "kw": [
+    "weather",
+    "tomorrow"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "A036",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Rishi",
+   "rate": 205,
+   "gold": "how do I take a screenshot on a Mac",
+   "say": "how do I take a screenshot on a Mac",
+   "kw": [
+    "screenshot",
+    "mac"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "A037",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Samantha",
+   "rate": 175,
+   "gold": "summarize this page",
+   "say": "summarize this page",
+   "kw": [
+    "summarize|summarise",
+    "page"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "A038",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Daniel (English (UK))",
+   "rate": 185,
+   "gold": "reply to this email and say I will be late",
+   "say": "reply to this email and say I will be late",
+   "kw": [
+    "reply",
+    "email",
+    "late"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "A039",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Karen",
+   "rate": 195,
+   "gold": "what is on my calendar today",
+   "say": "what is on my calendar today",
+   "kw": [
+    "calendar",
+    "today"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "A040",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Moira",
+   "rate": 205,
+   "gold": "play some jazz on Spotify",
+   "say": "play some jazz on Spotify",
+   "kw": [
+    "play",
+    "jazz",
+    "spotify"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "A041",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Reed (English (US))",
+   "rate": 175,
+   "gold": "remind me to call Anna at 5 pm",
+   "say": "remind me to call Anna at five p m",
+   "kw": [
+    "remind",
+    "call",
+    "anna",
+    "5"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "A042",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Flo (English (US))",
+   "rate": 185,
+   "gold": "how many days until Christmas",
+   "say": "how many days until Christmas",
+   "kw": [
+    "days",
+    "christmas"
+   ],
+   "expect": "answer:date"
+  },
+  {
+   "id": "A043",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Shelley (English (US))",
+   "rate": 195,
+   "gold": "translate good morning into Japanese",
+   "say": "translate good morning into Japanese",
+   "kw": [
+    "translate",
+    "good morning",
+    "japanese"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "A044",
+   "cat": "A",
+   "lang": "en",
+   "voice": "Eddy (English (US))",
+   "rate": 205,
+   "gold": "close all Finder windows",
+   "say": "close all Finder windows",
+   "kw": [
+    "close",
+    "finder",
+    "windows"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "B001",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Reed (German (Germany))",
+   "rate": 170,
+   "gold": "open Pages",
+   "say": "open Pages",
+   "kw": [
+    "open|launch|start|switch|go",
+    "pages"
+   ],
+   "expect": "app:com.apple.Pages"
+  },
+  {
+   "id": "B002",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Sandy (German (Germany))",
+   "rate": 180,
+   "gold": "open Keynote",
+   "say": "open Keynote",
+   "kw": [
+    "open|launch|start|switch|go",
+    "keynote"
+   ],
+   "expect": "app:com.apple.Keynote"
+  },
+  {
+   "id": "B003",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Shelley (German (Germany))",
+   "rate": 190,
+   "gold": "open Numbers",
+   "say": "open Numbers",
+   "kw": [
+    "open|launch|start|switch|go",
+    "numbers"
+   ],
+   "expect": "app:com.apple.Numbers"
+  },
+  {
+   "id": "B004",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Rocko (German (Germany))",
+   "rate": 200,
+   "gold": "launch Figma",
+   "say": "launch Figma",
+   "kw": [
+    "open|launch|start|switch|go",
+    "figma"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "B005",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Grandpa (German (Germany))",
+   "rate": 170,
+   "gold": "open Brave",
+   "say": "open Brave",
+   "kw": [
+    "open|launch|start|switch|go",
+    "brave"
+   ],
+   "expect": "app:com.brave.Browser"
+  },
+  {
+   "id": "B006",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Grandma (German (Germany))",
+   "rate": 180,
+   "gold": "open Notion",
+   "say": "open Notion",
+   "kw": [
+    "open|launch|start|switch|go",
+    "notion"
+   ],
+   "expect": "app:notion.id"
+  },
+  {
+   "id": "B007",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 190,
+   "gold": "open VS Code",
+   "say": "open VS Code",
+   "kw": [
+    "open|launch|start|switch|go",
+    "vscode"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "B008",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Eddy (German (Germany))",
+   "rate": 200,
+   "gold": "open Xcode",
+   "say": "open Xcode",
+   "kw": [
+    "open|launch|start|switch|go",
+    "xcode"
+   ],
+   "expect": "app:com.apple.dt.Xcode"
+  },
+  {
+   "id": "B009",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Flo (German (Germany))",
+   "rate": 170,
+   "gold": "open Raycast",
+   "say": "open Raycast",
+   "kw": [
+    "open|launch|start|switch|go",
+    "raycast"
+   ],
+   "expect": "app:com.raycast.macos"
+  },
+  {
+   "id": "B010",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Reed (German (Germany))",
+   "rate": 180,
+   "gold": "start Spotify",
+   "say": "start Spotify",
+   "kw": [
+    "open|launch|start|switch|go",
+    "spotify"
+   ],
+   "expect": "app:com.spotify.client"
+  },
+  {
+   "id": "B011",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Sandy (German (Germany))",
+   "rate": 190,
+   "gold": "open Orca",
+   "say": "open Orca",
+   "kw": [
+    "open|launch|start|switch|go",
+    "orca"
+   ],
+   "expect": "app:com.stablyai.orca"
+  },
+  {
+   "id": "B012",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Shelley (German (Germany))",
+   "rate": 200,
+   "gold": "open System Settings",
+   "say": "open System Settings",
+   "kw": [
+    "open|launch|start|switch|go",
+    "system settings"
+   ],
+   "expect": "app:com.apple.systempreferences"
+  },
+  {
+   "id": "B013",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Rocko (German (Germany))",
+   "rate": 170,
+   "gold": "open Calendar",
+   "say": "open Calendar",
+   "kw": [
+    "open|launch|start|switch|go",
+    "calendar"
+   ],
+   "expect": "app:com.apple.iCal"
+  },
+  {
+   "id": "B014",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Grandpa (German (Germany))",
+   "rate": 180,
+   "gold": "switch to Safari",
+   "say": "switch to Safari",
+   "kw": [
+    "open|launch|start|switch|go",
+    "safari"
+   ],
+   "expect": "app:com.apple.Safari"
+  },
+  {
+   "id": "B015",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Grandma (German (Germany))",
+   "rate": 190,
+   "gold": "open ChatGPT",
+   "say": "open ChatGPT",
+   "kw": [
+    "open|launch|start|switch|go",
+    "chatgpt"
+   ],
+   "expect": "app:com.openai.codex"
+  },
+  {
+   "id": "B016",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 200,
+   "gold": "open Activity Monitor",
+   "say": "open Activity Monitor",
+   "kw": [
+    "open|launch|start|switch|go",
+    "activity monitor"
+   ],
+   "expect": "app:com.apple.ActivityMonitor"
+  },
+  {
+   "id": "B017",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Eddy (German (Germany))",
+   "rate": 170,
+   "gold": "what is 17 times 23",
+   "say": "what is seventeen times twenty three",
+   "kw": [
+    "17",
+    "23",
+    "times|x|*"
+   ],
+   "expect": "answer:calc"
+  },
+  {
+   "id": "B018",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Flo (German (Germany))",
+   "rate": 180,
+   "gold": "convert 5 miles to kilometers",
+   "say": "convert five miles to kilometers",
+   "kw": [
+    "5",
+    "miles",
+    "kilometers|km"
+   ],
+   "expect": "answer:unit"
+  },
+  {
+   "id": "B019",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Reed (German (Germany))",
+   "rate": 190,
+   "gold": "what time is it in Tokyo",
+   "say": "what time is it in Tokyo",
+   "kw": [
+    "time",
+    "tokyo"
+   ],
+   "expect": "answer:time"
+  },
+  {
+   "id": "B020",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Sandy (German (Germany))",
+   "rate": 200,
+   "gold": "search the web for best pizza in Berlin",
+   "say": "search the web for best pizza in Berlin",
+   "kw": [
+    "search",
+    "pizza",
+    "berlin"
+   ],
+   "expect": "url:duckduckgo.com"
+  },
+  {
+   "id": "B021",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Shelley (German (Germany))",
+   "rate": 170,
+   "gold": "find my invoice from March",
+   "say": "find my invoice from March",
+   "kw": [
+    "find",
+    "invoice",
+    "march"
+   ],
+   "expect": "files"
+  },
+  {
+   "id": "B022",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Rocko (German (Germany))",
+   "rate": 180,
+   "gold": "search my computer for tax return 2025",
+   "say": "search my computer for tax return twenty twenty five",
+   "kw": [
+    "search",
+    "tax return",
+    "2025"
+   ],
+   "expect": "files"
+  },
+  {
+   "id": "B023",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Grandpa (German (Germany))",
+   "rate": 190,
+   "gold": "turn the volume down",
+   "say": "turn the volume down",
+   "kw": [
+    "volume",
+    "down"
+   ],
+   "expect": "sys:volume.step"
+  },
+  {
+   "id": "B024",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Grandma (German (Germany))",
+   "rate": 200,
+   "gold": "open github.com",
+   "say": "open github dot com",
+   "kw": [
+    "open|launch|start|switch|go",
+    "github"
+   ],
+   "expect": "url:github.com"
+  },
+  {
+   "id": "B025",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 170,
+   "gold": "what is the weather tomorrow",
+   "say": "what is the weather tomorrow",
+   "kw": [
+    "weather",
+    "tomorrow"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "B026",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Eddy (German (Germany))",
+   "rate": 180,
+   "gold": "how do I take a screenshot on a Mac",
+   "say": "how do I take a screenshot on a Mac",
+   "kw": [
+    "screenshot",
+    "mac"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "B027",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Flo (German (Germany))",
+   "rate": 190,
+   "gold": "summarize this page",
+   "say": "summarize this page",
+   "kw": [
+    "summarize|summarise",
+    "page"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "B028",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Reed (German (Germany))",
+   "rate": 200,
+   "gold": "what is on my calendar today",
+   "say": "what is on my calendar today",
+   "kw": [
+    "calendar",
+    "today"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "B029",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Sandy (German (Germany))",
+   "rate": 170,
+   "gold": "play some jazz on Spotify",
+   "say": "play some jazz on Spotify",
+   "kw": [
+    "play",
+    "jazz",
+    "spotify"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "B030",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Shelley (German (Germany))",
+   "rate": 180,
+   "gold": "remind me to call Anna at 5 pm",
+   "say": "remind me to call Anna at five p m",
+   "kw": [
+    "remind",
+    "call",
+    "anna",
+    "5"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "B031",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Rocko (German (Germany))",
+   "rate": 190,
+   "gold": "how many days until Christmas",
+   "say": "how many days until Christmas",
+   "kw": [
+    "days",
+    "christmas"
+   ],
+   "expect": "answer:date"
+  },
+  {
+   "id": "B032",
+   "cat": "B",
+   "lang": "en",
+   "voice": "Grandpa (German (Germany))",
+   "rate": 200,
+   "gold": "close all Finder windows",
+   "say": "close all Finder windows",
+   "kw": [
+    "close",
+    "finder",
+    "windows"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "C001",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 170,
+   "gold": "öffne Pages",
+   "say": "öffne Pages",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "pages"
+   ],
+   "expect": "app:com.apple.Pages"
+  },
+  {
+   "id": "C002",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Eddy (German (Germany))",
+   "rate": 180,
+   "gold": "öffne Keynote",
+   "say": "öffne Keynote",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "keynote"
+   ],
+   "expect": "app:com.apple.Keynote"
+  },
+  {
+   "id": "C003",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Flo (German (Germany))",
+   "rate": 190,
+   "gold": "starte Spotify",
+   "say": "starte Spotify",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "spotify"
+   ],
+   "expect": "app:com.spotify.client"
+  },
+  {
+   "id": "C004",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Reed (German (Germany))",
+   "rate": 200,
+   "gold": "öffne die Systemeinstellungen",
+   "say": "öffne die Systemeinstellungen",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "systemeinstellungen"
+   ],
+   "expect": "app:com.apple.systempreferences"
+  },
+  {
+   "id": "C005",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Sandy (German (Germany))",
+   "rate": 170,
+   "gold": "öffne den Kalender",
+   "say": "öffne den Kalender",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "kalender"
+   ],
+   "expect": "app:com.apple.iCal"
+  },
+  {
+   "id": "C006",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Shelley (German (Germany))",
+   "rate": 180,
+   "gold": "öffne Safari",
+   "say": "öffne Safari",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "safari"
+   ],
+   "expect": "app:com.apple.Safari"
+  },
+  {
+   "id": "C007",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Rocko (German (Germany))",
+   "rate": 190,
+   "gold": "öffne Notion",
+   "say": "öffne Notion",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "notion"
+   ],
+   "expect": "app:notion.id"
+  },
+  {
+   "id": "C008",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Grandpa (German (Germany))",
+   "rate": 200,
+   "gold": "öffne Brave",
+   "say": "öffne Brave",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "brave"
+   ],
+   "expect": "app:com.brave.Browser"
+  },
+  {
+   "id": "C009",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Grandma (German (Germany))",
+   "rate": 170,
+   "gold": "öffne die Fotos",
+   "say": "öffne die Fotos",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "fotos"
+   ],
+   "expect": "app:com.apple.Photos"
+  },
+  {
+   "id": "C010",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "öffne die Erinnerungen",
+   "say": "öffne die Erinnerungen",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "erinnerungen"
+   ],
+   "expect": "app:com.apple.reminders"
+  },
+  {
+   "id": "C011",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Eddy (German (Germany))",
+   "rate": 190,
+   "gold": "was ist 17 mal 23",
+   "say": "was ist siebzehn mal dreiundzwanzig",
+   "kw": [
+    "17",
+    "mal|x|*",
+    "23"
+   ],
+   "expect": "answer:calc"
+  },
+  {
+   "id": "C012",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Flo (German (Germany))",
+   "rate": 200,
+   "gold": "was sind 15 % von 240",
+   "say": "was sind fünfzehn Prozent von zweihundertvierzig",
+   "kw": [
+    "15",
+    "%",
+    "240"
+   ],
+   "expect": "answer:calc"
+  },
+  {
+   "id": "C013",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Reed (German (Germany))",
+   "rate": 170,
+   "gold": "wie viel sind 100 Dollar in Euro",
+   "say": "wie viel sind hundert Dollar in Euro",
+   "kw": [
+    "100",
+    "dollar|$|usd",
+    "euro|eur"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "C014",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Sandy (German (Germany))",
+   "rate": 180,
+   "gold": "rechne 5 Meilen in Kilometer um",
+   "say": "rechne fünf Meilen in Kilometer um",
+   "kw": [
+    "5",
+    "meilen",
+    "kilometer|km"
+   ],
+   "expect": "answer:unit"
+  },
+  {
+   "id": "C015",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Shelley (German (Germany))",
+   "rate": 190,
+   "gold": "wie spät ist es in Tokio",
+   "say": "wie spät ist es in Tokio",
+   "kw": [
+    "spät",
+    "tokio|tokyo"
+   ],
+   "expect": "answer:time"
+  },
+  {
+   "id": "C016",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Rocko (German (Germany))",
+   "rate": 200,
+   "gold": "Wurzel aus 144",
+   "say": "Wurzel aus hundertvierundvierzig",
+   "kw": [
+    "wurzel",
+    "144"
+   ],
+   "expect": "answer:calc"
+  },
+  {
+   "id": "C017",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Grandpa (German (Germany))",
+   "rate": 170,
+   "gold": "such im Internet nach Pizza in Berlin",
+   "say": "such im Internet nach Pizza in Berlin",
+   "kw": [
+    "such|suche",
+    "pizza",
+    "berlin"
+   ],
+   "expect": "url:duckduckgo.com"
+  },
+  {
+   "id": "C018",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Grandma (German (Germany))",
+   "rate": 180,
+   "gold": "suche nach Rechnung März",
+   "say": "suche nach Rechnung März",
+   "kw": [
+    "such|suche",
+    "rechnung",
+    "märz"
+   ],
+   "expect": "files"
+  },
+  {
+   "id": "C019",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 190,
+   "gold": "finde meine Steuererklärung",
+   "say": "finde meine Steuererklärung",
+   "kw": [
+    "finde|find",
+    "steuererklärung"
+   ],
+   "expect": "files"
+  },
+  {
+   "id": "C020",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Eddy (German (Germany))",
+   "rate": 200,
+   "gold": "mach lauter",
+   "say": "mach lauter",
+   "kw": [
+    "lauter"
+   ],
+   "expect": "sys:volume.step"
+  },
+  {
+   "id": "C021",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Flo (German (Germany))",
+   "rate": 170,
+   "gold": "stell die Lautstärke auf 50 %",
+   "say": "stell die Lautstärke auf fünfzig Prozent",
+   "kw": [
+    "lautstärke",
+    "50"
+   ],
+   "expect": "sys:volume.set"
+  },
+  {
+   "id": "C022",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Reed (German (Germany))",
+   "rate": 180,
+   "gold": "leiser bitte",
+   "say": "leiser bitte",
+   "kw": [
+    "leiser"
+   ],
+   "expect": "sys:volume.step"
+  },
+  {
+   "id": "C023",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Sandy (German (Germany))",
+   "rate": 190,
+   "gold": "wie wird das Wetter morgen",
+   "say": "wie wird das Wetter morgen",
+   "kw": [
+    "wetter",
+    "morgen"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "C024",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Shelley (German (Germany))",
+   "rate": 200,
+   "gold": "fasse diese Seite zusammen",
+   "say": "fasse diese Seite zusammen",
+   "kw": [
+    "fasse|fass",
+    "seite",
+    "zusammen"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "C025",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Rocko (German (Germany))",
+   "rate": 170,
+   "gold": "was steht heute in meinem Kalender",
+   "say": "was steht heute in meinem Kalender",
+   "kw": [
+    "heute",
+    "kalender"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "C026",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Grandpa (German (Germany))",
+   "rate": 180,
+   "gold": "erinnere mich morgen um 9 an den Zahnarzt",
+   "say": "erinnere mich morgen um neun an den Zahnarzt",
+   "kw": [
+    "erinnere",
+    "morgen",
+    "9",
+    "zahnarzt"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "C027",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Grandma (German (Germany))",
+   "rate": 190,
+   "gold": "wie viele Tage sind es bis Weihnachten",
+   "say": "wie viele Tage sind es bis Weihnachten",
+   "kw": [
+    "tage",
+    "weihnachten"
+   ],
+   "expect": "answer:date"
+  },
+  {
+   "id": "C028",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 200,
+   "gold": "schreib eine Mail an Thomas",
+   "say": "schreib eine Mail an Thomas",
+   "kw": [
+    "schreib|schreibe",
+    "mail",
+    "thomas"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "C029",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Eddy (German (Germany))",
+   "rate": 170,
+   "gold": "übersetze guten Morgen ins Englische",
+   "say": "übersetze guten Morgen ins Englische",
+   "kw": [
+    "übersetze|übersetz",
+    "guten morgen",
+    "englische"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "C030",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Flo (German (Germany))",
+   "rate": 180,
+   "gold": "zeig mir meine Downloads",
+   "say": "zeig mir meine Downloads",
+   "kw": [
+    "zeig|zeige",
+    "downloads"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "C031",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Reed (German (Germany))",
+   "rate": 190,
+   "gold": "öffne die Aktivitätsanzeige",
+   "say": "öffne die Aktivitätsanzeige",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "aktivitätsanzeige"
+   ],
+   "expect": "app:com.apple.ActivityMonitor"
+  },
+  {
+   "id": "C032",
+   "cat": "C",
+   "lang": "de",
+   "voice": "Sandy (German (Germany))",
+   "rate": 200,
+   "gold": "wie spät ist es",
+   "say": "wie spät ist es",
+   "kw": [
+    "spät"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "D001",
+   "cat": "D",
+   "lang": "mixed",
+   "voice": "Shelley (German (Germany))",
+   "rate": 170,
+   "gold": "öffne Pages",
+   "say": "öffne Peydschis",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "pages"
+   ],
+   "expect": "app:com.apple.Pages"
+  },
+  {
+   "id": "D002",
+   "cat": "D",
+   "lang": "mixed",
+   "voice": "Rocko (German (Germany))",
+   "rate": 180,
+   "gold": "open Pages bitte",
+   "say": "open Pages bitte",
+   "kw": [
+    "open|launch|start|switch|go",
+    "pages",
+    "bitte"
+   ],
+   "expect": "app:com.apple.Pages"
+  },
+  {
+   "id": "D003",
+   "cat": "D",
+   "lang": "mixed",
+   "voice": "Grandpa (German (Germany))",
+   "rate": 190,
+   "gold": "mach Figma auf",
+   "say": "mach Figma auf",
+   "kw": [
+    "figma",
+    "auf"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "D004",
+   "cat": "D",
+   "lang": "mixed",
+   "voice": "Grandma (German (Germany))",
+   "rate": 200,
+   "gold": "search my computer for Rechnung März",
+   "say": "search my computer for Rechnung März",
+   "kw": [
+    "search",
+    "rechnung",
+    "märz"
+   ],
+   "expect": "files"
+  },
+  {
+   "id": "D005",
+   "cat": "D",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 170,
+   "gold": "öffne VS Code",
+   "say": "öffne Vau Es Code",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "vscode"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "D006",
+   "cat": "D",
+   "lang": "mixed",
+   "voice": "Eddy (German (Germany))",
+   "rate": 180,
+   "gold": "öffne VS Code",
+   "say": "öffne Wie Es Code",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "vscode"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "D007",
+   "cat": "D",
+   "lang": "mixed",
+   "voice": "Flo (German (Germany))",
+   "rate": 190,
+   "gold": "öffne Xcode",
+   "say": "öffne Ex Code",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "xcode"
+   ],
+   "expect": "app:com.apple.dt.Xcode"
+  },
+  {
+   "id": "D008",
+   "cat": "D",
+   "lang": "mixed",
+   "voice": "Reed (German (Germany))",
+   "rate": 200,
+   "gold": "öffne Raycast",
+   "say": "öffne Rey Käst",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "raycast"
+   ],
+   "expect": "app:com.raycast.macos"
+  },
+  {
+   "id": "D009",
+   "cat": "D",
+   "lang": "mixed",
+   "voice": "Sandy (German (Germany))",
+   "rate": 170,
+   "gold": "öffne Orca",
+   "say": "öffne Orca",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "orca"
+   ],
+   "expect": "app:com.stablyai.orca"
+  },
+  {
+   "id": "D010",
+   "cat": "D",
+   "lang": "mixed",
+   "voice": "Shelley (German (Germany))",
+   "rate": 180,
+   "gold": "starte den Brave Browser",
+   "say": "starte den Breyv Brauser",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "brave"
+   ],
+   "expect": "app:com.brave.Browser"
+  },
+  {
+   "id": "D011",
+   "cat": "D",
+   "lang": "mixed",
+   "voice": "Rocko (German (Germany))",
+   "rate": 190,
+   "gold": "mach Spotify auf",
+   "say": "mach Spotifei auf",
+   "kw": [
+    "spotify",
+    "auf"
+   ],
+   "expect": "app:com.spotify.client"
+  },
+  {
+   "id": "D012",
+   "cat": "D",
+   "lang": "mixed",
+   "voice": "Grandpa (German (Germany))",
+   "rate": 200,
+   "gold": "kannst du Keynote öffnen",
+   "say": "kannst du Kienout öffnen",
+   "kw": [
+    "keynote",
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle"
+   ],
+   "expect": "app:com.apple.Keynote"
+  },
+  {
+   "id": "D013",
+   "cat": "D",
+   "lang": "mixed",
+   "voice": "Grandma (German (Germany))",
+   "rate": 170,
+   "gold": "öffne bitte Numbers",
+   "say": "öffne bitte Nambers",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "numbers"
+   ],
+   "expect": "app:com.apple.Numbers"
+  },
+  {
+   "id": "D014",
+   "cat": "D",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "open Notion bitte",
+   "say": "open Notion bitte",
+   "kw": [
+    "open|launch|start|switch|go",
+    "notion",
+    "bitte"
+   ],
+   "expect": "app:notion.id"
+  },
+  {
+   "id": "D015",
+   "cat": "D",
+   "lang": "mixed",
+   "voice": "Eddy (German (Germany))",
+   "rate": 190,
+   "gold": "suche die Keynote Präsentation vom Montag",
+   "say": "suche die Kienout Präsentation vom Montag",
+   "kw": [
+    "such|suche",
+    "keynote",
+    "präsentation",
+    "montag"
+   ],
+   "expect": "files"
+  },
+  {
+   "id": "D016",
+   "cat": "D",
+   "lang": "mixed",
+   "voice": "Flo (German (Germany))",
+   "rate": 200,
+   "gold": "find the PDF Rechnung from Telekom",
+   "say": "find the PDF Rechnung from Telekom",
+   "kw": [
+    "find",
+    "pdf",
+    "rechnung",
+    "telekom"
+   ],
+   "expect": "files"
+  },
+  {
+   "id": "D017",
+   "cat": "D",
+   "lang": "mixed",
+   "voice": "Reed (German (Germany))",
+   "rate": 170,
+   "gold": "google Wetter Hamburg",
+   "say": "google Wetter Hamburg",
+   "kw": [
+    "google",
+    "wetter",
+    "hamburg"
+   ],
+   "expect": "url:www.google.com"
+  },
+  {
+   "id": "D018",
+   "cat": "D",
+   "lang": "mixed",
+   "voice": "Sandy (German (Germany))",
+   "rate": 180,
+   "gold": "open die Einstellungen",
+   "say": "open die Einstellungen",
+   "kw": [
+    "open|launch|start|switch|go",
+    "einstellungen"
+   ],
+   "expect": "app:com.apple.systempreferences"
+  },
+  {
+   "id": "D019",
+   "cat": "D",
+   "lang": "mixed",
+   "voice": "Shelley (German (Germany))",
+   "rate": 190,
+   "gold": "was ist 20 % von 80 Euro",
+   "say": "was ist zwanzig Prozent von achtzig Euro",
+   "kw": [
+    "20",
+    "%",
+    "80"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "D020",
+   "cat": "D",
+   "lang": "mixed",
+   "voice": "Rocko (German (Germany))",
+   "rate": 200,
+   "gold": "öffne WhatsApp",
+   "say": "öffne Wotts Äpp",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "whatsapp"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "D021",
+   "cat": "D",
+   "lang": "mixed",
+   "voice": "Grandpa (German (Germany))",
+   "rate": 170,
+   "gold": "öffne Telegram",
+   "say": "öffne Telegram",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "telegram"
+   ],
+   "expect": "app:ru.keepcoder.Telegram"
+  },
+  {
+   "id": "D022",
+   "cat": "D",
+   "lang": "mixed",
+   "voice": "Grandma (German (Germany))",
+   "rate": 180,
+   "gold": "öffne Ghostty",
+   "say": "öffne Gousti",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "ghostty"
+   ],
+   "expect": "app:com.mitchellh.ghostty"
+  },
+  {
+   "id": "D023",
+   "cat": "D",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 190,
+   "gold": "öffne das Terminal",
+   "say": "öffne das Terminal",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "terminal"
+   ],
+   "expect": "app:com.apple.Terminal"
+  },
+  {
+   "id": "D024",
+   "cat": "D",
+   "lang": "mixed",
+   "voice": "Eddy (German (Germany))",
+   "rate": 200,
+   "gold": "open Finder bitte",
+   "say": "open Finder bitte",
+   "kw": [
+    "open|launch|start|switch|go",
+    "finder",
+    "bitte"
+   ],
+   "expect": "app:com.apple.finder"
+  },
+  {
+   "id": "D025",
+   "cat": "D",
+   "lang": "mixed",
+   "voice": "Flo (German (Germany))",
+   "rate": 170,
+   "gold": "wechsel zu Brave",
+   "say": "wechsel zu Breyv",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "brave"
+   ],
+   "expect": "app:com.brave.Browser"
+  },
+  {
+   "id": "D026",
+   "cat": "D",
+   "lang": "mixed",
+   "voice": "Reed (German (Germany))",
+   "rate": 180,
+   "gold": "öffne ChatGPT",
+   "say": "öffne Tschätt G P T",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "chatgpt"
+   ],
+   "expect": "app:com.openai.codex"
+  },
+  {
+   "id": "D027",
+   "cat": "D",
+   "lang": "mixed",
+   "voice": "Sandy (German (Germany))",
+   "rate": 190,
+   "gold": "öffne Notion Calendar",
+   "say": "öffne Nouschen Kälender",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "notion calendar"
+   ],
+   "expect": "app:com.cron.electron"
+  },
+  {
+   "id": "D028",
+   "cat": "D",
+   "lang": "mixed",
+   "voice": "Shelley (German (Germany))",
+   "rate": 200,
+   "gold": "Spotify Pause",
+   "say": "Spotifei Pause",
+   "kw": [
+    "spotify",
+    "pause"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "E001",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Eddy (German (Germany))",
+   "rate": 170,
+   "gold": "open Pages",
+   "say": "Oupen Peidschis",
+   "kw": [
+    "open|launch|start|switch|go",
+    "pages"
+   ],
+   "expect": "app:com.apple.Pages"
+  },
+  {
+   "id": "E002",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Flo (German (Germany))",
+   "rate": 180,
+   "gold": "open Keynote",
+   "say": "Oupen Kienout",
+   "kw": [
+    "open|launch|start|switch|go",
+    "keynote"
+   ],
+   "expect": "app:com.apple.Keynote"
+  },
+  {
+   "id": "E003",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Reed (German (Germany))",
+   "rate": 190,
+   "gold": "open Numbers",
+   "say": "Oupen Nammbers",
+   "kw": [
+    "open|launch|start|switch|go",
+    "numbers"
+   ],
+   "expect": "app:com.apple.Numbers"
+  },
+  {
+   "id": "E004",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Sandy (German (Germany))",
+   "rate": 200,
+   "gold": "launch Figma",
+   "say": "Lohnsch Figma",
+   "kw": [
+    "open|launch|start|switch|go",
+    "figma"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "E005",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Shelley (German (Germany))",
+   "rate": 170,
+   "gold": "open Brave",
+   "say": "Oupen Breiv",
+   "kw": [
+    "open|launch|start|switch|go",
+    "brave"
+   ],
+   "expect": "app:com.brave.Browser"
+  },
+  {
+   "id": "E006",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Rocko (German (Germany))",
+   "rate": 180,
+   "gold": "open Notion",
+   "say": "Oupen Nouschen",
+   "kw": [
+    "open|launch|start|switch|go",
+    "notion"
+   ],
+   "expect": "app:notion.id"
+  },
+  {
+   "id": "E007",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Grandpa (German (Germany))",
+   "rate": 190,
+   "gold": "open VS Code",
+   "say": "Oupen Wie Ess Koud",
+   "kw": [
+    "open|launch|start|switch|go",
+    "vscode"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "E008",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Grandma (German (Germany))",
+   "rate": 200,
+   "gold": "open Xcode",
+   "say": "Oupen Ex Koud",
+   "kw": [
+    "open|launch|start|switch|go",
+    "xcode"
+   ],
+   "expect": "app:com.apple.dt.Xcode"
+  },
+  {
+   "id": "E009",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 170,
+   "gold": "open Raycast",
+   "say": "Oupen Rey Käst",
+   "kw": [
+    "open|launch|start|switch|go",
+    "raycast"
+   ],
+   "expect": "app:com.raycast.macos"
+  },
+  {
+   "id": "E010",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Eddy (German (Germany))",
+   "rate": 180,
+   "gold": "start Spotify",
+   "say": "Start Spotifei",
+   "kw": [
+    "open|launch|start|switch|go",
+    "spotify"
+   ],
+   "expect": "app:com.spotify.client"
+  },
+  {
+   "id": "E011",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Flo (German (Germany))",
+   "rate": 190,
+   "gold": "open Orca",
+   "say": "Oupen Orka",
+   "kw": [
+    "open|launch|start|switch|go",
+    "orca"
+   ],
+   "expect": "app:com.stablyai.orca"
+  },
+  {
+   "id": "E012",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Reed (German (Germany))",
+   "rate": 200,
+   "gold": "open System Settings",
+   "say": "Oupen Sistem Settings",
+   "kw": [
+    "open|launch|start|switch|go",
+    "system settings"
+   ],
+   "expect": "app:com.apple.systempreferences"
+  },
+  {
+   "id": "E013",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Sandy (German (Germany))",
+   "rate": 170,
+   "gold": "open Calendar",
+   "say": "Oupen Kälender",
+   "kw": [
+    "open|launch|start|switch|go",
+    "calendar"
+   ],
+   "expect": "app:com.apple.iCal"
+  },
+  {
+   "id": "E014",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Shelley (German (Germany))",
+   "rate": 180,
+   "gold": "switch to Safari",
+   "say": "Switsch tu Safari",
+   "kw": [
+    "open|launch|start|switch|go",
+    "safari"
+   ],
+   "expect": "app:com.apple.Safari"
+  },
+  {
+   "id": "E015",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Rocko (German (Germany))",
+   "rate": 190,
+   "gold": "open ChatGPT",
+   "say": "Oupen Tschätt Dschie Pie Tie",
+   "kw": [
+    "open|launch|start|switch|go",
+    "chatgpt"
+   ],
+   "expect": "app:com.openai.codex"
+  },
+  {
+   "id": "E016",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Grandpa (German (Germany))",
+   "rate": 200,
+   "gold": "what is 17 times 23",
+   "say": "Wott is Sewentien Teims Twenti Srie",
+   "kw": [
+    "17",
+    "23",
+    "times|x|*"
+   ],
+   "expect": "answer:calc"
+  },
+  {
+   "id": "E017",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Grandma (German (Germany))",
+   "rate": 170,
+   "gold": "convert 5 miles to kilometers",
+   "say": "Konnwört feif Meils tu Kilometers",
+   "kw": [
+    "5",
+    "miles",
+    "kilometers|km"
+   ],
+   "expect": "answer:unit"
+  },
+  {
+   "id": "E018",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "what time is it in Tokyo",
+   "say": "Wott teim is itt in Tokio",
+   "kw": [
+    "time",
+    "tokyo"
+   ],
+   "expect": "answer:time"
+  },
+  {
+   "id": "E019",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Eddy (German (Germany))",
+   "rate": 190,
+   "gold": "search the web for best pizza in Berlin",
+   "say": "Sörtsch se Webb for best Pizza in Berlin",
+   "kw": [
+    "search",
+    "pizza",
+    "berlin"
+   ],
+   "expect": "url:duckduckgo.com"
+  },
+  {
+   "id": "E020",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Flo (German (Germany))",
+   "rate": 200,
+   "gold": "find my invoice from March",
+   "say": "Feind mei Invois fromm Martsch",
+   "kw": [
+    "find",
+    "invoice",
+    "march"
+   ],
+   "expect": "files"
+  },
+  {
+   "id": "E021",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Reed (German (Germany))",
+   "rate": 170,
+   "gold": "turn the volume down",
+   "say": "Törn se Wollium daun",
+   "kw": [
+    "volume",
+    "down"
+   ],
+   "expect": "sys:volume.step"
+  },
+  {
+   "id": "E022",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Sandy (German (Germany))",
+   "rate": 180,
+   "gold": "what is the weather tomorrow",
+   "say": "Wott is se Wesser tumorrou",
+   "kw": [
+    "weather",
+    "tomorrow"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "E023",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Shelley (German (Germany))",
+   "rate": 190,
+   "gold": "how do I take a screenshot on a Mac",
+   "say": "Hau du ei teik e Skrienschott onn e Mäk",
+   "kw": [
+    "screenshot",
+    "mac"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "E024",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Rocko (German (Germany))",
+   "rate": 200,
+   "gold": "summarize this page",
+   "say": "Sammareis sis Peidsch",
+   "kw": [
+    "summarize|summarise",
+    "page"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "E025",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Grandpa (German (Germany))",
+   "rate": 170,
+   "gold": "what is on my calendar today",
+   "say": "Wott is onn mei Kälender tudei",
+   "kw": [
+    "calendar",
+    "today"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "E026",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Grandma (German (Germany))",
+   "rate": 180,
+   "gold": "play some jazz on Spotify",
+   "say": "Plei samm Dschäss onn Spotifei",
+   "kw": [
+    "play",
+    "jazz",
+    "spotify"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "E027",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 190,
+   "gold": "remind me to call Anna at 5 pm",
+   "say": "Rimeind mie tu koll Anna ätt feif Pie Emm",
+   "kw": [
+    "remind",
+    "call",
+    "anna",
+    "5"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "E028",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Eddy (German (Germany))",
+   "rate": 200,
+   "gold": "how many days until Christmas",
+   "say": "Hau menni Deis anntill Krissmas",
+   "kw": [
+    "days",
+    "christmas"
+   ],
+   "expect": "answer:date"
+  },
+  {
+   "id": "E029",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Flo (German (Germany))",
+   "rate": 170,
+   "gold": "close all Finder windows",
+   "say": "Klous oll Feinder Windous",
+   "kw": [
+    "close",
+    "finder",
+    "windows"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "E030",
+   "cat": "E",
+   "lang": "en",
+   "voice": "Reed (German (Germany))",
+   "rate": 180,
+   "gold": "open github.com",
+   "say": "Oupen Gitt Habb dott Komm",
+   "kw": [
+    "open|launch|start|switch|go",
+    "github"
+   ],
+   "expect": "url:github.com"
+  },
+  {
+   "id": "F001",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "open Pages",
+   "say": "open Pages",
+   "kw": [
+    "open|launch|start|switch|go",
+    "pages"
+   ],
+   "expect": "app:com.apple.Pages"
+  },
+  {
+   "id": "F002",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "open Keynote",
+   "say": "open Keynote",
+   "kw": [
+    "open|launch|start|switch|go",
+    "keynote"
+   ],
+   "expect": "app:com.apple.Keynote"
+  },
+  {
+   "id": "F003",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "open Numbers",
+   "say": "open Numbers",
+   "kw": [
+    "open|launch|start|switch|go",
+    "numbers"
+   ],
+   "expect": "app:com.apple.Numbers"
+  },
+  {
+   "id": "F004",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "launch Figma",
+   "say": "launch Figma",
+   "kw": [
+    "open|launch|start|switch|go",
+    "figma"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "F005",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "open Brave",
+   "say": "open Brave",
+   "kw": [
+    "open|launch|start|switch|go",
+    "brave"
+   ],
+   "expect": "app:com.brave.Browser"
+  },
+  {
+   "id": "F006",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "open Notion",
+   "say": "open Notion",
+   "kw": [
+    "open|launch|start|switch|go",
+    "notion"
+   ],
+   "expect": "app:notion.id"
+  },
+  {
+   "id": "F007",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "open VS Code",
+   "say": "open VS Code",
+   "kw": [
+    "open|launch|start|switch|go",
+    "vscode"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "F008",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "open Xcode",
+   "say": "open Xcode",
+   "kw": [
+    "open|launch|start|switch|go",
+    "xcode"
+   ],
+   "expect": "app:com.apple.dt.Xcode"
+  },
+  {
+   "id": "F009",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "open Raycast",
+   "say": "open Raycast",
+   "kw": [
+    "open|launch|start|switch|go",
+    "raycast"
+   ],
+   "expect": "app:com.raycast.macos"
+  },
+  {
+   "id": "F010",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "start Spotify",
+   "say": "start Spotify",
+   "kw": [
+    "open|launch|start|switch|go",
+    "spotify"
+   ],
+   "expect": "app:com.spotify.client"
+  },
+  {
+   "id": "F011",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "open Orca",
+   "say": "open Orca",
+   "kw": [
+    "open|launch|start|switch|go",
+    "orca"
+   ],
+   "expect": "app:com.stablyai.orca"
+  },
+  {
+   "id": "F012",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "open System Settings",
+   "say": "open System Settings",
+   "kw": [
+    "open|launch|start|switch|go",
+    "system settings"
+   ],
+   "expect": "app:com.apple.systempreferences"
+  },
+  {
+   "id": "F013",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "open Calendar",
+   "say": "open Calendar",
+   "kw": [
+    "open|launch|start|switch|go",
+    "calendar"
+   ],
+   "expect": "app:com.apple.iCal"
+  },
+  {
+   "id": "F014",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "switch to Safari",
+   "say": "switch to Safari",
+   "kw": [
+    "open|launch|start|switch|go",
+    "safari"
+   ],
+   "expect": "app:com.apple.Safari"
+  },
+  {
+   "id": "F015",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "open ChatGPT",
+   "say": "open ChatGPT",
+   "kw": [
+    "open|launch|start|switch|go",
+    "chatgpt"
+   ],
+   "expect": "app:com.openai.codex"
+  },
+  {
+   "id": "F016",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "open Activity Monitor",
+   "say": "open Activity Monitor",
+   "kw": [
+    "open|launch|start|switch|go",
+    "activity monitor"
+   ],
+   "expect": "app:com.apple.ActivityMonitor"
+  },
+  {
+   "id": "F017",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "what is 17 times 23",
+   "say": "what is seventeen times twenty three",
+   "kw": [
+    "17",
+    "23",
+    "times|x|*"
+   ],
+   "expect": "answer:calc"
+  },
+  {
+   "id": "F018",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "convert 5 miles to kilometers",
+   "say": "convert five miles to kilometers",
+   "kw": [
+    "5",
+    "miles",
+    "kilometers|km"
+   ],
+   "expect": "answer:unit"
+  },
+  {
+   "id": "F019",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "what time is it in Tokyo",
+   "say": "what time is it in Tokyo",
+   "kw": [
+    "time",
+    "tokyo"
+   ],
+   "expect": "answer:time"
+  },
+  {
+   "id": "F020",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "search the web for best pizza in Berlin",
+   "say": "search the web for best pizza in Berlin",
+   "kw": [
+    "search",
+    "pizza",
+    "berlin"
+   ],
+   "expect": "url:duckduckgo.com"
+  },
+  {
+   "id": "F021",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "find my invoice from March",
+   "say": "find my invoice from March",
+   "kw": [
+    "find",
+    "invoice",
+    "march"
+   ],
+   "expect": "files"
+  },
+  {
+   "id": "F022",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "search my computer for tax return 2025",
+   "say": "search my computer for tax return twenty twenty five",
+   "kw": [
+    "search",
+    "tax return",
+    "2025"
+   ],
+   "expect": "files"
+  },
+  {
+   "id": "F023",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "turn the volume down",
+   "say": "turn the volume down",
+   "kw": [
+    "volume",
+    "down"
+   ],
+   "expect": "sys:volume.step"
+  },
+  {
+   "id": "F024",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "open github.com",
+   "say": "open github dot com",
+   "kw": [
+    "open|launch|start|switch|go",
+    "github"
+   ],
+   "expect": "url:github.com"
+  },
+  {
+   "id": "F025",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "what is the weather tomorrow",
+   "say": "what is the weather tomorrow",
+   "kw": [
+    "weather",
+    "tomorrow"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "F026",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "how do I take a screenshot on a Mac",
+   "say": "how do I take a screenshot on a Mac",
+   "kw": [
+    "screenshot",
+    "mac"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "F027",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "summarize this page",
+   "say": "summarize this page",
+   "kw": [
+    "summarize|summarise",
+    "page"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "F028",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "what is on my calendar today",
+   "say": "what is on my calendar today",
+   "kw": [
+    "calendar",
+    "today"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "F029",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "play some jazz on Spotify",
+   "say": "play some jazz on Spotify",
+   "kw": [
+    "play",
+    "jazz",
+    "spotify"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "F030",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "remind me to call Anna at 5 pm",
+   "say": "remind me to call Anna at five p m",
+   "kw": [
+    "remind",
+    "call",
+    "anna",
+    "5"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "F031",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "how many days until Christmas",
+   "say": "how many days until Christmas",
+   "kw": [
+    "days",
+    "christmas"
+   ],
+   "expect": "answer:date"
+  },
+  {
+   "id": "F032",
+   "cat": "F",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "close all Finder windows",
+   "say": "close all Finder windows",
+   "kw": [
+    "close",
+    "finder",
+    "windows"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "G001",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "open Pages",
+   "say": "Oupen Peidschis",
+   "kw": [
+    "open|launch|start|switch|go",
+    "pages"
+   ],
+   "expect": "app:com.apple.Pages"
+  },
+  {
+   "id": "G002",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "open Keynote",
+   "say": "Oupen Kienout",
+   "kw": [
+    "open|launch|start|switch|go",
+    "keynote"
+   ],
+   "expect": "app:com.apple.Keynote"
+  },
+  {
+   "id": "G003",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "open Numbers",
+   "say": "Oupen Nammbers",
+   "kw": [
+    "open|launch|start|switch|go",
+    "numbers"
+   ],
+   "expect": "app:com.apple.Numbers"
+  },
+  {
+   "id": "G004",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "launch Figma",
+   "say": "Lohnsch Figma",
+   "kw": [
+    "open|launch|start|switch|go",
+    "figma"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "G005",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "open Brave",
+   "say": "Oupen Breiv",
+   "kw": [
+    "open|launch|start|switch|go",
+    "brave"
+   ],
+   "expect": "app:com.brave.Browser"
+  },
+  {
+   "id": "G006",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "open Notion",
+   "say": "Oupen Nouschen",
+   "kw": [
+    "open|launch|start|switch|go",
+    "notion"
+   ],
+   "expect": "app:notion.id"
+  },
+  {
+   "id": "G007",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "open VS Code",
+   "say": "Oupen Wie Ess Koud",
+   "kw": [
+    "open|launch|start|switch|go",
+    "vscode"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "G008",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "open Xcode",
+   "say": "Oupen Ex Koud",
+   "kw": [
+    "open|launch|start|switch|go",
+    "xcode"
+   ],
+   "expect": "app:com.apple.dt.Xcode"
+  },
+  {
+   "id": "G009",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "open Raycast",
+   "say": "Oupen Rey Käst",
+   "kw": [
+    "open|launch|start|switch|go",
+    "raycast"
+   ],
+   "expect": "app:com.raycast.macos"
+  },
+  {
+   "id": "G010",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "start Spotify",
+   "say": "Start Spotifei",
+   "kw": [
+    "open|launch|start|switch|go",
+    "spotify"
+   ],
+   "expect": "app:com.spotify.client"
+  },
+  {
+   "id": "G011",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "open Orca",
+   "say": "Oupen Orka",
+   "kw": [
+    "open|launch|start|switch|go",
+    "orca"
+   ],
+   "expect": "app:com.stablyai.orca"
+  },
+  {
+   "id": "G012",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "open System Settings",
+   "say": "Oupen Sistem Settings",
+   "kw": [
+    "open|launch|start|switch|go",
+    "system settings"
+   ],
+   "expect": "app:com.apple.systempreferences"
+  },
+  {
+   "id": "G013",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "open Calendar",
+   "say": "Oupen Kälender",
+   "kw": [
+    "open|launch|start|switch|go",
+    "calendar"
+   ],
+   "expect": "app:com.apple.iCal"
+  },
+  {
+   "id": "G014",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "switch to Safari",
+   "say": "Switsch tu Safari",
+   "kw": [
+    "open|launch|start|switch|go",
+    "safari"
+   ],
+   "expect": "app:com.apple.Safari"
+  },
+  {
+   "id": "G015",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "open ChatGPT",
+   "say": "Oupen Tschätt Dschie Pie Tie",
+   "kw": [
+    "open|launch|start|switch|go",
+    "chatgpt"
+   ],
+   "expect": "app:com.openai.codex"
+  },
+  {
+   "id": "G016",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "what is 17 times 23",
+   "say": "Wott is Sewentien Teims Twenti Srie",
+   "kw": [
+    "17",
+    "23",
+    "times|x|*"
+   ],
+   "expect": "answer:calc"
+  },
+  {
+   "id": "G017",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "convert 5 miles to kilometers",
+   "say": "Konnwört feif Meils tu Kilometers",
+   "kw": [
+    "5",
+    "miles",
+    "kilometers|km"
+   ],
+   "expect": "answer:unit"
+  },
+  {
+   "id": "G018",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "what time is it in Tokyo",
+   "say": "Wott teim is itt in Tokio",
+   "kw": [
+    "time",
+    "tokyo"
+   ],
+   "expect": "answer:time"
+  },
+  {
+   "id": "G019",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "search the web for best pizza in Berlin",
+   "say": "Sörtsch se Webb for best Pizza in Berlin",
+   "kw": [
+    "search",
+    "pizza",
+    "berlin"
+   ],
+   "expect": "url:duckduckgo.com"
+  },
+  {
+   "id": "G020",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "find my invoice from March",
+   "say": "Feind mei Invois fromm Martsch",
+   "kw": [
+    "find",
+    "invoice",
+    "march"
+   ],
+   "expect": "files"
+  },
+  {
+   "id": "G021",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "turn the volume down",
+   "say": "Törn se Wollium daun",
+   "kw": [
+    "volume",
+    "down"
+   ],
+   "expect": "sys:volume.step"
+  },
+  {
+   "id": "G022",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "what is the weather tomorrow",
+   "say": "Wott is se Wesser tumorrou",
+   "kw": [
+    "weather",
+    "tomorrow"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "G023",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "how do I take a screenshot on a Mac",
+   "say": "Hau du ei teik e Skrienschott onn e Mäk",
+   "kw": [
+    "screenshot",
+    "mac"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "G024",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "summarize this page",
+   "say": "Sammareis sis Peidsch",
+   "kw": [
+    "summarize|summarise",
+    "page"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "G025",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "what is on my calendar today",
+   "say": "Wott is onn mei Kälender tudei",
+   "kw": [
+    "calendar",
+    "today"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "G026",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "play some jazz on Spotify",
+   "say": "Plei samm Dschäss onn Spotifei",
+   "kw": [
+    "play",
+    "jazz",
+    "spotify"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "G027",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "remind me to call Anna at 5 pm",
+   "say": "Rimeind mie tu koll Anna ätt feif Pie Emm",
+   "kw": [
+    "remind",
+    "call",
+    "anna",
+    "5"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "G028",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "how many days until Christmas",
+   "say": "Hau menni Deis anntill Krissmas",
+   "kw": [
+    "days",
+    "christmas"
+   ],
+   "expect": "answer:date"
+  },
+  {
+   "id": "G029",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "close all Finder windows",
+   "say": "Klous oll Feinder Windous",
+   "kw": [
+    "close",
+    "finder",
+    "windows"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "G030",
+   "cat": "G",
+   "lang": "en",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "open github.com",
+   "say": "Oupen Gitt Habb dott Komm",
+   "kw": [
+    "open|launch|start|switch|go",
+    "github"
+   ],
+   "expect": "url:github.com"
+  },
+  {
+   "id": "H001",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "öffne Pages",
+   "say": "öffne Pages",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "pages"
+   ],
+   "expect": "app:com.apple.Pages"
+  },
+  {
+   "id": "H002",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "öffne Keynote",
+   "say": "öffne Keynote",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "keynote"
+   ],
+   "expect": "app:com.apple.Keynote"
+  },
+  {
+   "id": "H003",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "starte Spotify",
+   "say": "starte Spotify",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "spotify"
+   ],
+   "expect": "app:com.spotify.client"
+  },
+  {
+   "id": "H004",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "öffne die Systemeinstellungen",
+   "say": "öffne die Systemeinstellungen",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "systemeinstellungen"
+   ],
+   "expect": "app:com.apple.systempreferences"
+  },
+  {
+   "id": "H005",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "öffne den Kalender",
+   "say": "öffne den Kalender",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "kalender"
+   ],
+   "expect": "app:com.apple.iCal"
+  },
+  {
+   "id": "H006",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "öffne Safari",
+   "say": "öffne Safari",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "safari"
+   ],
+   "expect": "app:com.apple.Safari"
+  },
+  {
+   "id": "H007",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "öffne Notion",
+   "say": "öffne Notion",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "notion"
+   ],
+   "expect": "app:notion.id"
+  },
+  {
+   "id": "H008",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "öffne Brave",
+   "say": "öffne Brave",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "brave"
+   ],
+   "expect": "app:com.brave.Browser"
+  },
+  {
+   "id": "H009",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "öffne die Fotos",
+   "say": "öffne die Fotos",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "fotos"
+   ],
+   "expect": "app:com.apple.Photos"
+  },
+  {
+   "id": "H010",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "öffne die Erinnerungen",
+   "say": "öffne die Erinnerungen",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "erinnerungen"
+   ],
+   "expect": "app:com.apple.reminders"
+  },
+  {
+   "id": "H011",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "was ist 17 mal 23",
+   "say": "was ist siebzehn mal dreiundzwanzig",
+   "kw": [
+    "17",
+    "mal|x|*",
+    "23"
+   ],
+   "expect": "answer:calc"
+  },
+  {
+   "id": "H012",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "was sind 15 % von 240",
+   "say": "was sind fünfzehn Prozent von zweihundertvierzig",
+   "kw": [
+    "15",
+    "%",
+    "240"
+   ],
+   "expect": "answer:calc"
+  },
+  {
+   "id": "H013",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "wie viel sind 100 Dollar in Euro",
+   "say": "wie viel sind hundert Dollar in Euro",
+   "kw": [
+    "100",
+    "dollar|$|usd",
+    "euro|eur"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "H014",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "rechne 5 Meilen in Kilometer um",
+   "say": "rechne fünf Meilen in Kilometer um",
+   "kw": [
+    "5",
+    "meilen",
+    "kilometer|km"
+   ],
+   "expect": "answer:unit"
+  },
+  {
+   "id": "H015",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "wie spät ist es in Tokio",
+   "say": "wie spät ist es in Tokio",
+   "kw": [
+    "spät",
+    "tokio|tokyo"
+   ],
+   "expect": "answer:time"
+  },
+  {
+   "id": "H016",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "Wurzel aus 144",
+   "say": "Wurzel aus hundertvierundvierzig",
+   "kw": [
+    "wurzel",
+    "144"
+   ],
+   "expect": "answer:calc"
+  },
+  {
+   "id": "H017",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "such im Internet nach Pizza in Berlin",
+   "say": "such im Internet nach Pizza in Berlin",
+   "kw": [
+    "such|suche",
+    "pizza",
+    "berlin"
+   ],
+   "expect": "url:duckduckgo.com"
+  },
+  {
+   "id": "H018",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "suche nach Rechnung März",
+   "say": "suche nach Rechnung März",
+   "kw": [
+    "such|suche",
+    "rechnung",
+    "märz"
+   ],
+   "expect": "files"
+  },
+  {
+   "id": "H019",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "finde meine Steuererklärung",
+   "say": "finde meine Steuererklärung",
+   "kw": [
+    "finde|find",
+    "steuererklärung"
+   ],
+   "expect": "files"
+  },
+  {
+   "id": "H020",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "mach lauter",
+   "say": "mach lauter",
+   "kw": [
+    "lauter"
+   ],
+   "expect": "sys:volume.step"
+  },
+  {
+   "id": "H021",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "stell die Lautstärke auf 50 %",
+   "say": "stell die Lautstärke auf fünfzig Prozent",
+   "kw": [
+    "lautstärke",
+    "50"
+   ],
+   "expect": "sys:volume.set"
+  },
+  {
+   "id": "H022",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "leiser bitte",
+   "say": "leiser bitte",
+   "kw": [
+    "leiser"
+   ],
+   "expect": "sys:volume.step"
+  },
+  {
+   "id": "H023",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "wie wird das Wetter morgen",
+   "say": "wie wird das Wetter morgen",
+   "kw": [
+    "wetter",
+    "morgen"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "H024",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "fasse diese Seite zusammen",
+   "say": "fasse diese Seite zusammen",
+   "kw": [
+    "fasse|fass",
+    "seite",
+    "zusammen"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "H025",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "was steht heute in meinem Kalender",
+   "say": "was steht heute in meinem Kalender",
+   "kw": [
+    "heute",
+    "kalender"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "H026",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "erinnere mich morgen um 9 an den Zahnarzt",
+   "say": "erinnere mich morgen um neun an den Zahnarzt",
+   "kw": [
+    "erinnere",
+    "morgen",
+    "9",
+    "zahnarzt"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "H027",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "wie viele Tage sind es bis Weihnachten",
+   "say": "wie viele Tage sind es bis Weihnachten",
+   "kw": [
+    "tage",
+    "weihnachten"
+   ],
+   "expect": "answer:date"
+  },
+  {
+   "id": "H028",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "schreib eine Mail an Thomas",
+   "say": "schreib eine Mail an Thomas",
+   "kw": [
+    "schreib|schreibe",
+    "mail",
+    "thomas"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "H029",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "übersetze guten Morgen ins Englische",
+   "say": "übersetze guten Morgen ins Englische",
+   "kw": [
+    "übersetze|übersetz",
+    "guten morgen",
+    "englische"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "H030",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "zeig mir meine Downloads",
+   "say": "zeig mir meine Downloads",
+   "kw": [
+    "zeig|zeige",
+    "downloads"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "H031",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "öffne die Aktivitätsanzeige",
+   "say": "öffne die Aktivitätsanzeige",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "aktivitätsanzeige"
+   ],
+   "expect": "app:com.apple.ActivityMonitor"
+  },
+  {
+   "id": "H032",
+   "cat": "H",
+   "lang": "de",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "wie spät ist es",
+   "say": "wie spät ist es",
+   "kw": [
+    "spät"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "I001",
+   "cat": "I",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "öffne Pages",
+   "say": "öffne Peydschis",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "pages"
+   ],
+   "expect": "app:com.apple.Pages"
+  },
+  {
+   "id": "I002",
+   "cat": "I",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "open Pages bitte",
+   "say": "open Pages bitte",
+   "kw": [
+    "open|launch|start|switch|go",
+    "pages",
+    "bitte"
+   ],
+   "expect": "app:com.apple.Pages"
+  },
+  {
+   "id": "I003",
+   "cat": "I",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "mach Figma auf",
+   "say": "mach Figma auf",
+   "kw": [
+    "figma",
+    "auf"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "I004",
+   "cat": "I",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "search my computer for Rechnung März",
+   "say": "search my computer for Rechnung März",
+   "kw": [
+    "search",
+    "rechnung",
+    "märz"
+   ],
+   "expect": "files"
+  },
+  {
+   "id": "I005",
+   "cat": "I",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "öffne VS Code",
+   "say": "öffne Vau Es Code",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "vscode"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "I006",
+   "cat": "I",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "öffne VS Code",
+   "say": "öffne Wie Es Code",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "vscode"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "I007",
+   "cat": "I",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "öffne Xcode",
+   "say": "öffne Ex Code",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "xcode"
+   ],
+   "expect": "app:com.apple.dt.Xcode"
+  },
+  {
+   "id": "I008",
+   "cat": "I",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "öffne Raycast",
+   "say": "öffne Rey Käst",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "raycast"
+   ],
+   "expect": "app:com.raycast.macos"
+  },
+  {
+   "id": "I009",
+   "cat": "I",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "öffne Orca",
+   "say": "öffne Orca",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "orca"
+   ],
+   "expect": "app:com.stablyai.orca"
+  },
+  {
+   "id": "I010",
+   "cat": "I",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "starte den Brave Browser",
+   "say": "starte den Breyv Brauser",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "brave"
+   ],
+   "expect": "app:com.brave.Browser"
+  },
+  {
+   "id": "I011",
+   "cat": "I",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "mach Spotify auf",
+   "say": "mach Spotifei auf",
+   "kw": [
+    "spotify",
+    "auf"
+   ],
+   "expect": "app:com.spotify.client"
+  },
+  {
+   "id": "I012",
+   "cat": "I",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "kannst du Keynote öffnen",
+   "say": "kannst du Kienout öffnen",
+   "kw": [
+    "keynote",
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle"
+   ],
+   "expect": "app:com.apple.Keynote"
+  },
+  {
+   "id": "I013",
+   "cat": "I",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "öffne bitte Numbers",
+   "say": "öffne bitte Nambers",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "numbers"
+   ],
+   "expect": "app:com.apple.Numbers"
+  },
+  {
+   "id": "I014",
+   "cat": "I",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "open Notion bitte",
+   "say": "open Notion bitte",
+   "kw": [
+    "open|launch|start|switch|go",
+    "notion",
+    "bitte"
+   ],
+   "expect": "app:notion.id"
+  },
+  {
+   "id": "I015",
+   "cat": "I",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "suche die Keynote Präsentation vom Montag",
+   "say": "suche die Kienout Präsentation vom Montag",
+   "kw": [
+    "such|suche",
+    "keynote",
+    "präsentation",
+    "montag"
+   ],
+   "expect": "files"
+  },
+  {
+   "id": "I016",
+   "cat": "I",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "find the PDF Rechnung from Telekom",
+   "say": "find the PDF Rechnung from Telekom",
+   "kw": [
+    "find",
+    "pdf",
+    "rechnung",
+    "telekom"
+   ],
+   "expect": "files"
+  },
+  {
+   "id": "I017",
+   "cat": "I",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "google Wetter Hamburg",
+   "say": "google Wetter Hamburg",
+   "kw": [
+    "google",
+    "wetter",
+    "hamburg"
+   ],
+   "expect": "url:www.google.com"
+  },
+  {
+   "id": "I018",
+   "cat": "I",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "open die Einstellungen",
+   "say": "open die Einstellungen",
+   "kw": [
+    "open|launch|start|switch|go",
+    "einstellungen"
+   ],
+   "expect": "app:com.apple.systempreferences"
+  },
+  {
+   "id": "I019",
+   "cat": "I",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "was ist 20 % von 80 Euro",
+   "say": "was ist zwanzig Prozent von achtzig Euro",
+   "kw": [
+    "20",
+    "%",
+    "80"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "I020",
+   "cat": "I",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "öffne WhatsApp",
+   "say": "öffne Wotts Äpp",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "whatsapp"
+   ],
+   "expect": "none"
+  },
+  {
+   "id": "I021",
+   "cat": "I",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "öffne Telegram",
+   "say": "öffne Telegram",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "telegram"
+   ],
+   "expect": "app:ru.keepcoder.Telegram"
+  },
+  {
+   "id": "I022",
+   "cat": "I",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "öffne Ghostty",
+   "say": "öffne Gousti",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "ghostty"
+   ],
+   "expect": "app:com.mitchellh.ghostty"
+  },
+  {
+   "id": "I023",
+   "cat": "I",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "öffne das Terminal",
+   "say": "öffne das Terminal",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "terminal"
+   ],
+   "expect": "app:com.apple.Terminal"
+  },
+  {
+   "id": "I024",
+   "cat": "I",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "open Finder bitte",
+   "say": "open Finder bitte",
+   "kw": [
+    "open|launch|start|switch|go",
+    "finder",
+    "bitte"
+   ],
+   "expect": "app:com.apple.finder"
+  },
+  {
+   "id": "I025",
+   "cat": "I",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 195,
+   "gold": "wechsel zu Brave",
+   "say": "wechsel zu Breyv",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "brave"
+   ],
+   "expect": "app:com.brave.Browser"
+  },
+  {
+   "id": "I026",
+   "cat": "I",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 210,
+   "gold": "öffne ChatGPT",
+   "say": "öffne Tschätt G P T",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "chatgpt"
+   ],
+   "expect": "app:com.openai.codex"
+  },
+  {
+   "id": "I027",
+   "cat": "I",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 165,
+   "gold": "öffne Notion Calendar",
+   "say": "öffne Nouschen Kälender",
+   "kw": [
+    "öffne|öffnen|starte|starten|start|open|auf|wechsel|wechsle",
+    "notion calendar"
+   ],
+   "expect": "app:com.cron.electron"
+  },
+  {
+   "id": "I028",
+   "cat": "I",
+   "lang": "mixed",
+   "voice": "Anna (German (Germany))",
+   "rate": 180,
+   "gold": "Spotify Pause",
+   "say": "Spotifei Pause",
+   "kw": [
+    "spotify",
+    "pause"
+   ],
+   "expect": "none"
+  }
+ ]
+}

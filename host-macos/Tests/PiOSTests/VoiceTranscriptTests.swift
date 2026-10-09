@@ -127,8 +127,9 @@ final class VoiceTranscriptTests: XCTestCase {
         let long = String(repeating: "x", count: VoiceContext.maximumStringLength + 1)
         XCTAssertEqual(VoiceContext.contextualStrings(["  Safari ", "", "safari", "Inbox —\nMail", long, "\n"]),
                        ["Safari", "Inbox — Mail"])
-        let many = (0..<40).map { "Tab \($0)" }
-        XCTAssertEqual(VoiceContext.contextualStrings(many), Array(many.prefix(VoiceContext.maximumStrings)))
+        let many = (0..<140).map { "App \($0)" }
+        XCTAssertEqual(VoiceContext.maximumStrings, 100, "Apple's documented cap (DESIGN4 §4.1)")
+        XCTAssertEqual(VoiceContext.contextualStrings(many), Array(many.prefix(100)))
     }
 
     func testLevelNormalization() {

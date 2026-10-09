@@ -201,10 +201,12 @@ public struct CaptureRestartPolicy: Equatable, Sendable {
 }
 
 public enum VoiceContext {
-    public static let maximumStrings = 24
+    /// Apple's documented cap for `AnalysisContext.contextualStrings` (DESIGN4 §4.1, §6.4): the pinned app
+    /// and title first, then dictionary terms, frecent and installed app names (`recognizer-terms`).
+    public static let maximumStrings = 100
     public static let maximumStringLength = 80
-    /// Contextual strings for the on-device recognizer (pinned app name, window title, tab title):
-    /// trimmed, single-line, de-duplicated case-insensitively, capped. Never logged or sent to Node.
+    /// Contextual strings for the on-device recognizer (pinned app name, window title, tab title,
+    /// dictionary terms): trimmed, single-line, de-duplicated case-insensitively, capped. Never logged.
     public static func contextualStrings(_ raw: [String]) -> [String] {
         var seen = Set<String>(), result: [String] = []
         for value in raw {
@@ -224,4 +226,368 @@ public enum VoiceLevel {
         guard rms.isFinite, rms > 0 else { return 0 }
         return min(1, max(0, (20 * log10(rms) + 50) / 50))
     }
+}
+
+// MARK: - Multi-engine voice takes (DESIGN4 §4, §6.7, §8)
+
+/// Recognizer ids: the `VoiceHypothesis.source` values and the dictionary's recognizer scope
+/// (RECOGNIZERS / RECOGNIZER_ID_PATTERN in contracts/instant.ts). An open set: `^[a-z][a-z0-9.-]*(/[A-Za-z0-9-]+)?$`, ≤ 32.
+public enum RecognizerID {
+    /// Scope of typed and manual dictionary entries.
+    public static let any = "any"
+    public static let parakeetV3 = "parakeet-v3"
+    public static let whisperTurbo = "whisper-turbo"
+    public static let maximumLength = 32
+    /// Apple DictationTranscriber for one language, e.g. `apple-dt/en-US`.
+    public static func appleDictation(_ language: VoiceLanguage) -> String { "apple-dt/\(language.identifier)" }
+    /// Apple SpeechTranscriber fallback for a language without DictationTranscriber assets.
+    public static func appleSpeech(_ language: VoiceLanguage) -> String { "apple-st/\(language.identifier)" }
+
+    public static func isValid(_ value: String) -> Bool {
+        let scalars = Array(value.unicodeScalars)
+        guard (1...maximumLength).contains(value.utf16.count), let first = scalars.first, ("a"..."z").contains(first) else { return false }
+        let slash = scalars.firstIndex(of: "/")
+        let head = scalars[..<(slash ?? scalars.endIndex)]
+        guard head.allSatisfy({ ("a"..."z").contains($0) || ("0"..."9").contains($0) || $0 == "." || $0 == "-" }) else { return false }
+        guard let slash else { return true }
+        let tail = scalars[(slash + 1)...]
+        return !tail.isEmpty && tail.allSatisfy { ("a"..."z").contains($0) || ("A"..."Z").contains($0) || ("0"..."9").contains($0) || $0 == "-" }
+    }
+
+    /// The engine part of an id (`apple-dt` of `apple-dt/en-US`; recognizerEngine in contracts/instant.ts). This, never the
+    /// whole id, is the `/invoke` `input.engine` value: Node's pattern `^[\w.-]{1,64}$` has no `/` (the language goes in `locale`).
+    public static func engine(of value: String) -> String { String(value.split(separator: "/", maxSplits: 1).first ?? "") }
+}
+
+/// D-T7 (2026-10-07): English (US) and German (Germany) are always both on. There is no single-locale
+/// picker: Phase A runs one DictationTranscriber per language in one analyzer and the instant lane's
+/// arbiter picks; the stored single `voiceLanguage` preference no longer narrows the set.
+public enum VoiceLanguages {
+    public static let enabled: [VoiceLanguage] = [.englishUS, .germanDE]
+    public static var identifiers: [String] { enabled.map(\.identifier) }
+    /// The Phase A first-tier recognizers (role `peer`), in `enabled` order.
+    public static var dictationRecognizers: [String] { enabled.map(RecognizerID.appleDictation) }
+}
+
+/// Text rules shared by hypotheses, `voice.heard` and dictionary phrases (isVoiceText in contracts/instant.ts):
+/// at most `max` UTF-16 units, not blank, no control characters. Swift strings are always well-formed.
+public enum VoiceText {
+    /// JavaScript's whitespace set (String.prototype.trim), so "blank" means the same on both sides.
+    static func isJSWhitespace(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
+        case 0x09...0x0d, 0x20, 0xa0, 0x1680, 0x2000...0x200a, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000, 0xfeff: true
+        default: false
+        }
+    }
+
+    public static func isValid(_ value: String, max: Int = InstantLimits.maxHypothesisChars) -> Bool {
+        value.utf16.count <= max && value.unicodeScalars.contains { !isJSWhitespace($0) } && !AttachmentValidation.hasControl(value)
+    }
+
+    /// One line: control characters and whitespace runs become single spaces, ends trimmed.
+    public static func singleLine(_ value: String) -> String {
+        var out = "", pendingSpace = false
+        for scalar in value.unicodeScalars {
+            if isJSWhitespace(scalar) || scalar.value < 0x20 || (0x7f...0x9f).contains(scalar.value) {
+                pendingSpace = !out.isEmpty
+                continue
+            }
+            if pendingSpace { out.unicodeScalars.append(" "); pendingSpace = false }
+            out.unicodeScalars.append(scalar)
+        }
+        return out
+    }
+
+    /// The longest prefix of whole characters within `max` UTF-16 units.
+    public static func clipped(_ value: String, max: Int) -> String {
+        guard value.utf16.count > max else { return value }
+        var out = "", units = 0
+        for character in value {
+            let size = character.utf16.count
+            guard units + size <= max else { break }
+            out.append(character); units += size
+        }
+        return out
+    }
+
+    /// `^[A-Za-z]{2,3}([-_][A-Za-z0-9]{1,8}){0,3}$` (LOCALE_PATTERN).
+    public static func isLocale(_ value: String) -> Bool {
+        let parts = value.split(omittingEmptySubsequences: false, whereSeparator: { $0 == "-" || $0 == "_" })
+        guard let first = parts.first, (2...3).contains(first.count), first.unicodeScalars.allSatisfy(isASCIILetter),
+              parts.count <= 4 else { return false }
+        return parts.dropFirst().allSatisfy { (1...8).contains($0.count) && $0.unicodeScalars.allSatisfy { isASCIILetter($0) || ("0"..."9").contains($0) } }
+    }
+
+    static func isASCIILetter(_ scalar: Unicode.Scalar) -> Bool { ("a"..."z").contains(scalar) || ("A"..."Z").contains(scalar) }
+}
+
+/// One recognizer hypothesis of a take: engine output and the `/instant` wire entry (VoiceHypothesis in
+/// contracts/instant.ts). Each n-best alternative is its own hypothesis with role `secondary`.
+/// User content: never logged (roles, sources and counts only).
+public struct VoiceHypothesis: Codable, Equatable, Sendable {
+    public enum Role: String, Codable, CaseIterable, Sendable {
+        /// The primary engine's final (Phase B: Parakeet).
+        case primary
+        /// A first-tier final of equal standing (Phase A: each DictationTranscriber language).
+        case peer
+        /// Gated: another engine next to a primary, and every n-best alternative.
+        case secondary
+    }
+
+    public var text: String
+    /// Recognizer id (`RecognizerID`).
+    public var source: String
+    public var role: Role
+    /// 0...1 mean word confidence (Apple) or utterance confidence (Parakeet).
+    public var confidence: Double?
+    /// 0...1 lowest word confidence (the check gate's "< 0.2" signal).
+    public var minConfidence: Double?
+    /// BCP 47 language of this hypothesis (the module's locale, or NLLanguageRecognizer's pick).
+    public var locale: String?
+
+    public init(text: String, source: String, role: Role, confidence: Double? = nil, minConfidence: Double? = nil, locale: String? = nil) {
+        self.text = text; self.source = source; self.role = role
+        self.confidence = confidence; self.minConfidence = minConfidence; self.locale = locale
+    }
+
+    /// The engine part of `source` (`parakeet-v3`, `apple-dt`): the `/invoke` `input.engine` of a take decided by this hypothesis.
+    public var engine: String { RecognizerID.engine(of: source) }
+    /// First tier of the arbiter (DESIGN4 §4.5): the primary or a Phase A peer.
+    public var isFirstTier: Bool { role != .secondary }
+
+    private enum Keys: String, CodingKey { case text, source, role, confidence, minConfidence, locale }
+
+    /// Strict, like parseVoiceHypothesis: a bad member rejects the hypothesis.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        text = try c.decode(String.self, forKey: .text)
+        source = try c.decode(String.self, forKey: .source)
+        role = try c.decode(Role.self, forKey: .role)
+        confidence = try c.decodeIfPresent(Double.self, forKey: .confidence)
+        minConfidence = try c.decodeIfPresent(Double.self, forKey: .minConfidence)
+        locale = try c.decodeIfPresent(String.self, forKey: .locale)
+        guard VoiceText.isValid(text) else { throw DecodingError.dataCorruptedError(forKey: .text, in: c, debugDescription: "invalid text") }
+        guard RecognizerID.isValid(source) else { throw DecodingError.dataCorruptedError(forKey: .source, in: c, debugDescription: "invalid source") }
+        for (key, value) in [(Keys.confidence, confidence), (.minConfidence, minConfidence)] {
+            if let value, !(value.isFinite && (0...1).contains(value)) {
+                throw DecodingError.dataCorruptedError(forKey: key, in: c, debugDescription: "must be 0...1")
+            }
+        }
+        if let locale, !VoiceText.isLocale(locale) {
+            throw DecodingError.dataCorruptedError(forKey: .locale, in: c, debugDescription: "invalid locale")
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: Keys.self)
+        try c.encode(text, forKey: .text)
+        try c.encode(source, forKey: .source)
+        try c.encode(role, forKey: .role)
+        try c.encodeIfPresent(confidence, forKey: .confidence)
+        try c.encodeIfPresent(minConfidence, forKey: .minConfidence)
+        try c.encodeIfPresent(locale, forKey: .locale)
+    }
+}
+
+/// Content-free timing of one take, for the voice timing log (DESIGN4 §7 item 7). Milliseconds.
+public struct VoiceTiming: Codable, Equatable, Sendable {
+    /// Key-down → key-up.
+    public var holdMs: Int?
+    /// Key-down → first visible partial.
+    public var firstPartialMs: Int?
+    /// Key-up → each engine's final, by recognizer id.
+    public var finalMs: [String: Int]
+    public init(holdMs: Int? = nil, firstPartialMs: Int? = nil, finalMs: [String: Int] = [:]) {
+        self.holdMs = holdMs; self.firstPartialMs = firstPartialMs; self.finalMs = finalMs
+    }
+}
+
+/// The take's captured audio: 16 kHz mono Int16 (Phase B's input and the opt-in journal's WAV).
+/// Never leaves the host: not sent to Node, not uploaded, not logged.
+public struct VoiceAudio: Equatable, Sendable {
+    public static let sampleRate = 16_000
+    public var samples: [Int16]
+    public init(samples: [Int16]) { self.samples = samples }
+    public var durationMs: Int { samples.count * 1_000 / Self.sampleRate }
+    public var byteCount: Int { samples.count * MemoryLayout<Int16>.size }
+}
+
+/// What `VoiceInput.finish()` returns: every engine's final and n-best (ordered best first by the
+/// arbiter), timing, and the captured audio.
+public struct VoiceFinal: Equatable, Sendable {
+    public var hypotheses: [VoiceHypothesis]
+    public var timing: VoiceTiming
+    public var audio: VoiceAudio?
+    public init(hypotheses: [VoiceHypothesis], timing: VoiceTiming = VoiceTiming(), audio: VoiceAudio? = nil) {
+        self.hypotheses = hypotheses; self.timing = timing; self.audio = audio
+    }
+
+    /// The `/instant` `hypotheses`: single-line, clipped to 200 UTF-16 units, blank or invalid ones dropped,
+    /// duplicates (same source and text) collapsed, confidences clamped to 0...1, at most 6, order kept.
+    public var wireHypotheses: [VoiceHypothesis] {
+        var seen = Set<String>(), result: [VoiceHypothesis] = []
+        for hypothesis in hypotheses {
+            let text = VoiceText.clipped(VoiceText.singleLine(hypothesis.text), max: InstantLimits.maxHypothesisChars)
+            guard VoiceText.isValid(text), RecognizerID.isValid(hypothesis.source),
+                  seen.insert(hypothesis.source + "\u{0}" + text).inserted else { continue }
+            func unit(_ value: Double?) -> Double? { value.flatMap { $0.isFinite ? min(1, max(0, $0)) : nil } }
+            result.append(VoiceHypothesis(text: text, source: hypothesis.source, role: hypothesis.role,
+                                          confidence: unit(hypothesis.confidence), minConfidence: unit(hypothesis.minConfidence),
+                                          locale: hypothesis.locale.flatMap { VoiceText.isLocale($0) ? $0 : nil }))
+            if result.count == InstantLimits.maxHypotheses { break }
+        }
+        return result
+    }
+
+    /// Nothing usable was heard: the bar shows "Didn't catch that", never a silent return (DESIGN4 §4.1).
+    public var isEmpty: Bool { wireHypotheses.isEmpty }
+    /// The host's pick for `/instant` `text` and the composer: the best usable hypothesis.
+    public var text: String? { wireHypotheses.first?.text }
+}
+
+// MARK: - Voice journal (host-owned; DESIGN4 §6.7, Tom's answer #2)
+
+public enum VoiceJournalLimits {
+    /// A ring of the newest takes.
+    public static let maximumTakes = 50
+    /// Audio kept per take (16 kHz mono WAV, ≤ 0.5 MB).
+    public static let maximumSeconds = 15
+    public static let maximumAudioBytes = maximumSeconds * VoiceAudio.sampleRate * MemoryLayout<Int16>.size + 44
+    /// `<support>/voice-takes/`, excluded from backups.
+    public static let directoryName = "voice-takes"
+    public static let directoryPermissions = 0o700
+    public static let filePermissions = 0o600
+    /// Off unless the user opts in (on for Tom's install, who consented on 2026-10-07).
+    public static let enabledByDefault = false
+}
+
+public enum VoiceTakeOutcome: String, Codable, CaseIterable, Sendable {
+    case acted, confirmed, undone, agent, cancelled, empty
+    /// Kept by the user: these takes feed the regression check before a rule is saved.
+    public var isAccepted: Bool { self == .acted || self == .confirmed }
+}
+
+/// One journal record (JSON beside the WAV). User content: never logged, never sent anywhere except
+/// as the opt-in regression texts of `/dictionary/learn`.
+public struct VoiceTakeRecord: Codable, Equatable, Sendable {
+    public var takeId: String
+    public var at: Date
+    public var durationMs: Int
+    public var hypotheses: [VoiceHypothesis]
+    /// The final `/instant` decision kind ("act", "list", "fallthrough", …).
+    public var decision: String?
+    /// Bundle ids the take offered (did-you-mean or ambiguity rows).
+    public var offered: [String]
+    /// What the user chose: a bundle id, or nil.
+    public var chosen: String?
+    /// The corrected transcript (check state, Settings → Recent takes → Fix).
+    public var corrected: String?
+    public var outcome: VoiceTakeOutcome
+    public var hasAudio: Bool
+    public init(takeId: String, at: Date, durationMs: Int, hypotheses: [VoiceHypothesis], decision: String? = nil,
+                offered: [String] = [], chosen: String? = nil, corrected: String? = nil, outcome: VoiceTakeOutcome, hasAudio: Bool) {
+        self.takeId = takeId; self.at = at; self.durationMs = durationMs; self.hypotheses = hypotheses; self.decision = decision
+        self.offered = offered; self.chosen = chosen; self.corrected = corrected; self.outcome = outcome; self.hasAudio = hasAudio
+    }
+}
+
+/// The opt-in local voice journal (S4 implements it in PiOSMac). Files are 0600 in a 0700 directory
+/// excluded from backups; audio and text never reach Node, the network or a log. While the journal is
+/// off, `append`, `update` and `regressionTakes` are no-ops (empty); `takes`, `audioURL`, `delete` and
+/// `deleteAll` keep working, so takes kept from before can still be reviewed and removed.
+public protocol VoiceJournaling: AnyObject, Sendable {
+    func isEnabled() async -> Bool
+    /// Switching off keeps existing takes until the user deletes them.
+    func setEnabled(_ enabled: Bool) async throws
+    /// Adds a take, dropping the oldest beyond `VoiceJournalLimits.maximumTakes`; audio is cut at 15 s. No-op while off.
+    func append(_ record: VoiceTakeRecord, audio: VoiceAudio?) async throws
+    /// Records what happened after the decision (picked, confirmed, undone, corrected). No-op while off.
+    func update(takeId: String, outcome: VoiceTakeOutcome, chosen: String?, corrected: String?) async throws
+    /// Newest first (also while off).
+    func takes() async -> [VoiceTakeRecord]
+    /// The take's WAV for Settings playback, if kept (also while off).
+    func audioURL(takeId: String) async -> URL?
+    /// Works while off.
+    func delete(takeId: String) async throws
+    /// "Delete all takes": works while off.
+    func deleteAll() async throws
+    /// Heard texts of accepted takes for `/dictionary/learn` `regression`, newest first (≤ 50, texts ≤ 10 KB of UTF-8).
+    /// Empty while off: nothing from the journal crosses the loopback unless it is on.
+    func regressionTakes() async -> [RegressionTake]
+}
+
+// MARK: - Speech model store (Phase B: Parakeet; DESIGN4 §4.2, D-T1, D-T2)
+
+/// What Settings → Voice → Recognition shows for a downloadable model. Apple recognition keeps
+/// working in every state but `.ready`.
+public enum SpeechModelState: Equatable, Sendable {
+    case notDownloaded
+    /// 0...1.
+    case downloading(progress: Double)
+    /// The first load and Neural Engine compile ("Preparing for the Neural Engine… (first time, about 30 s)").
+    case compiling
+    case ready
+    /// A content-free, user-facing reason.
+    case failed(message: String)
+    /// The download or first compile waits for the local AI benchmark's lock (non-blocking flock, D-T2).
+    case deferredByLock
+
+    public var isReady: Bool { self == .ready }
+    public var isBusy: Bool {
+        switch self {
+        case .downloading, .compiling: true
+        default: false
+        }
+    }
+}
+
+/// A downloadable recognition model, shown on the consent sheet before anything is downloaded.
+public struct SpeechModelDescriptor: Equatable, Sendable {
+    public var id: String
+    /// The hypotheses' `source` once it runs.
+    public var recognizer: String
+    public var displayName: String
+    /// The download size (for a pinned model: the exact sum of its pinned files).
+    public var approximateBytes: Int64
+    /// Hugging Face repository the files come from.
+    public var repository: String
+    /// The pinned repository revision (a full commit id); nothing unpinned is ever downloaded.
+    public var revision: String?
+    public var license: String
+    /// Directory under `<support>/models/`.
+    public var directoryName: String
+
+    public init(id: String, recognizer: String, displayName: String, approximateBytes: Int64, repository: String,
+                revision: String?, license: String, directoryName: String) {
+        self.id = id; self.recognizer = recognizer; self.displayName = displayName; self.approximateBytes = approximateBytes
+        self.repository = repository; self.revision = revision; self.license = license; self.directoryName = directoryName
+    }
+
+    /// NVIDIA Parakeet TDT 0.6B v3 (Core ML conversion by FluidInference), multilingual incl. en and de. The one source of
+    /// truth for the shipped model: the revision S5 pinned (verified 2026-10-07 against the Hugging Face tree API) and the
+    /// exact size of its 21 pinned files (`ParakeetModel.files`, which a test keeps equal to this).
+    public static let parakeetV3 = SpeechModelDescriptor(
+        id: "parakeet-tdt-0.6b-v3", recognizer: RecognizerID.parakeetV3, displayName: "NVIDIA Parakeet TDT 0.6B v3",
+        approximateBytes: 483_105_645, repository: "FluidInference/parakeet-tdt-0.6b-v3-coreml",
+        revision: "7dd20fe6b1797d35f5e3307e8b1732d9a178edfe", license: "CC-BY-4.0", directoryName: "parakeet-tdt-v3")
+}
+
+/// Download, status and lifecycle of one recognition model (S5 implements it). Never touches the
+/// hotkey path: `prepare()` runs at launch or when voice is enabled, and a take that starts before the
+/// model is ready uses Apple only. Per-take inference takes no lock; `download()` and the first
+/// compile take a non-blocking flock on the local-inference lock and report `.deferredByLock` when
+/// it is held.
+public protocol SpeechModelStoring: AnyObject, Sendable {
+    var descriptor: SpeechModelDescriptor { get }
+    func state() async -> SpeechModelState
+    /// Current state first, then every change.
+    func stateUpdates() -> AsyncStream<SpeechModelState>
+    /// After the user's consent: download, verify, then compile. Returns when settled (`.ready`, `.failed`, `.deferredByLock`).
+    func download() async
+    /// Stops a download in progress (partial files are removed).
+    func cancel() async
+    /// Removes the model files ("Delete"); the state becomes `.notDownloaded`.
+    func delete() async throws
+    /// Loads an installed model (compiling it first if needed).
+    func prepare() async
 }

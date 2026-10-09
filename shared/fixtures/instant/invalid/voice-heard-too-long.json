@@ -1,0 +1,16 @@
+{
+  "seq": 3,
+  "elapsedMs": 1,
+  "source": "grammar",
+  "decision": "act",
+  "intent": "open_app",
+  "title": "Open Raycast",
+  "action": {
+    "type": "openApp",
+    "bundleId": "com.raycast.macos"
+  },
+  "confirm": false,
+  "voice": {
+    "heard": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  }
+}

@@ -1,0 +1,731 @@
+{
+  "_doc": "Hand-edited entries Node's /dictionary/learn would refuse. Both sides drop exactly `_expect` (in order) and keep `_kept`.",
+  "version": 1,
+  "revision": 7,
+  "settings": {
+    "learn": "always"
+  },
+  "terms": [
+    {
+      "id": "t_trash0001",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "text": "Empty Trash",
+      "soundsLike": [],
+      "lang": "en",
+      "kind": "word"
+    },
+    {
+      "id": "t_ghostty02",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "text": "Ghostty",
+      "soundsLike": [
+        "Gousti"
+      ],
+      "lang": "any",
+      "kind": "app"
+    },
+    {
+      "id": "t_ghostty03",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "text": "Ghostty",
+      "soundsLike": [],
+      "lang": "any",
+      "kind": "app",
+      "bundleId": "com..ghostty"
+    },
+    {
+      "id": "t_ghostty01",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "text": "Ghostty",
+      "soundsLike": [
+        "gousti"
+      ],
+      "lang": "any",
+      "kind": "app",
+      "bundleId": "com.mitchellh.ghostty"
+    },
+    {
+      "id": "t_lang00001",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "text": "Kubernetes",
+      "soundsLike": [],
+      "lang": "fr",
+      "kind": "word"
+    }
+  ],
+  "appNames": [
+    {
+      "id": "n_bin000001",
+      "recognizer": "apple-dt/de-DE",
+      "source": "did-you-mean",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "heard": "papierkorb leeren",
+      "bundleId": "com.apple.finder",
+      "display": "Finder"
+    },
+    {
+      "id": "n_trash0001",
+      "recognizer": "any",
+      "source": "did-you-mean",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "heard": "trash",
+      "bundleId": "com.apple.finder",
+      "display": "Finder"
+    },
+    {
+      "id": "n_notion001",
+      "recognizer": "any",
+      "source": "did-you-mean",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "heard": "notion",
+      "bundleId": "Notion",
+      "display": "Notion"
+    },
+    {
+      "id": "n_motion001",
+      "recognizer": "parakeet-v3",
+      "source": "no-i-meant",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "heard": "motion",
+      "bundleId": "notion.id",
+      "display": "Notion"
+    }
+  ],
+  "aliases": [
+    {
+      "id": "a_trash0001",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "phrase": "pages to the trash",
+      "target": {
+        "kind": "openApp",
+        "bundleId": "com.apple.Pages"
+      }
+    },
+    {
+      "id": "a_sleep0001",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "phrase": "gute nacht",
+      "target": {
+        "kind": "system",
+        "op": "display.sleep"
+      }
+    },
+    {
+      "id": "a_file00001",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "phrase": "meine datei",
+      "target": {
+        "kind": "openURL",
+        "url": "file:///etc/hosts"
+      }
+    },
+    {
+      "id": "a_user00001",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "phrase": "mein konto",
+      "target": {
+        "kind": "openURL",
+        "url": "https://dummy:dummy@example.com/"
+      }
+    },
+    {
+      "id": "a_delete001",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "phrase": "aufraumen",
+      "target": {
+        "kind": "deleteFile",
+        "token": "tok_12345678"
+      }
+    },
+    {
+      "id": "a_agent0001",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "phrase": "frag pi",
+      "target": {
+        "kind": "askAgent",
+        "prompt": "empty the trash"
+      }
+    },
+    {
+      "id": "a_ok0000001",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "phrase": "okay",
+      "target": {
+        "kind": "openApp",
+        "bundleId": "com.apple.Music"
+      }
+    },
+    {
+      "id": "a_upper0001",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "phrase": "Open Pages",
+      "target": {
+        "kind": "openApp",
+        "bundleId": "com.apple.Pages"
+      }
+    },
+    {
+      "id": "a_long00001",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "phrase": "one two three four five six seven",
+      "target": {
+        "kind": "openApp",
+        "bundleId": "com.apple.Pages"
+      }
+    },
+    {
+      "id": "a_volume001",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "phrase": "ganz laut",
+      "target": {
+        "kind": "system",
+        "op": "volume.set",
+        "value": 1.5
+      }
+    },
+    {
+      "id": "a_ok_kept01",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "phrase": "mach musik an",
+      "target": {
+        "kind": "openApp",
+        "bundleId": "com.apple.Music"
+      }
+    },
+    {
+      "id": "a_ok_kept01",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "phrase": "andere musik",
+      "target": {
+        "kind": "openApp",
+        "bundleId": "com.apple.Music"
+      }
+    },
+    {
+      "id": "a_dup_rule1",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "phrase": "mach musik an",
+      "target": {
+        "kind": "openApp",
+        "bundleId": "com.spotify.client"
+      }
+    },
+    {
+      "id": "bad id!",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "phrase": "spiel musik",
+      "target": {
+        "kind": "openApp",
+        "bundleId": "com.apple.Music"
+      }
+    },
+    "pages",
+    {
+      "id": "a_recog0001",
+      "recognizer": "../etc",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "phrase": "spiel radio",
+      "target": {
+        "kind": "openApp",
+        "bundleId": "com.apple.Music"
+      }
+    },
+    {
+      "id": "a_count0001",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 0,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "phrase": "spiel podcasts",
+      "target": {
+        "kind": "openApp",
+        "bundleId": "com.apple.podcasts"
+      }
+    },
+    {
+      "id": "a_time00001",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "yesterday",
+      "phrase": "spiel horbuch",
+      "target": {
+        "kind": "openApp",
+        "bundleId": "com.apple.iBooksX"
+      }
+    },
+    {
+      "id": "a_source001",
+      "recognizer": "any",
+      "source": "agent",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "phrase": "spiel jazz",
+      "target": {
+        "kind": "openApp",
+        "bundleId": "com.apple.Music"
+      }
+    },
+    {
+      "id": "a_js0000001",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "phrase": "mach das skript",
+      "target": {
+        "kind": "openURL",
+        "url": "javascript:alert(1)"
+      }
+    },
+    {
+      "id": "a_data00001",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "phrase": "zeig die seite",
+      "target": {
+        "kind": "openURL",
+        "url": "data:text/html,<script>alert(1)</script>"
+      }
+    },
+    {
+      "id": "a_smb000001",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "phrase": "netzlaufwerk",
+      "target": {
+        "kind": "openURL",
+        "url": "smb://server/share"
+      }
+    },
+    {
+      "id": "a_scheme001",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "phrase": "sicherheit",
+      "target": {
+        "kind": "openURL",
+        "url": "x-apple.systempreferences:com.apple.preference.security"
+      }
+    },
+    {
+      "id": "a_shell0001",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "phrase": "terminal befehl",
+      "target": {
+        "kind": "shell",
+        "command": "rm -rf ~"
+      }
+    },
+    {
+      "id": "a_sysshell1",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "phrase": "aufraeumen",
+      "target": {
+        "kind": "system",
+        "op": "shell",
+        "value": "rm -rf ~"
+      }
+    },
+    {
+      "id": "a_power0001",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "phrase": "feierabend",
+      "target": {
+        "kind": "system",
+        "op": "power.shutdown"
+      }
+    },
+    {
+      "id": "a_dark00001",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "phrase": "dunkel bitte",
+      "target": {
+        "kind": "system",
+        "op": "appearance.set",
+        "value": "dark"
+      }
+    },
+    {
+      "id": "a_empty0001",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "phrase": "leer machen",
+      "target": {
+        "kind": "emptyTrash"
+      }
+    },
+    {
+      "id": "a_move00001",
+      "recognizer": "any",
+      "source": "manual",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "phrase": "weg damit",
+      "target": {
+        "kind": "moveToTrash",
+        "token": "tok_12345678"
+      }
+    }
+  ],
+  "fixes": [
+    {
+      "id": "f_rm0000001",
+      "recognizer": "apple-dt/en-US",
+      "source": "transcript-edit",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "heard": "clod",
+      "intended": "rm -rf ~"
+    },
+    {
+      "id": "f_losch0001",
+      "recognizer": "any",
+      "source": "transcript-edit",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "heard": "losch alles",
+      "intended": "Notizen"
+    },
+    {
+      "id": "f_clod00001",
+      "recognizer": "apple-dt/en-US",
+      "source": "transcript-edit",
+      "count": 1,
+      "rejections": 0,
+      "uses": 0,
+      "createdAt": "2026-10-05T09:00:00Z",
+      "heard": "clod",
+      "intended": "Claude"
+    }
+  ],
+  "_expect": [
+    {
+      "path": "settings",
+      "code": "invalid_settings"
+    },
+    {
+      "path": "terms[0]",
+      "code": "refused_phrase"
+    },
+    {
+      "path": "terms[1]",
+      "code": "invalid_phrase"
+    },
+    {
+      "path": "terms[2]",
+      "code": "unsafe_target"
+    },
+    {
+      "path": "terms[4]",
+      "code": "invalid_entry"
+    },
+    {
+      "path": "appNames[0]",
+      "code": "refused_phrase"
+    },
+    {
+      "path": "appNames[1]",
+      "code": "refused_phrase"
+    },
+    {
+      "path": "appNames[2]",
+      "code": "unsafe_target"
+    },
+    {
+      "path": "aliases[0]",
+      "code": "refused_phrase"
+    },
+    {
+      "path": "aliases[1]",
+      "code": "unsafe_target"
+    },
+    {
+      "path": "aliases[2]",
+      "code": "unsafe_target"
+    },
+    {
+      "path": "aliases[3]",
+      "code": "unsafe_target"
+    },
+    {
+      "path": "aliases[4]",
+      "code": "unsafe_target"
+    },
+    {
+      "path": "aliases[5]",
+      "code": "unsafe_target"
+    },
+    {
+      "path": "aliases[6]",
+      "code": "refused_phrase"
+    },
+    {
+      "path": "aliases[7]",
+      "code": "invalid_phrase"
+    },
+    {
+      "path": "aliases[8]",
+      "code": "invalid_phrase"
+    },
+    {
+      "path": "aliases[9]",
+      "code": "unsafe_target"
+    },
+    {
+      "path": "aliases[11]",
+      "code": "duplicate_id"
+    },
+    {
+      "path": "aliases[12]",
+      "code": "duplicate_rule"
+    },
+    {
+      "path": "aliases[13]",
+      "code": "invalid_id"
+    },
+    {
+      "path": "aliases[14]",
+      "code": "invalid_entry"
+    },
+    {
+      "path": "aliases[15]",
+      "code": "invalid_recognizer"
+    },
+    {
+      "path": "aliases[16]",
+      "code": "invalid_counter"
+    },
+    {
+      "path": "aliases[17]",
+      "code": "invalid_timestamp"
+    },
+    {
+      "path": "aliases[18]",
+      "code": "invalid_entry"
+    },
+    {
+      "path": "aliases[19]",
+      "code": "unsafe_target"
+    },
+    {
+      "path": "aliases[20]",
+      "code": "unsafe_target"
+    },
+    {
+      "path": "aliases[21]",
+      "code": "unsafe_target"
+    },
+    {
+      "path": "aliases[22]",
+      "code": "unsafe_target"
+    },
+    {
+      "path": "aliases[23]",
+      "code": "unsafe_target"
+    },
+    {
+      "path": "aliases[24]",
+      "code": "unsafe_target"
+    },
+    {
+      "path": "aliases[25]",
+      "code": "unsafe_target"
+    },
+    {
+      "path": "aliases[26]",
+      "code": "unsafe_target"
+    },
+    {
+      "path": "aliases[27]",
+      "code": "unsafe_target"
+    },
+    {
+      "path": "aliases[28]",
+      "code": "unsafe_target"
+    },
+    {
+      "path": "fixes[0]",
+      "code": "refused_phrase"
+    },
+    {
+      "path": "fixes[1]",
+      "code": "refused_phrase"
+    }
+  ],
+  "_kept": {
+    "terms": [
+      "t_ghostty01"
+    ],
+    "appNames": [
+      "n_motion001"
+    ],
+    "aliases": [
+      "a_ok_kept01"
+    ],
+    "fixes": [
+      "f_clod00001"
+    ]
+  }
+}

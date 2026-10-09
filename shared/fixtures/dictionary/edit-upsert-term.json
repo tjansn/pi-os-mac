@@ -1,0 +1,14 @@
+{
+  "op": "upsert",
+  "entry": {
+    "list": "terms",
+    "pinned": true,
+    "text": "Ghostty",
+    "soundsLike": [
+      "gousti"
+    ],
+    "lang": "any",
+    "kind": "app",
+    "bundleId": "com.mitchellh.ghostty"
+  }
+}

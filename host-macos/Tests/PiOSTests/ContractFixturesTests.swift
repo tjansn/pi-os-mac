@@ -1,7 +1,7 @@
 import XCTest
 @testable import PiOSCore
 
-/// Cross-language conformance: every shared card/instant/context/attachment/browser-ax fixture
+/// Cross-language conformance: every shared card/instant/context/attachment/browser-ax/dictionary fixture
 /// produced by node-harness/src/contracts must decode here, and every invalid one must be rejected.
 final class ContractFixturesTests: XCTestCase {
     private let fixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
@@ -31,7 +31,7 @@ final class ContractFixturesTests: XCTestCase {
 
     func testInstantResponsesDecode() throws {
         let files = try jsonFiles("instant")
-        XCTAssertFalse(files.isEmpty)
+        XCTAssertGreaterThanOrEqual(files.count, 15)
         for file in files {
             XCTAssertNoThrow(try JSONDecoder().decode(InstantResponse.self, from: Data(contentsOf: file)), file.lastPathComponent)
         }
@@ -46,6 +46,233 @@ final class ContractFixturesTests: XCTestCase {
         let volume = try JSONDecoder().decode(InstantResponse.self, from: Data(contentsOf: fixtures.appendingPathComponent("instant/act-volume.json")))
         guard case .act(_, _, .system(.volumeSet, .number(let level)), _, nil) = volume.decision else { return XCTFail("expected volume") }
         XCTAssertEqual(level, 0.3, accuracy: 0.0001)
+    }
+
+    // MARK: Voice additions to /instant (shared/fixtures/instant: hypotheses, accept, voice meta)
+
+    /// Today's decoder keeps decoding every decision; the voice meta rides along and round-trips.
+    func testInstantVoiceResponsesDecode() throws {
+        func decode(_ name: String) throws -> InstantResponse {
+            try JSONDecoder().decode(InstantResponse.self, from: data(fixtures.appendingPathComponent("instant/\(name)")))
+        }
+        let dym = try decode("list-did-you-mean.json")
+        guard case .list("open_app", "Did you mean Raycast?", let card, false) = dym.decision else { return XCTFail("expected a list") }
+        XCTAssertEqual(card.elements.values.filter { $0.type == .item }.count, 1)
+        XCTAssertEqual(dym.voice, VoiceMeta(heard: "recast", source: "parakeet-v3", via: .sound, didYouMean: true))
+        XCTAssertTrue(dym.isDidYouMean)
+        XCTAssertFalse(dym.isCheck)
+        let two = try decode("list-did-you-mean-two.json")
+        guard case .list(_, "Did you mean…", _, _) = two.decision else { return XCTFail("expected a two-row list") }
+        XCTAssertEqual(two.voice?.via, .peer)
+
+        let check = try decode("fallthrough-low-confidence.json")
+        guard case .handOff("low_confidence", nil) = check.decision else { return XCTFail("expected low_confidence") }
+        XCTAssertTrue(check.isCheck)
+        XCTAssertEqual(check.voice, VoiceMeta(source: "apple-dt/en-US", check: true))
+
+        let secondary = try decode("act-confirm-secondary.json")
+        guard case .act("open_app", "Open Numbers", .openApp("com.apple.Numbers"), true, nil) = secondary.decision else { return XCTFail("expected a confirm") }
+        XCTAssertEqual(secondary.voice?.via, .secondary)
+        let url = try decode("act-confirm-url.json")
+        guard case .act(_, _, .openURL("https://guests.example/"), true, _) = url.decision else { return XCTFail("expected a URL confirm") }
+        XCTAssertEqual(url.voice?.via, .url)
+        let learned = try decode("act-learned.json")
+        guard case .act(_, _, .openApp("com.raycast.macos"), false, _) = learned.decision else { return XCTFail("expected an act") }
+        XCTAssertEqual(learned.voice?.learnedEntryId, "n_8f3a2c1d")
+        XCTAssertEqual(try decode("act-no-i-meant.json").voice?.correctsTakeId, "take-41")
+
+        // Older fixtures carry no voice; voice is never read from answer or refuse.
+        XCTAssertNil(try decode("act-open-app.json").voice)
+        XCTAssertNil(try decode("fallthrough-no-match.json").voice)
+        var answer = try XCTUnwrap(JSONSerialization.jsonObject(with: data(fixtures.appendingPathComponent("instant/answer-calc.json"))) as? [String: Any])
+        answer["voice"] = ["heard": "x", "didYouMean": true]
+        XCTAssertNil(try JSONDecoder().decode(InstantResponse.self, from: JSONSerialization.data(withJSONObject: answer)).voice)
+
+        // Every voice meta in a valid fixture re-encodes to exactly its wire object.
+        for file in try jsonFiles("instant") {
+            guard let object = try JSONSerialization.jsonObject(with: data(file)) as? [String: Any], let voice = object["voice"] else { continue }
+            let meta = try JSONDecoder().decode(VoiceMeta.self, from: JSONSerialization.data(withJSONObject: voice))
+            XCTAssertEqual(try JSONSerialization.jsonObject(with: JSONEncoder().encode(meta)) as? NSDictionary, voice as? NSDictionary, file.lastPathComponent)
+        }
+    }
+
+    func testInstantInvalidVoiceMetaIsDroppedNotTheResponse() throws {
+        let files = try jsonFiles("instant/invalid")
+        XCTAssertGreaterThanOrEqual(files.count, 5)
+        for file in files {
+            let response = try JSONDecoder().decode(InstantResponse.self, from: data(file))
+            guard case .act(_, _, .openApp, false, _) = response.decision else { return XCTFail(file.lastPathComponent) }
+            XCTAssertNil(response.voice, file.lastPathComponent)
+        }
+        // An unknown `via` is dropped on its own, as Node's parseVoiceMeta does.
+        let meta = try JSONDecoder().decode(VoiceMeta.self, from: Data(#"{"heard":"recast","via":"telepathy","didYouMean":true}"#.utf8))
+        XCTAssertEqual(meta, VoiceMeta(heard: "recast", didYouMean: true))
+    }
+
+    /// POST /instant bodies live in instant/requests, so every listing of instant/ stays responses only.
+    func testInstantRequestFixtures() throws {
+        let valid = try jsonFiles("instant/requests")
+        XCTAssertGreaterThanOrEqual(valid.count, 4)
+        for file in valid {
+            let request = try JSONDecoder().decode(InstantRequest.self, from: data(file))
+            // The host's encoder produces exactly the wire body Node parses.
+            let wire = try JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? NSDictionary
+            XCTAssertEqual(wire, try JSONSerialization.jsonObject(with: data(file)) as? NSDictionary, file.lastPathComponent)
+        }
+        let full = try JSONDecoder().decode(InstantRequest.self, from: data(fixtures.appendingPathComponent("instant/requests/final-hypotheses.request.json")))
+        XCTAssertEqual(full.accept, [.suggest, .check, .confirm])
+        XCTAssertEqual(full.hypotheses?.map(\.role), [.primary, .secondary, .secondary, .secondary])
+        XCTAssertEqual(full.hypotheses?.first?.engine, "parakeet-v3")
+        let legacy = try JSONDecoder().decode(InstantRequest.self, from: data(fixtures.appendingPathComponent("instant/requests/final-legacy.request.json")))
+        XCTAssertNil(legacy.hypotheses)
+        XCTAssertNil(legacy.accept)
+
+        let invalid = try jsonFiles("instant/requests/invalid")
+        XCTAssertGreaterThanOrEqual(invalid.count, 15)
+        for file in invalid {
+            XCTAssertThrowsError(try JSONDecoder().decode(InstantRequest.self, from: data(file)), file.lastPathComponent)
+        }
+        // Unknown accept words are ignored (a newer host may declare more), in canonical order.
+        let future = try JSONDecoder().decode(InstantRequest.self, from: Data(#"{"text":"x","phase":"final","seq":1,"accept":["confirm","futureKind","suggest"]}"#.utf8))
+        XCTAssertEqual(future.accept, [.suggest, .confirm])
+    }
+
+    // MARK: Personal dictionary (shared/fixtures/dictionary)
+
+    private func jsonValue(_ file: URL) throws -> JSONValue { try JSONDecoder().decode(JSONValue.self, from: data(file)) }
+
+    func testDictionaryValidDocumentRoundTrips() throws {
+        let file = fixtures.appendingPathComponent("dictionary/valid.json")
+        let parsed = try DictionaryDocument.parse(jsonValue(file)).get()
+        XCTAssertEqual(parsed.issues, [])
+        XCTAssertEqual(parsed.document.revision, 42)
+        XCTAssertEqual(parsed.document.appNames.map(\.meta.isActive), [true, true, true, false])
+        XCTAssertEqual(parsed.document.aliases.map(\.target), [.openApp(bundleId: "com.apple.Keynote"), .volumeStep(-0.1), .volumeMute(true),
+                                                               .volumeSet(0.5), .openURL("https://news.example.com/")])
+        // Encoding is the exact wire: the same JSON object as the fixture.
+        let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(parsed.document)) as? NSDictionary
+        XCTAssertEqual(encoded, try JSONSerialization.jsonObject(with: data(file)) as? NSDictionary)
+        XCTAssertEqual(try JSONDecoder().decode(DictionaryDocument.self, from: data(file)), parsed.document)
+    }
+
+    /// The same entries are dropped, for the same content-free reasons, as Node's parseDictionary.
+    func testDictionaryHostileDocumentDropsTheSameEntries() throws {
+        struct Expect: Decodable { var _expect: [DictionaryIssue]; var _kept: [String: [String]] }
+        let file = fixtures.appendingPathComponent("dictionary/hostile.json")
+        let expect = try JSONDecoder().decode(Expect.self, from: data(file))
+        let parsed = try DictionaryDocument.parse(jsonValue(file)).get()
+        XCTAssertEqual(parsed.issues, expect._expect)
+        XCTAssertEqual(parsed.document.terms.map(\.meta.id), expect._kept["terms"])
+        XCTAssertEqual(parsed.document.appNames.map(\.meta.id), expect._kept["appNames"])
+        XCTAssertEqual(parsed.document.aliases.map(\.meta.id), expect._kept["aliases"])
+        XCTAssertEqual(parsed.document.fixes.map(\.meta.id), expect._kept["fixes"])
+        XCTAssertEqual(parsed.document.settings, .defaults)
+        for alias in parsed.document.aliases { XCTAssertNoThrow(try LauncherPolicy.plan(alias.target.hostAction)) }
+        for file in try jsonFiles("dictionary/invalid") where file.lastPathComponent.hasPrefix("document-") {
+            guard case .failure = DictionaryDocument.parse(try jsonValue(file)) else { return XCTFail(file.lastPathComponent) }
+            XCTAssertThrowsError(try JSONDecoder().decode(DictionaryDocument.self, from: data(file)), file.lastPathComponent)
+        }
+    }
+
+    func testDictionaryCapsAndDuplicateRulesMatchNode() throws {
+        func alias(_ i: Int, phrase: String? = nil, extra: [String: JSONValue] = [:]) -> JSONValue {
+            var object: [String: JSONValue] = [
+                "id": .string("a_\(i)"), "phrase": .string(phrase ?? "alias number \(i)"),
+                "target": .object(["kind": .string("openApp"), "bundleId": .string("com.apple.Music")]), "recognizer": .string("any"),
+                "source": .string("manual"), "count": .number(1), "rejections": .number(0), "uses": .number(0), "createdAt": .string("2026-10-05T09:00:00Z"),
+            ]
+            object.merge(extra) { $1 }
+            return .object(object)
+        }
+        let many = JSONValue.object(["version": .number(1), "revision": .number(1), "aliases": .array((0..<(DictionaryLimits.aliases + 2)).map { alias($0) })])
+        let parsed = try DictionaryDocument.parse(many).get()
+        XCTAssertEqual(parsed.document.aliases.count, DictionaryLimits.aliases)
+        XCTAssertEqual(parsed.issues, [DictionaryIssue(path: "aliases[200]", code: .overLimit), DictionaryIssue(path: "aliases[201]", code: .overLimit)])
+        let twice = JSONValue.object(["version": .number(1), "revision": .number(1), "aliases": .array([
+            alias(1, phrase: "same"), alias(2, phrase: "same", extra: ["disabledAt": .string("2026-10-06T09:00:00Z")]),
+            alias(3, phrase: "same", extra: ["rejections": .number(2)]), alias(4, phrase: "same", extra: ["recognizer": .string("parakeet-v3")]),
+            alias(5, phrase: "same"),
+        ])])
+        XCTAssertEqual(try DictionaryDocument.parse(twice).get().issues, [DictionaryIssue(path: "aliases[4]", code: .duplicateRule)])
+        XCTAssertEqual(try DictionaryDocument.parse(.object(["version": .number(1), "revision": .number(0)])).get().document, DictionaryDocument())
+    }
+
+    func testDictionaryPhrasesMatchNode() throws {
+        struct Cases: Decodable {
+            struct Fold: Decodable { var input: String; var folded: String }
+            struct Refused: Decodable { var input: String; var refused: Bool }
+            var fold: [Fold]
+            var refused: [Refused]
+        }
+        let cases = try JSONDecoder().decode(Cases.self, from: data(fixtures.appendingPathComponent("dictionary/phrases.json")))
+        XCTAssertGreaterThan(cases.fold.count, 10)
+        for item in cases.fold {
+            XCTAssertEqual(Array(DictionaryPhrase.fold(item.input).unicodeScalars), Array(item.folded.unicodeScalars), item.input)
+            if !item.folded.isEmpty { XCTAssertTrue(DictionaryPhrase.isFolded(item.folded), item.folded) }
+        }
+        for item in cases.refused { XCTAssertEqual(DictionaryPhrase.isRefused(item.input), item.refused, item.input) }
+        for word in DictionaryPhrase.deletionWords.union(DictionaryPhrase.controlWords) { XCTAssertEqual(DictionaryPhrase.fold(word), word) }
+        // The mirror is exact: every deletion word and phrasing is Node's (DELETION_WORDS / DELETION_PHRASES), and as many.
+        let node = try String(contentsOf: fixtures.deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("node-harness/src/contracts/dictionary.ts"), encoding: .utf8)
+        func list(_ name: String) throws -> [String] {
+            let start = try XCTUnwrap(node.range(of: "export const \(name): readonly string[] = ["), name)
+            let end = try XCTUnwrap(node.range(of: "\n];", range: start.upperBound..<node.endIndex), name)
+            let body = String(node[start.upperBound..<end.lowerBound])
+            let quoted = try NSRegularExpression(pattern: #""((?:[^"\\]|\\.)*)""#)
+            return quoted.matches(in: body, range: NSRange(body.startIndex..., in: body)).map { String(body[Range($0.range(at: 1), in: body)!]) }
+        }
+        XCTAssertEqual(Set(try list("DELETION_WORDS")), DictionaryPhrase.deletionWords)
+        XCTAssertEqual(try list("DELETION_PHRASES"), DictionaryPhrase.deletionPhrases)
+    }
+
+    /// Learn/edit bodies and responses and recognizer terms: valid fixtures decode and re-encode to exactly the wire;
+    /// invalid ones are rejected, as Node's parsers reject them.
+    func testDictionaryWireFixtures() throws {
+        func roundTrip<T: Codable>(_ type: T.Type, _ file: URL) throws {
+            let value = try JSONDecoder().decode(T.self, from: data(file))
+            let wire = try JSONSerialization.jsonObject(with: JSONEncoder().encode(value)) as? NSDictionary
+            XCTAssertEqual(wire, try JSONSerialization.jsonObject(with: data(file)) as? NSDictionary, file.lastPathComponent)
+        }
+        func decodes(_ file: URL) -> Bool {
+            let name = file.lastPathComponent, decoder = JSONDecoder()
+            do {
+                if name.hasPrefix("terms-response") { _ = try decoder.decode(RecognizerTermsResponse.self, from: data(file)) }
+                else if name.contains("-response") { _ = try decoder.decode(DictionaryWriteResponse.self, from: data(file)) }
+                else if name.hasPrefix("learn-") { _ = try decoder.decode(DictionaryLearnRequest.self, from: data(file)) }
+                else if name.hasPrefix("edit-") { _ = try decoder.decode(DictionaryEditRequest.self, from: data(file)) }
+                else { XCTFail("unclassified fixture \(name)"); return false }
+                return true
+            } catch { return false }
+        }
+        var checked = 0
+        for file in try jsonFiles("dictionary") {
+            let name = file.lastPathComponent
+            if ["valid.json", "hostile.json", "phrases.json"].contains(name) { continue }
+            if name.hasPrefix("terms-response") { try roundTrip(RecognizerTermsResponse.self, file) }
+            else if name.contains("-response") { try roundTrip(DictionaryWriteResponse.self, file) }
+            else if name.hasPrefix("learn-") { try roundTrip(DictionaryLearnRequest.self, file) }
+            else if name.hasPrefix("edit-") { try roundTrip(DictionaryEditRequest.self, file) }
+            else { XCTFail("unclassified fixture \(name)") }
+            checked += 1
+        }
+        XCTAssertGreaterThanOrEqual(checked, 25)
+        var rejected = 0
+        for file in try jsonFiles("dictionary/invalid") where !file.lastPathComponent.hasPrefix("document-") {
+            XCTAssertFalse(decodes(file), file.lastPathComponent)
+            rejected += 1
+        }
+        XCTAssertGreaterThanOrEqual(rejected, 30)
+
+        let learned = try JSONDecoder().decode(DictionaryWriteResponse.self, from: data(fixtures.appendingPathComponent("dictionary/learn-response-learned.json")))
+        XCTAssertEqual(learned.status, .learned)
+        XCTAssertEqual(learned.entry, DictionaryEntryRef(list: .appNames, id: "n_8f3a2c1d"))
+        XCTAssertEqual(learned.undoToken, "u_4c1f9e2a7b3d5e6f")
+        let reset = try JSONDecoder().decode(DictionaryEditRequest.self, from: data(fixtures.appendingPathComponent("dictionary/edit-reset.json")))
+        XCTAssertEqual(reset, .reset)
+        // Settings input is folded like Node's parseEditRequest folds it.
+        let typed = try JSONDecoder().decode(DictionaryEditRequest.self, from: Data(#"{"op":"upsert","entry":{"list":"appNames","heard":"Récast","bundleId":"com.raycast.macos","display":"Raycast"}}"#.utf8))
+        XCTAssertEqual(typed, .upsert(DictionaryEntryInput(content: .appName(heard: "recast", bundleId: "com.raycast.macos", display: "Raycast"))))
     }
 
     // MARK: Context scope, attachments and Brave AX routes (shared/fixtures/{context,attachments,browser-ax})
@@ -210,8 +437,138 @@ final class ContractFixturesTests: XCTestCase {
         try check("pageResult", BrowserPageResult.self)
         try check("axActRequest", BrowserAXActRequest.self)
         try check("axActResult", BrowserAXActResult.self)
+        try check("voiceHypothesis", VoiceHypothesis.self)
+        try check("instantRequest", InstantRequest.self)
+        try check("voiceMeta", VoiceMeta.self)
+        try check("learnRequest", DictionaryLearnRequest.self)
+        try check("visibleItemsRequest", VisibleItemsRequest.self)
+        try check("visibleItemsResult", VisibleItemsResult.self)
         let attachments = try JSONDecoder().decode([Attachment].self, from: JSONSerialization.data(withJSONObject: XCTUnwrap((root["attachments"] as? [String: Any])?["wire"])))
         XCTAssertEqual(AttachmentValidation.issues(attachments), [])
+    }
+
+    // MARK: Visible items (shared/fixtures/launcher/visible-items.*) and open_item
+
+    /// Valid bodies decode and re-encode to exactly the wire; invalid ones are rejected, as Node's parsers reject them.
+    func testVisibleItemsFixtures() throws {
+        func decodes(_ file: URL) -> Bool {
+            let decoder = JSONDecoder()
+            do {
+                if file.lastPathComponent.hasPrefix("visible-items.request") {
+                    _ = try decoder.decode(Arguments<VisibleItemsRequest>.self, from: data(file))
+                } else {
+                    let envelope = try decoder.decode(Envelope<VisibleItemsResult>.self, from: data(file))
+                    return envelope.ok ? envelope.result != nil : envelope.error?.code == "not_found"
+                }
+                return true
+            } catch { return false }
+        }
+        let valid = try jsonFiles("launcher").filter { $0.lastPathComponent.hasPrefix("visible-items.") }
+        XCTAssertGreaterThanOrEqual(valid.count, 6)
+        var results = 0
+        for file in valid {
+            XCTAssertTrue(decodes(file), file.lastPathComponent)
+            let wire = try XCTUnwrap(JSONSerialization.jsonObject(with: data(file)) as? [String: Any])
+            if let arguments = wire["arguments"] {
+                let request = try JSONDecoder().decode(Arguments<VisibleItemsRequest>.self, from: data(file)).arguments
+                XCTAssertEqual(try JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? NSDictionary, arguments as? NSDictionary)
+            } else if wire["ok"] as? Bool == true {
+                let result = try XCTUnwrap(try JSONDecoder().decode(Envelope<VisibleItemsResult>.self, from: data(file)).result)
+                XCTAssertEqual(try JSONSerialization.jsonObject(with: JSONEncoder().encode(result)) as? NSDictionary, wire["result"] as? NSDictionary,
+                               file.lastPathComponent)
+                XCTAssertNoThrow(try result.validate())
+                results += 1
+            }
+        }
+        XCTAssertEqual(results, 4)
+        let invalid = try jsonFiles("launcher/invalid").filter { $0.lastPathComponent.hasPrefix("visible-items.") }
+        XCTAssertGreaterThanOrEqual(invalid.count, 20)
+        for file in invalid { XCTAssertFalse(decodes(file), file.lastPathComponent) }
+
+        let desktop = try XCTUnwrap(try JSONDecoder().decode(Envelope<VisibleItemsResult>.self,
+                                                             from: data(fixtures.appendingPathComponent("launcher/visible-items.response-desktop.json"))).result)
+        XCTAssertEqual(desktop.sources, [VisibleSource(kind: .desktop, via: .ax, complete: true)])
+        let folder = try XCTUnwrap(desktop.items.first)
+        XCTAssertEqual(folder, VisibleItem(FileCandidate(token: "tok_7c1e0a9f3b2d", name: "Radfotos", path: "/Users/fixture/Desktop/Radfotos",
+                                                         contentType: "public.folder", createdMs: 1_781_913_600_000, modifiedMs: 1_783_209_600_000,
+                                                         isDirectory: true), source: .desktop))
+        XCTAssertTrue(desktop.items.allSatisfy { LauncherPolicy.isToken($0.candidate.token) })
+        let request = try JSONDecoder().decode(Arguments<VisibleItemsRequest>.self, from: data(fixtures.appendingPathComponent("launcher/visible-items.request.json")))
+        XCTAssertEqual(request.arguments, VisibleItemsRequest(contextId: "ctx-3f2a", maxResults: 100))
+    }
+
+    func testVisibleItemsLimitsAndValidation() throws {
+        func item(_ i: Int, source: VisibleSourceKind = .desktop, name: String? = nil, path: String? = nil, useCount: Int? = nil) -> VisibleItem {
+            VisibleItem(FileCandidate(token: "tok_" + String(repeating: "0", count: 12 - String(i).count) + String(i), name: name ?? "Item \(i)",
+                                      path: path ?? "/Users/fixture/Desktop/Item \(i)", useCount: useCount), source: source)
+        }
+        let desktop = [VisibleSource(kind: .desktop, via: .ax, complete: true)]
+        func valid(_ items: [VisibleItem], sources: [VisibleSource]? = nil, elapsedMs: Double = 1) -> Bool {
+            (try? VisibleItemsResult(sources: sources ?? desktop, items: items, truncated: false, elapsedMs: elapsedMs).validate()) != nil
+        }
+        XCTAssertTrue(valid((0..<VisibleItemsLimits.maxResults).map { item($0) }))
+        XCTAssertFalse(valid((0...VisibleItemsLimits.maxResults).map { item($0) }), "201 items")
+        XCTAssertTrue(valid([]))
+        XCTAssertTrue(valid([], sources: []))
+        XCTAssertFalse(valid([item(1)], sources: []), "an item needs its source")
+        XCTAssertFalse(valid([item(1, source: .finderWindow)]))
+        XCTAssertTrue(valid([item(1, source: .finderWindow), item(2)], sources: [VisibleSource(kind: .finderWindow, via: .spotlight, complete: false)] + desktop))
+        XCTAssertFalse(valid([], sources: desktop + [VisibleSource(kind: .desktop, via: .spotlight, complete: true)]), "one source per kind")
+        XCTAssertFalse(valid([item(1), item(1, name: "Other")]), "duplicate token")
+        XCTAssertTrue(valid([item(1, name: "Präsentation Straße.key")]))
+        XCTAssertTrue(valid([item(1, name: String(repeating: "x", count: 255))]))
+        XCTAssertFalse(valid([item(1, name: String(repeating: "x", count: 256))]))
+        XCTAssertFalse(valid([item(1, name: "\u{3000}")]), "blank by JavaScript's trim")
+        XCTAssertFalse(valid([item(1, path: "/Users/fixture/Desktop/Radfotos/")]), "trailing slash")
+        XCTAssertFalse(valid([item(1, useCount: -1)]))
+        XCTAssertFalse(valid([item(1)], elapsedMs: -1))
+        // The request: contextId required (empty means invalid here, unlike the optional launcher contexts), 1…200.
+        for body in [#"{"contextId":"ctx-1","maxResults":200}"#, #"{"contextId":"ctx-1"}"#, #"{"contextId":"ctx-1","maxResults":null,"extra":1}"#] {
+            XCTAssertNoThrow(try JSONDecoder().decode(VisibleItemsRequest.self, from: Data(body.utf8)), body)
+        }
+        for body in [#"{"contextId":""}"#, #"{"maxResults":1}"#, #"{"contextId":"ctx-1","maxResults":0}"#, #"{"contextId":"ctx-1","maxResults":201}"#,
+                     #"{"contextId":"ctx-1","maxResults":2.5}"#] {
+            XCTAssertThrowsError(try JSONDecoder().decode(VisibleItemsRequest.self, from: Data(body.utf8)), body)
+        }
+    }
+
+    func testOpenItemInstantFixturesDecode() throws {
+        func decode(_ name: String) throws -> InstantResponse {
+            try JSONDecoder().decode(InstantResponse.self, from: data(fixtures.appendingPathComponent("instant/\(name)")))
+        }
+        let act = try decode("act-open-visible.json")
+        guard case .act("open_item", "Open Radfotos", .openFile("tok_7c1e0a9f3b2d"), false, let card?) = act.decision else { return XCTFail("expected an open_item act") }
+        XCTAssertEqual(act.voice, VoiceMeta(heard: "radfotos", source: "apple-dt/de-DE", via: .visible))
+        XCTAssertEqual(card.elements.values.compactMap { $0.on["primary"] }, [.openFile(token: "tok_7c1e0a9f3b2d")])
+        let list = try decode("list-did-you-mean-visible.json")
+        guard case .list("open_item", "Did you mean…", let rows, false) = list.decision else { return XCTFail("expected an open_item list") }
+        XCTAssertTrue(list.isDidYouMean)
+        XCTAssertEqual(list.voice?.via, .visible)
+        XCTAssertEqual(rows.elements["n2"]?.on["primary"], .openFile(token: "tok_2b8d4f6a1c3e"), "the visible row comes first")
+        XCTAssertEqual(rows.elements["n3"]?.on["primary"], .openApp(bundleId: "com.apple.Photos"))
+    }
+
+    /// The Swift vocabularies are exactly Node's (VOICE_VIAS, VISIBLE_SOURCE_KINDS/VIAS, LAUNCHER_ROUTES).
+    func testVisibleVocabulariesMatchNode() throws {
+        let root = fixtures.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("node-harness/src/contracts")
+        let instant = try String(contentsOf: root.appendingPathComponent("instant.ts"), encoding: .utf8)
+        let launcher = try String(contentsOf: root.appendingPathComponent("launcher.ts"), encoding: .utf8)
+        func list(_ name: String, in source: String) throws -> [String] {
+            let start = try XCTUnwrap(source.range(of: "export const \(name) = ["), name)
+            let end = try XCTUnwrap(source.range(of: "] as const;", range: start.upperBound..<source.endIndex), name)
+            let body = String(source[start.upperBound..<end.lowerBound])
+            let quoted = try NSRegularExpression(pattern: #""([^"]*)""#)
+            return quoted.matches(in: body, range: NSRange(body.startIndex..., in: body)).map { String(body[Range($0.range(at: 1), in: body)!]) }
+        }
+        XCTAssertEqual(VoiceVia.allCases.map(\.rawValue), try list("VOICE_VIAS", in: instant))
+        XCTAssertEqual(VisibleSourceKind.allCases.map(\.rawValue), try list("VISIBLE_SOURCE_KINDS", in: launcher))
+        XCTAssertEqual(VisibleSourceVia.allCases.map(\.rawValue), try list("VISIBLE_SOURCE_VIAS", in: launcher))
+        XCTAssertEqual(LauncherRoutes.names + [LauncherRoutes.visibleItems], try list("LAUNCHER_ROUTES", in: launcher))
+        // Older vias decode exactly as before; "visible" is one more value.
+        for via in VoiceVia.allCases {
+            let meta = try JSONDecoder().decode(VoiceMeta.self, from: Data(#"{"via":"\#(via.rawValue)"}"#.utf8))
+            XCTAssertEqual(meta.via, via)
+        }
     }
 
     func testHostActionRoundTripsAndRejectsUnknown() throws {

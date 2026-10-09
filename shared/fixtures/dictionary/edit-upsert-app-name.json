@@ -1,0 +1,12 @@
+{
+  "op": "upsert",
+  "entry": {
+    "list": "appNames",
+    "id": "n_siri00001",
+    "recognizer": "apple-dt/en-US",
+    "heard": "siri",
+    "bundleId": "com.spotify.client",
+    "display": "Spotify"
+  },
+  "confirmed": true
+}

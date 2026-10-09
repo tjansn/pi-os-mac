@@ -37,6 +37,10 @@ import PiOSCore
     private var hotkeySelection: SelectionCapture!
     private var regionGrab: RegionGrab!
     private let attention = AttentionController()
+    /// What the agent did last in the running invocation (an open, or other tool work after it).
+    private let effects = InvocationEffects()
+    /// Steps a finished answer aside after pi opened something (Settings → General).
+    private let minimizer = AnswerMinimizer()
     /// The running tether or "Point at an Element…" session. Cancelled when the take submits or ends: a
     /// pending click-to-pick would otherwise consume the user's next click in another app.
     private var attentionTask: Task<Void, Never>?
@@ -57,10 +61,23 @@ import PiOSCore
     private var pulled = false
     /// ⌃⌥⌘C is reading a selection (its Copy fallback may hold a temporary clipboard).
     private var addInFlight = false
-    /// One engine for the app's lifetime (B6): Apple's on-device speech on macOS 26+, else unavailable.
-    private let voice: VoiceInput = VoiceInputs.system()
+    /// The downloadable multilingual model (Phase B, DESIGN4 §4.2): one store for the support directory HarnessClient uses,
+    /// shared by the engine and Settings → Voice → Recognition. Loaded off the hotkey path only (`prepareSpeechModels`).
+    private var speechModels: SpeechModelStore!
+    /// One engine for the app's lifetime (B6): Apple's on-device speech on macOS 26+ (else unavailable), with Parakeet as the
+    /// primary engine of every take that starts while its model is loaded.
+    private var voice: VoiceInput!
     private let voiceSystem = SystemVoice()
+    /// Push-to-talk preferences: the app's defaults, or a fixture suite in installed-app fixture runs.
+    private let voiceSettings = Application.makeVoiceSettings()
     private var readinessTask: Task<Void, Never>?
+    /// The opt-in voice journal (DESIGN4 §6.7): one instance per support directory, shared by the command flow and
+    /// Settings → Dictionary → Recent takes.
+    private(set) var journal: VoiceJournal?
+    /// The recognizers' contextual strings from the dictionary; Settings edits report their revision here.
+    private(set) var recognizerTerms: RecognizerTerms?
+    private var timingLog: VoiceTimingLog?
+    private var voiceStart: Task<Void, Never>?
     private var settingsWindow: SettingsWindow?
     private var appearanceWindow: AppearanceWindow?
     private var invocationReservation: UUID?
@@ -88,8 +105,14 @@ import PiOSCore
         do {
             config = try MacConfiguration()
             lock = try InstanceLock(directory: config.support)
+            speechModels = Self.makeSpeechModels(support: config.support)
+            voice = VoiceInputs.system(primary: ParakeetEngine(store: speechModels))
+            // Stored once before the first readiness check: an earlier single `voiceLanguage` becomes every supported system
+            // language (English and German for Tom), with a one-time note on Settings → Voice.
+            voiceSettings.migrateLanguages()
             let configuration = config!
             launcher = LauncherHost.standard()
+            let effects = self.effects
             desktop = DesktopService(captures: config.captures, token: config.token,
                 controlEnabled: { configuration.canControl }, traceFile: config.support.appendingPathComponent("logs/host-actions.jsonl"),
                 beforeInput: { [weak self] in
@@ -98,7 +121,9 @@ import PiOSCore
                         self.nativeInputStarted = true
                         return self.panel.suspendForInput()
                     }
-                }, launcher: launcher)
+                }, launcher: launcher, toolObserver: { effects.tool() })
+            // The agent's own opens (never the bar's instant acts) decide whether a finished answer steps aside.
+            launcher.service.onAgentOpen = { contextId, result in effects.opened(contextId: contextId, status: result.status) }
             let service = desktop!
             // Instant "type into window" goes through the same InputPolicy, credential-field,
             // deletion and budget gates as the agent's typing.
@@ -114,7 +139,13 @@ import PiOSCore
                 self.panel.reopenLatestResult()
             }
             harness = HarnessClient(config: config)
-            harness.voiceEnabled = { VoiceSettings.shared.enabled }
+            let voiceSettings = voiceSettings
+            harness.voiceEnabled = { voiceSettings.enabled }
+            journal = Self.makeJournal(support: config.support)
+            recognizerTerms = RecognizerTerms(service: harness)
+            timingLog = VoiceTimingLog(support: config.support)
+            // A launch is not awaited (DESIGN4 §7 item 1): one that fails afterwards is a short note, not a lost act.
+            launcher.service.onLaunchFailure = { [weak self] error in self?.hint(error.message, symbol: "exclamationmark.circle") }
             harness.onUnexpectedExit = { [weak self] in
                 guard let self, self.context != nil else { return }
                 self.controller.interrupt()
@@ -142,9 +173,14 @@ import PiOSCore
             scorer?.prepare()
             controller = CommandController(voice: voice, harness: harness, host: self, surface: panel)
             controller.refreshReadiness = { [weak self] in self?.refreshVoiceReadiness() }
+            controller.dictionary = harness
+            controller.terms = recognizerTerms
+            controller.journal = journal
+            controller.timingLog = timingLog
+            controller.voiceTakeFinished = { [weak self] in self?.retryDeferredSpeechModels() }
             let voiceSystem = voiceSystem
-            let hint = VoiceOffHint { !VoiceSettings.shared.enabled && voiceSystem.engineAvailable }
-            if VoiceSettings.shared.enabled { hint.retire() }
+            let hint = VoiceOffHint { !voiceSettings.enabled && voiceSystem.engineAvailable }
+            if voiceSettings.enabled { hint.retire() }
             controller.voiceOffHint = hint
             createMenu()
             panel.onSubmit = { [weak self] in self?.controller.composerSubmitted($0, intent: .plain) }
@@ -177,7 +213,7 @@ import PiOSCore
             panel.onFollowupEdit = { [weak self] text in self?.followupEdited(text) }
             // pi-os's own clipboard writes (Copy Answer) are never suggested back as context.
             panel.onCopiedAnswer = { [weak self] in self?.shelf.ignoreClipboard() }
-            NotificationCenter.default.addObserver(self, selector: #selector(voiceSettingsChanged), name: VoiceSettings.changed, object: nil)
+            NotificationCenter.default.addObserver(self, selector: #selector(voiceSettingsChanged), name: VoiceSettings.changed, object: voiceSettings)
             server = try LoopbackServer(port: config.hostPort, cancelsOnDisconnect: LoopbackServer.launcherReads) { await service.handle($0) }
             server?.onFailure = { [weak self] message in
                 Task { @MainActor in self?.fatal(message) }
@@ -214,6 +250,7 @@ import PiOSCore
             _ = DesktopIdentity.windows()
             panel.prewarm()
             refreshVoiceReadiness(prepare: true)
+            startVoiceHarness()
             if let window = status.button?.window {
                 let target = ShelfDropTarget(files: shelf.files) { [weak self] captures in self?.dropped(captures, onStatusItem: true) }
                 if target.attach(to: window) { statusDropTarget = target }
@@ -286,7 +323,7 @@ import PiOSCore
         lastAnswerItem.isEnabled = (invocation != nil && !nativeInputStarted) || panel.mode == .prompt || (invocation == nil && panel.hasLastAnswer)
         cancelItem.isHidden = invocation == nil
         cancelItem.isEnabled = !cancelRequested
-        let voice = Self.voiceMenu(enabled: VoiceSettings.shared.enabled, engineAvailable: voiceSystem.engineAvailable)
+        let voice = Self.voiceMenu(enabled: voiceSettings.enabled, engineAvailable: voiceSystem.engineAvailable)
         voiceItem.title = voice.title; voiceItem.isEnabled = voice.isEnabled
         // Pointing attaches to the open question (as the chip menu's item).
         pointItem.isEnabled = failure == nil && invocation == nil && panel.mode == .prompt && controller?.take != nil
@@ -324,25 +361,94 @@ import PiOSCore
     }
     /// Cached off the hotkey path (B6): launch, Settings changes and after a voice failure. Voice
     /// that is off, or an OS without on-device speech, keeps today's tap-only behaviour exactly.
+    /// The languages the user speaks (Settings → Voice) are applied every time: the Apple modules a take starts, readiness,
+    /// the models prepared and the languages a take's locale is chosen among. `prepare` also loads the multilingual model.
     private func refreshVoiceReadiness(prepare: Bool = false) {
-        let settings = VoiceSettings.shared
-        let enabled = settings.enabled && voiceSystem.engineAvailable, language = settings.language
-        controller.language = language
+        let settings = voiceSettings
+        let enabled = settings.enabled && voiceSystem.engineAvailable
+        let languages = Self.takeLanguages(settings)
+        voice.enabledLanguages = languages
+        controller.language = settings.language
+        controller.languages = languages
         if !enabled { controller.readiness = .disabled }
         readinessTask?.cancel()
         readinessTask = Task { [weak self] in
             guard let self else { return }
-            let readiness = await self.voiceSystem.readiness(enabled: enabled, language: language)
+            let readiness = await self.voiceSystem.readiness(enabled: enabled, languages: languages)
             guard !Task.isCancelled else { return }
             self.controller.readiness = readiness
-            if prepare && enabled { await self.voice.prepare(language) }
+            if prepare && enabled { await self.voice.prepare(languages: languages) }
+        }
+        if prepare && enabled { prepareSpeechModels() }
+    }
+    /// "Languages I speak", the preferred language first: what a take starts, readiness and the locale hint use.
+    static func takeLanguages(_ settings: VoiceSettings) -> [VoiceLanguage] {
+        VoiceArbiter.languages(preferring: settings.language, among: settings.languages)
+    }
+    /// Any Voice setting changed (on/off, languages, a permission or a model install in Settings): everything is re-applied.
+    @objc private func voiceSettingsChanged() {
+        if voiceSettings.enabled { controller.voiceOffHint?.retire() }
+        refreshVoiceReadiness(prepare: true)
+        // Voice on: Node starts now and stays up; voice off: the idle TTL applies from now.
+        if voiceSettings.enabled { startVoiceHarness() }
+        else if invocationReservation == nil { harness.retainWarm() }
+    }
+    /// Push-to-talk is on: start Node off the hotkey path (instant-first, about 0.1 s to /health) and keep it up, then
+    /// fetch the recognizer terms (DESIGN4 §7 item 6, §6.4). Best effort; the next take reports a real failure.
+    private func startVoiceHarness() {
+        guard failure == nil, !config.echo, voiceSettings.enabled, voiceSystem.engineAvailable, let harness else { return }
+        voiceStart?.cancel()
+        voiceStart = Task { [weak self] in
+            guard await harness.startForVoice(), !Task.isCancelled else { return }
+            self?.recognizerTerms?.refresh()
         }
     }
-    @objc private func voiceSettingsChanged() {
-        if VoiceSettings.shared.enabled { controller.voiceOffHint?.retire() }
-        refreshVoiceReadiness(prepare: true)
-        // A new TTL applies from the next idle period.
-        if invocationReservation == nil { harness.retainWarm() }
+    /// Loads the installed multilingual model at utility priority, off the hotkey path: at launch, when voice is switched
+    /// on (or another Voice setting changes) and when Settings → Voice opens. Never downloads; a held local-AI benchmark
+    /// lock defers it (`retryDeferredSpeechModels`).
+    private func prepareSpeechModels() {
+        guard let speechModels, voiceSettings.enabled, voiceSystem.engineAvailable else { return }
+        Task.detached(priority: .utility) { await speechModels.prepare() }
+    }
+    /// After a voice take: a load the benchmark's lock deferred is tried again (a non-blocking flock).
+    private func retryDeferredSpeechModels() {
+        guard let speechModels, voiceSettings.enabled else { return }
+        Task.detached(priority: .utility) { _ = await Self.retryDeferredLoad(speechModels) }
+    }
+    /// True when the store was waiting for the lock and was asked to load again.
+    nonisolated static func retryDeferredLoad(_ store: SpeechModelStoring) async -> Bool {
+        guard await store.state() == .deferredByLock else { return false }
+        await store.prepare()
+        return true
+    }
+    /// One model store per support directory: the one HarnessClient and the journal use (`PI_OS_SUPPORT_DIR`, else
+    /// ~/Library/Application Support/pi-os), so an installed-app fixture run (`PI_OS_INSTALLED_TEST=1` with
+    /// `PI_OS_SUPPORT_DIR`) has its own empty models folder and never loads or deletes the user's model.
+    static func makeSpeechModels(support: URL) -> SpeechModelStore { SpeechModelStore(support: support) }
+    /// The app's push-to-talk preferences; installed-app fixture runs use a fixture suite, so opening Settings there never
+    /// writes `voiceLanguages` (or anything else) into the user's dev.pi-os.mac domain.
+    static func makeVoiceSettings(env: [String: String] = ProcessInfo.processInfo.environment) -> VoiceSettings {
+        let defaults = voiceSettingsDefaults(env: env)
+        return defaults === UserDefaults.standard ? .shared : VoiceSettings(defaults: defaults)
+    }
+    static func voiceSettingsDefaults(env: [String: String]) -> UserDefaults {
+        if env["PI_OS_INSTALLED_TEST"] == "1", let support = env["PI_OS_SUPPORT_DIR"], !support.isEmpty,
+           let defaults = UserDefaults(suiteName: "dev.pi-os.voice-settings-fixture." + URL(fileURLWithPath: support).lastPathComponent) {
+            return defaults
+        }
+        return .standard
+    }
+    /// The journal's opt-in lives in the app's defaults; installed-app fixture runs (`PI_OS_INSTALLED_TEST=1` with
+    /// `PI_OS_SUPPORT_DIR`) use a fixture suite instead, so they never read or change the user's choice.
+    static func makeJournal(support: URL, env: [String: String] = ProcessInfo.processInfo.environment) -> VoiceJournal {
+        VoiceJournal(support: support, defaults: journalDefaults(env: env))
+    }
+    static func journalDefaults(env: [String: String]) -> UserDefaults {
+        if env["PI_OS_INSTALLED_TEST"] == "1", let support = env["PI_OS_SUPPORT_DIR"], !support.isEmpty,
+           let defaults = UserDefaults(suiteName: "dev.pi-os.voice-journal-fixture." + URL(fileURLWithPath: support).lastPathComponent) {
+            return defaults
+        }
+        return .standard
     }
     /// Key-down (DESIGN2 §4.1, DESIGN3): identity only before the panel — the CG window pin, its process
     /// fingerprint (at insert) and the focused element (it can only be read before the bar takes keys). No
@@ -351,6 +457,7 @@ import PiOSCore
     private func beginTakeInternal() -> CommandTake? {
         guard failure == nil else { return nil }
         if invocation != nil { return nil }
+        minimizer.cancel()
         panel.hide()
         preparation?.cancel(); preparation = nil
         cancelPreparedTake()
@@ -397,6 +504,9 @@ import PiOSCore
         }
         let id = snapshot.id, desktop = desktop!, harness = harness!, perf = perf
         invocationReservation = harness.reserve()
+        // What the user sees there (desktop icons, the Finder window's items), read in the background while they speak or
+        // type: "öffne Radfotos" opens the desktop's folder first. Another app's window has none.
+        launcher.visible?.prefetch(contextId: id, target: VisibleTarget.classify(target, bundleId: targetApp?.bundleIdentifier))
         // After the panel: its first frame is committed (with the chip's final state: the ⇧ chord and the
         // menu choose "on" right after this returns), then the Brave tab pin (≤ 120 ms budget, typically a
         // few ms), then the context is registered with the host. Everything that names the context waits.
@@ -598,8 +708,11 @@ import PiOSCore
         context = pinned.id; takeSnapshot = pinned
         takeBrowserPinned = Self.browserRouteOnly(pinned.browser)
         controller.retarget(contextId: pinned.id)
+        let pinnedApp = pinned.targetWindow.flatMap { NSRunningApplication(processIdentifier: $0.processId)?.bundleIdentifier }
+        launcher.visible?.prefetch(contextId: pinned.id, target: VisibleTarget.classify(pinned.targetWindow, bundleId: pinnedApp))
         if let old, old != pinned.id {
             launcher.service.revokeTokens(contextId: old)
+            launcher.visible?.drop(contextId: old)
             // A pointed-at element of the old window still names it: keep that pin for the take.
             if shelf.references(contextId: old) { extraContexts.append(old) } else { await desktop.remove(old) }
         }
@@ -664,6 +777,8 @@ import PiOSCore
         workDismissed = false; nativeInputStarted = false; cancelRequested = false
         invocation = invocationID
         pulled = false
+        minimizer.cancel()
+        effects.begin(contextId: id)
         let windowTurn = scope?.scope == .window
         // Follow-ups never capture here: the harness is the only party that captures for a follow-up (one
         // `desktop.captureWindow` of the pin, in parallel with its session and page read, when the turn
@@ -761,6 +876,7 @@ import PiOSCore
     private func apply(_ state: HarnessClient.Status, _ invocationID: String, throttle: StreamThrottle<RunningPresentation>) async throws -> Bool {
         switch state.state {
         case "queued", "running":
+            effects.activity(state.activity)
             guard !cancelRequested else { return false }
             if state.activity == "use_active_window" || state.context?.pulled == true { pulled = true }
             let label = state.activity == "thinking" ? "Thinking…" : Self.activityLabel(state.activity, app: threadApp?.name)
@@ -779,17 +895,22 @@ import PiOSCore
             // The follow-up chip starts from the thread as Node runs it: on after the agent pulled the
             // window in, off again after the user narrowed it.
             threadScope = Self.nextThreadScope(current: threadScope, record: state.context)
+            // Ended by opening something (and not asking anything): the answer steps aside after a moment.
+            let stepAside = AutoMinimizePolicy.toast(last: effects.last, answer: text, card: card, enabled: AutoMinimizePolicy.enabled(),
+                                                     steps: state.steps)
+            effects.end()
             // Without a retained thread, finish() discards the context and its file tokens: read-only card.
             panel.presentAgentAnswer(text, card: card, cardActions: thread != nil, present: !workDismissed, route: Self.routeNote(state.route))
             makeFollowupChip()
+            if !workDismissed { minimizer.completed(invocationID, toast: stepAside, surface: minimizeSurface(invocationID)) }
             await backgroundResult(invocationID, failed: false)
             guard invocation == invocationID else { return true }
             finish(); return true
         case "aborted":
-            throttle.cancel()
+            throttle.cancel(); effects.end()
             panel.hide(); finish(cancelled: true); return true
         default:
-            throttle.cancel()
+            throttle.cancel(); effects.end()
             thread = state.followupAvailable == true ? invocationID : nil
             throw DomainError.invocation(state: state.state, message: state.failureMessage)
         }
@@ -831,6 +952,24 @@ import PiOSCore
         case nil: return "Answering…"
         default: return "Working on your request…"
         }
+    }
+    /// The panel and note behind AnswerMinimizer for the answer of `id`.
+    private func minimizeSurface(_ id: String) -> AnswerMinimizer.Surface {
+        AnswerMinimizer.Surface(
+            hide: { [weak self] in
+                // Only that answer, still on screen: never a newer take, a running turn or a reader the user closed.
+                guard let self, self.invocation == nil, self.latestResultID == id, self.panel.isVisible else { return false }
+                return self.panel.stepAside()
+            },
+            note: { [weak self] text, show in
+                self?.toast.show(text, symbol: "arrow.up.forward.app", action: (AutoMinimizePolicy.showTitle, show))
+            },
+            reveal: { [weak self] in self?.revealAnswer(id) })
+    }
+    /// Show on the step-aside note (and Show Last Answer while it is away): that answer with its follow-up composer.
+    private func revealAnswer(_ id: String) {
+        guard invocation == nil else { return }
+        if panel.mode == .reader, latestResultID == id { panel.reveal() } else { panel.reopenLastAnswer() }
     }
     private func backgroundResult(_ id: String, failed: Bool) async {
         latestResultID = id
@@ -877,6 +1016,7 @@ import PiOSCore
     private func hardCancel() {
         let wasPrompt = panel.mode == .prompt
         let active = invocation
+        minimizer.cancel(); effects.end()
         controller.interrupt()
         invocation = nil; submitted = false; cancelRequested = false; running?.cancel(); running = nil
         streamThrottle?.cancel(); streamThrottle = nil
@@ -886,13 +1026,25 @@ import PiOSCore
         discardContext()
         shelf?.takeEnded()
         releaseInvocationReservation()
-        if active != nil || wasPrompt {
-            // Teardown is a hard cancellation backstop; never leave an orphan request running.
-            // Close only the owned group, never node processes by executable name.
-            if active != nil { harness.stop() }
-            // With voice on, a cancelled prompt keeps Node warm for the TTL (next hold is instant).
-            else if !VoiceSettings.shared.enabled { harness.stopIfUnused() }
+        // Teardown is a hard cancellation backstop; never leave an orphan request running.
+        // Close only the owned group, never node processes by executable name.
+        switch Self.cancelTeardown(active: active != nil, wasPrompt: wasPrompt, voiceEnabled: voiceSettings.enabled) {
+        case .keep: break
+        case .stop: harness.stop()
+        case .stopIfUnused: harness.stopIfUnused()
+        case .stopThenRestartForVoice:
+            // Voice on: a fresh Node comes back now, off the hotkey path, with its recognizer terms and a warm instant lane.
+            harness.stop()
+            startVoiceHarness()
         }
+    }
+    enum CancelTeardown: Equatable { case keep, stop, stopIfUnused, stopThenRestartForVoice }
+    /// What a hard cancel does to Node: a cancelled invocation stops the owned group (and, with voice on, starts a fresh
+    /// one at once); a cancelled prompt keeps Node warm with voice on (the next hold is instant), else stops it if unused.
+    nonisolated static func cancelTeardown(active: Bool, wasPrompt: Bool, voiceEnabled: Bool) -> CancelTeardown {
+        if active { return voiceEnabled ? .stopThenRestartForVoice : .stop }
+        guard wasPrompt else { return .keep }
+        return voiceEnabled ? .keep : .stopIfUnused
     }
     /// DESIGN §3.5: a prepared session is discarded on cancel, not only at its 30 s expiry.
     /// Best effort and never starts Node.
@@ -910,8 +1062,10 @@ import PiOSCore
         panel.setFollowupEnabled(false)
         // Shelf files that went out with the closed thread (Node no longer reads them).
         shelf?.releaseSent()
-        // Host file tokens die with their context lease (CRITIC C12), not only at their 10-minute expiry.
-        if let oldContext { launcher?.service.revokeTokens(contextId: oldContext) }
+        // Host file tokens die with their context lease (CRITIC C12), not only at their 10-minute expiry; so does the
+        // context's visible-items capture.
+        if let oldContext { launcher?.service.revokeTokens(contextId: oldContext); launcher?.visible?.drop(contextId: oldContext) }
+        for id in extra { launcher?.visible?.drop(contextId: id) }
         if let desktop, let harness {
             Task {
                 // Native lease removal precedes asynchronous harness closure.
@@ -960,6 +1114,7 @@ import PiOSCore
     @objc private func showCurrent() {
         if invocation != nil { if !nativeInputStarted { workDismissed = false; panel.reveal() } }
         else if panel.mode == .prompt { panel.reveal() }
+        else if let id = minimizer.minimized { revealAnswer(id) }
         else { panel.reopenLastAnswer() }
     }
     @objc private func showSettingsFromMenu() { showSettings(page: .general) }
@@ -967,7 +1122,11 @@ import PiOSCore
     @objc private func showVoiceSettings() { showSettings(page: .voice) }
     private func showSettings(page: SettingsWindow.Page) {
         if let settingsWindow { settingsWindow.show(page); settingsWindow.present(); return }
-        let controller = SettingsWindow(harness: harness, notifier: notifier, voice: voiceSystem)
+        // The app's one journal and model store; every Settings → Dictionary write reports its revision, so the
+        // recognizers' contextual strings refetch when the dictionary changed.
+        let controller = SettingsWindow(harness: harness, notifier: notifier, voice: voiceSystem, voiceSettings: voiceSettings,
+                                        dictionary: harness, journal: journal, speechModels: speechModels,
+                                        onDictionaryRevision: { [weak self] revision in self?.recognizerTerms?.noteRevision(revision) })
         controller.onClosed = { [weak self] in self?.settingsWindow = nil }
         controller.onPermissions = { [weak self] in self?.permissions() }
         controller.onControlDisabled = { [weak self] in

@@ -84,16 +84,25 @@ The macOS host ([details](host-macos/README.md#voice-instant-commands-auto-and-r
 adds a faster path on top of the agent:
 
 - **Push-to-talk (opt-in).** Turn on *Settings → Voice*, then hold the hotkey and speak
-  (macOS 26+, on-device Apple speech recognition, English or German). A quick tap still
-  opens the text bar; while voice is off, a hold says where to turn it on. Microphone and
-  Speech Recognition are requested only from buttons in Settings, never from the hotkey. Audio and transcripts stay on the Mac and are never
-  recorded or logged.
+  English, German or a mix (macOS 26+). Apple's on-device dictation listens for every language
+  you check under *Languages I speak* at once; an optional multilingual model (NVIDIA Parakeet
+  TDT 0.6B v3, 483 MB, downloaded only after you confirm in *Settings → Voice → Recognition*)
+  also runs on the Mac. A quick tap still opens the text bar; while voice is off, a hold says
+  where to turn it on. Microphone and Speech Recognition are requested only from buttons in
+  Settings, never from the hotkey. Audio never leaves the Mac and is never logged; takes are kept
+  only if you turn on *Keep my last voice takes to improve recognition* (the last 50, on this Mac).
+- **Corrections and a dictionary.** A misheard app name gets *Did you mean …?*, a doubtful
+  reading one Return, and a short garbled take *Did I hear that right?* instead of an LLM turn
+  that asks back. Picks, confirms and "No, I meant …" teach a personal dictionary (with Undo)
+  that applies from the next take; *Settings → Dictionary* shows and edits it. Learned rules can
+  only open an app, open a web page or change the volume.
 - **Instant commands.** Math, units, currencies, time zones, dates, opening apps and links,
   web searches, file search and volume run without a model, usually in milliseconds, with a
   live preview while you type or speak. The native host performs the action after its own
   policy check; nothing can delete, trash or move files. Return runs it, ⌥Return always asks
   pi. Currency conversions download the European Central Bank's daily reference rates on
-  first use (no question or personal data is sent); that is the only new network request.
+  first use (no question or personal data is sent); that is the only network request instant
+  commands make.
 - **Auto model.** *Auto (recommended)* is listed first in Settings and picks a fast adequate
   model and effort per request (*Prefer speed / Balanced / Prefer quality*). It is the
   default when no model is stored; explicit choices still work.
@@ -171,7 +180,7 @@ in the tray settings page).
 | `shared/protocol/protocol.md` | You change any endpoint, port, or message shape |
 | `shared/schemas/desktop-context.ts` | You touch the context snapshot shape (C# mirror must stay field-compatible) |
 | `AGENTS.md` | You use a coding agent in this repository |
-| `VOICE_MAGIC.md` | You want the voice/instant/Auto design, its measurements, the evaluations (macbrow, jev, json-render, Laya, Clef, pi-durable) and what is still unverified |
+| `VOICE_MAGIC.md` | You want the voice/instant/Auto design, its measurements, the evaluations (macbrow, jev, json-render, Laya, Clef, pi-durable), the pass-3 voice reliability work (EN/DE recognition, Parakeet, the dictionary) and what is still unverified |
 
 ## Current Windows capabilities
 

@@ -1,0 +1,288 @@
+{"id":"A001","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open pages.","finalMs":20.9,"firstPartialMs":1116.9,"locale":"en-US"}
+{"id":"A002","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open key mode.","finalMs":23.3,"firstPartialMs":1110.7,"locale":"en-US"}
+{"id":"A003","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open numbers.","finalMs":23,"firstPartialMs":1007.7,"locale":"en-US"}
+{"id":"A004","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Launch figma.","finalMs":28.5,"firstPartialMs":1012.8,"locale":"en-US"}
+{"id":"A005","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open brave.","finalMs":15.6,"firstPartialMs":1111.5,"locale":"en-US"}
+{"id":"A006","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open notion.","finalMs":19.2,"firstPartialMs":1112.7,"locale":"en-US"}
+{"id":"A007","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open VS code.","finalMs":22.6,"firstPartialMs":1113.6,"locale":"en-US"}
+{"id":"A008","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open scold.","finalMs":23.9,"firstPartialMs":1109.9,"locale":"en-US"}
+{"id":"A009","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open recast.","finalMs":20.6,"firstPartialMs":1111.5,"locale":"en-US"}
+{"id":"A010","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Start Spotify.","finalMs":19.5,"firstPartialMs":1107.7,"locale":"en-US"}
+{"id":"A011","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open Orca.","finalMs":20.4,"firstPartialMs":1012.4,"locale":"en-US"}
+{"id":"A012","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open system settings.","finalMs":21.3,"firstPartialMs":1112.3,"locale":"en-US"}
+{"id":"A013","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open calendar.","finalMs":16.6,"firstPartialMs":1110.7,"locale":"en-US"}
+{"id":"A014","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Switch to Safari.","finalMs":18.1,"firstPartialMs":1112.2,"locale":"en-US"}
+{"id":"A015","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open Telegram","finalMs":14.8,"firstPartialMs":1111.2,"locale":"en-US"}
+{"id":"A016","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open Ghostry.","finalMs":30.2,"firstPartialMs":1115,"locale":"en-US"}
+{"id":"A017","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open chat GPT.","finalMs":28.3,"firstPartialMs":1113.8,"locale":"en-US"}
+{"id":"A018","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open Z.","finalMs":15.3,"firstPartialMs":1108.2,"locale":"en-US"}
+{"id":"A019","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open notion calendar.","finalMs":20.1,"firstPartialMs":1114.7,"locale":"en-US"}
+{"id":"A020","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open activity monitor.","finalMs":28.5,"firstPartialMs":1112.9,"locale":"en-US"}
+{"id":"A021","variant":"clean","source":"apple-st/en-US","role":"peer","text":"What is 17×23?","finalMs":28.8,"firstPartialMs":1111.9,"locale":"en-US"}
+{"id":"A022","variant":"clean","source":"apple-st/en-US","role":"peer","text":"What is 15% of 240.","finalMs":26,"firstPartialMs":1114.1,"locale":"en-US"}
+{"id":"A023","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Convert 5 miles to kilometers.","finalMs":23.7,"firstPartialMs":1108.7,"locale":"en-US"}
+{"id":"A024","variant":"clean","source":"apple-st/en-US","role":"peer","text":"How much is $100 in euros?","finalMs":29.4,"firstPartialMs":1112.4,"locale":"en-US"}
+{"id":"A025","variant":"clean","source":"apple-st/en-US","role":"peer","text":"What time is it in Tokyo?","finalMs":31.1,"firstPartialMs":1113.6,"locale":"en-US"}
+{"id":"A026","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Square root of 144.","finalMs":24.1,"firstPartialMs":1110.5,"locale":"en-US"}
+{"id":"A027","variant":"clean","source":"apple-st/en-US","role":"peer","text":"250÷8","finalMs":18.7,"firstPartialMs":2010.4,"locale":"en-US"}
+{"id":"A028","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Search the web for best pizza in Berlin.","finalMs":26,"firstPartialMs":1115.5,"locale":"en-US"}
+{"id":"A029","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Google flights to Lisbon.","finalMs":28.3,"firstPartialMs":1112.1,"locale":"en-US"}
+{"id":"A030","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Find my invoice from March.","finalMs":30.9,"firstPartialMs":1112.3,"locale":"en-US"}
+{"id":"A031","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Search my computer for tax returns 2025.","finalMs":33.8,"firstPartialMs":1112.2,"locale":"en-US"}
+{"id":"A032","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Turn the volume down.","finalMs":20.1,"firstPartialMs":1108,"locale":"en-US"}
+{"id":"A033","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Set volume to 50%.","finalMs":19,"firstPartialMs":1112.6,"locale":"en-US"}
+{"id":"A034","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open guests.com.","finalMs":24.8,"firstPartialMs":1112.2,"locale":"en-US"}
+{"id":"A035","variant":"clean","source":"apple-st/en-US","role":"peer","text":"What is the weather tomorrow?","finalMs":21.5,"firstPartialMs":1110.5,"locale":"en-US"}
+{"id":"A036","variant":"clean","source":"apple-st/en-US","role":"peer","text":"How do I take a screenshot on a Mac?","finalMs":28.1,"firstPartialMs":1112.4,"locale":"en-US"}
+{"id":"A037","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Summarize this page.","finalMs":24.6,"firstPartialMs":1113,"locale":"en-US"}
+{"id":"A038","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Reply to this email and say I will be late.","finalMs":36.3,"firstPartialMs":1112.4,"locale":"en-US"}
+{"id":"A039","variant":"clean","source":"apple-st/en-US","role":"peer","text":"What is on my calendar today?","finalMs":26.9,"firstPartialMs":1110.9,"locale":"en-US"}
+{"id":"A040","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Play some jazz on Spotify.","finalMs":22,"firstPartialMs":1108.4,"locale":"en-US"}
+{"id":"A041","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Remind me, so call Landa at 5 PM.","finalMs":29.2,"firstPartialMs":1112.3,"locale":"en-US"}
+{"id":"A042","variant":"clean","source":"apple-st/en-US","role":"peer","text":"How many days until Christmas?","finalMs":19.6,"firstPartialMs":1108.4,"locale":"en-US"}
+{"id":"A043","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Transulate, good morning into Japanese.","finalMs":28.2,"firstPartialMs":1112.4,"locale":"en-US"}
+{"id":"A044","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Close all, find their windows.","finalMs":27,"firstPartialMs":1111.9,"locale":"en-US"}
+{"id":"B001","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open August.","finalMs":14.7,"firstPartialMs":1111.3,"locale":"en-US"}
+{"id":"B002","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Oh, then kind order.","finalMs":19.2,"firstPartialMs":1117.4,"locale":"en-US"}
+{"id":"B003","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":14.3,"locale":"en-US"}
+{"id":"B004","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Long sigma.","finalMs":15.6,"firstPartialMs":1111.7,"locale":"en-US"}
+{"id":"B005","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open up.","finalMs":16.1,"firstPartialMs":1115.1,"locale":"en-US"}
+{"id":"B006","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Oh, the noisyon.","finalMs":27.1,"firstPartialMs":1109.7,"locale":"en-US"}
+{"id":"B007","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Orthum Foul Escort.","finalMs":22.1,"firstPartialMs":1112.8,"locale":"en-US"}
+{"id":"B008","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":9.1,"locale":"en-US"}
+{"id":"B009","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":9.4,"locale":"en-US"}
+{"id":"B010","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Start sportingly.","finalMs":23.8,"firstPartialMs":1110.3,"locale":"en-US"}
+{"id":"B011","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Oh, okay.","finalMs":19.4,"firstPartialMs":1210.2,"locale":"en-US"}
+{"id":"B012","variant":"clean","source":"apple-st/en-US","role":"peer","text":"and their same settings.","finalMs":29.9,"firstPartialMs":1112.4,"locale":"en-US"}
+{"id":"B013","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open columns out.","finalMs":26.2,"firstPartialMs":1115,"locale":"en-US"}
+{"id":"B014","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Switch to safari.","finalMs":26.6,"firstPartialMs":1110.7,"locale":"en-US"}
+{"id":"B015","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open the card game, PT.","finalMs":26.9,"firstPartialMs":1111.6,"locale":"en-US"}
+{"id":"B016","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open activity monitor.","finalMs":23.2,"firstPartialMs":1115.3,"locale":"en-US"}
+{"id":"B017","variant":"clean","source":"apple-st/en-US","role":"peer","text":"A lot of these things, A and T was 23.","finalMs":31.8,"firstPartialMs":1113.1,"locale":"en-US"}
+{"id":"B018","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Whom will be familiar, 2 kilometers.","finalMs":31.3,"firstPartialMs":1115.5,"locale":"en-US"}
+{"id":"B019","variant":"clean","source":"apple-st/en-US","role":"peer","text":"lot in the east, east, in Tokyo.","finalMs":34.1,"firstPartialMs":1112,"locale":"en-US"}
+{"id":"B020","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Meow, TV, 4 best pizza in Berlin.","finalMs":34.8,"firstPartialMs":2010.7,"locale":"en-US"}
+{"id":"B021","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Send me invoices for March.","finalMs":23.4,"firstPartialMs":1110.2,"locale":"en-US"}
+{"id":"B022","variant":"clean","source":"apple-st/en-US","role":"peer","text":"See, I was me, computer, 4 tax, 8, 20, 20, 3, 4.","finalMs":57.1,"firstPartialMs":2010.7,"locale":"en-US"}
+{"id":"B023","variant":"clean","source":"apple-st/en-US","role":"peer","text":"So I'd say, like, almost doesn't.","finalMs":33.8,"firstPartialMs":1115.1,"locale":"en-US"}
+{"id":"B024","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Oh, and me, so, so is calm.","finalMs":34.1,"firstPartialMs":1813.5,"locale":"en-US"}
+{"id":"B025","variant":"clean","source":"apple-st/en-US","role":"peer","text":"What is the weather tomorrow?","finalMs":31.9,"firstPartialMs":1116.4,"locale":"en-US"}
+{"id":"B026","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Who do it? I could ask kids, or, uh, make.","finalMs":44.5,"firstPartialMs":1112.1,"locale":"en-US"}
+{"id":"B027","variant":"clean","source":"apple-st/en-US","role":"peer","text":"So, Marie, that is Prague.","finalMs":30.1,"firstPartialMs":1112.1,"locale":"en-US"}
+{"id":"B028","variant":"clean","source":"apple-st/en-US","role":"peer","text":"What is only calendar told it.","finalMs":21.2,"firstPartialMs":1112.8,"locale":"en-US"}
+{"id":"B029","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":10.9,"locale":"en-US"}
+{"id":"B030","variant":"clean","source":"apple-st/en-US","role":"peer","text":"I mean, to me, to come on out to me with a.m.","finalMs":45.5,"firstPartialMs":3406.8,"locale":"en-US"}
+{"id":"B031","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Oh, man, that is still Christmas.","finalMs":26.8,"firstPartialMs":1108.2,"locale":"en-US"}
+{"id":"B032","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Those are the windows.","finalMs":26.3,"firstPartialMs":1908.4,"locale":"en-US"}
+{"id":"C001","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":15.6,"locale":"en-US"}
+{"id":"C002","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Because the kind water.","finalMs":24.5,"firstPartialMs":1112.4,"locale":"en-US"}
+{"id":"C003","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Started supporting me.","finalMs":22.6,"firstPartialMs":1108.8,"locale":"en-US"}
+{"id":"C004","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Because the dessert, same line, stay alone.","finalMs":30.3,"firstPartialMs":1117,"locale":"en-US"}
+{"id":"C005","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Nadine Calendar.","finalMs":22.3,"firstPartialMs":1708.5,"locale":"en-US"}
+{"id":"C006","variant":"clean","source":"apple-st/en-US","role":"peer","text":"There's a Barbie.","finalMs":19.3,"firstPartialMs":1508.7,"locale":"en-US"}
+{"id":"C007","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":10.2,"locale":"en-US"}
+{"id":"C008","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":10.4,"locale":"en-US"}
+{"id":"C009","variant":"clean","source":"apple-st/en-US","role":"peer","text":"How many photos?","finalMs":16.8,"firstPartialMs":1610.5,"locale":"en-US"}
+{"id":"C010","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Definitely a innerungen.","finalMs":22,"firstPartialMs":1111.6,"locale":"en-US"}
+{"id":"C011","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Plus, it's zip, zin, malitai, of...","finalMs":55.6,"firstPartialMs":1112.2,"locale":"en-US"}
+{"id":"C012","variant":"clean","source":"apple-st/en-US","role":"peer","text":"But, in, from, from, from, from, from, from that.","finalMs":56.1,"firstPartialMs":3408.4,"locale":"en-US"}
+{"id":"C013","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":9.9,"locale":"en-US"}
+{"id":"C014","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Special number of miles in kilometers.","finalMs":32.6,"firstPartialMs":2010.1,"locale":"en-US"}
+{"id":"C015","variant":"clean","source":"apple-st/en-US","role":"peer","text":"I mean, it is in Tokyo.","finalMs":35.3,"firstPartialMs":1109.8,"locale":"en-US"}
+{"id":"C016","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Works allows of Delta, CLC.","finalMs":36.1,"firstPartialMs":1109.6,"locale":"en-US"}
+{"id":"C017","variant":"clean","source":"apple-st/en-US","role":"peer","text":"and that not pits are in Berlin.","finalMs":32.4,"firstPartialMs":2009.2,"locale":"en-US"}
+{"id":"C018","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":11.3,"locale":"en-US"}
+{"id":"C019","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Findemeinerstoyer erkleirung.","finalMs":38.4,"firstPartialMs":1112.4,"locale":"en-US"}
+{"id":"C020","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Much louder.","finalMs":20.4,"firstPartialMs":1112.4,"locale":"en-US"}
+{"id":"C021","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Tell me, lower, tell, okay, our friends, this person.","finalMs":37.8,"firstPartialMs":1111,"locale":"en-US"}
+{"id":"C022","variant":"clean","source":"apple-st/en-US","role":"peer","text":"lies are bitter.","finalMs":17,"firstPartialMs":1112.6,"locale":"en-US"}
+{"id":"C023","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Siri, I just met a warden.","finalMs":36,"firstPartialMs":1110.9,"locale":"en-US"}
+{"id":"C024","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Fastening the Zeiten, Zamen.","finalMs":39.9,"firstPartialMs":1112,"locale":"en-US"}
+{"id":"C025","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Watch it, or in my calendar.","finalMs":28.9,"firstPartialMs":1112.4,"locale":"en-US"}
+{"id":"C026","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Yeah, in a margin of no, not in sun out.","finalMs":42.6,"firstPartialMs":2007.5,"locale":"en-US"}
+{"id":"C027","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Me a few of the chargers in SS line oxen.","finalMs":37.9,"firstPartialMs":1111,"locale":"en-US"}
+{"id":"C028","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Strike einemel Antomas.","finalMs":32.6,"firstPartialMs":1114.4,"locale":"en-US"}
+{"id":"C029","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Because that's the Guten Morgan, it's English.","finalMs":47,"firstPartialMs":2011.6,"locale":"en-US"}
+{"id":"C030","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Psych, me, me, me, no, no.","finalMs":35.6,"firstPartialMs":1111.6,"locale":"en-US"}
+{"id":"C031","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Because the - the, I c- the, the, the sun, I get.","finalMs":49,"firstPartialMs":1114.9,"locale":"en-US"}
+{"id":"C032","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":9.6,"locale":"en-US"}
+{"id":"D001","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Because the white cheese.","finalMs":23.5,"firstPartialMs":1710.6,"locale":"en-US"}
+{"id":"D002","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open August, did it?","finalMs":24.6,"firstPartialMs":1112.3,"locale":"en-US"}
+{"id":"D003","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Masigma.","finalMs":17.4,"firstPartialMs":1112,"locale":"en-US"}
+{"id":"D004","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Yeah, like me, come here with a 4 wedding of meals.","finalMs":40.5,"firstPartialMs":1112.1,"locale":"en-US"}
+{"id":"D005","variant":"clean","source":"apple-st/en-US","role":"peer","text":"F Nefal Escort.","finalMs":20.5,"firstPartialMs":1112.5,"locale":"en-US"}
+{"id":"D006","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Because the VS code.","finalMs":24.1,"firstPartialMs":1111.2,"locale":"en-US"}
+{"id":"D007","variant":"clean","source":"apple-st/en-US","role":"peer","text":"There's no X court.","finalMs":22.1,"firstPartialMs":1109.6,"locale":"en-US"}
+{"id":"D008","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Because the guy kissed.","finalMs":18.5,"firstPartialMs":1110.6,"locale":"en-US"}
+{"id":"D009","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Melica.","finalMs":16,"firstPartialMs":1310.7,"locale":"en-US"}
+{"id":"D010","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Started in 5 browser.","finalMs":29.3,"firstPartialMs":1112.2,"locale":"en-US"}
+{"id":"D011","variant":"clean","source":"apple-st/en-US","role":"peer","text":"March 45","finalMs":17.6,"firstPartialMs":1112.2,"locale":"en-US"}
+{"id":"D012","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Can't do a new person.","finalMs":27.1,"firstPartialMs":1109.1,"locale":"en-US"}
+{"id":"D013","variant":"clean","source":"apple-st/en-US","role":"peer","text":"It's anomalous.","finalMs":26.1,"firstPartialMs":1810.4,"locale":"en-US"}
+{"id":"D014","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":10,"locale":"en-US"}
+{"id":"D015","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Zulradik, in nut, present, taxi, from moon back.","finalMs":49.8,"firstPartialMs":1112.3,"locale":"en-US"}
+{"id":"D016","variant":"clean","source":"apple-st/en-US","role":"peer","text":"I'm pretty, pretty, I'm pretty, cool.","finalMs":35.8,"firstPartialMs":3305.6,"locale":"en-US"}
+{"id":"D017","variant":"clean","source":"apple-st/en-US","role":"peer","text":"God, let, uh, our work.","finalMs":29.1,"firstPartialMs":1111.8,"locale":"en-US"}
+{"id":"D018","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open the eyes, gentlemen.","finalMs":26.3,"firstPartialMs":1109.9,"locale":"en-US"}
+{"id":"D019","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Plus, it's one is called sent for oxy oil.","finalMs":45.7,"firstPartialMs":1112.3,"locale":"en-US"}
+{"id":"D020","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Because the what's...","finalMs":21.8,"firstPartialMs":1112.4,"locale":"en-US"}
+{"id":"D021","variant":"clean","source":"apple-st/en-US","role":"peer","text":"That's the daily come.","finalMs":25.2,"firstPartialMs":1112.6,"locale":"en-US"}
+{"id":"D022","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Uh, Negosti.","finalMs":18.9,"firstPartialMs":1110.8,"locale":"en-US"}
+{"id":"D023","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":9.5,"locale":"en-US"}
+{"id":"D024","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Oh, the things I did it.","finalMs":23.7,"firstPartialMs":1509.9,"locale":"en-US"}
+{"id":"D025","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Mix a new pile.","finalMs":24.2,"firstPartialMs":1714.7,"locale":"en-US"}
+{"id":"D026","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Because the jet game, it's it.","finalMs":28.1,"firstPartialMs":1112.4,"locale":"en-US"}
+{"id":"D027","variant":"clean","source":"apple-st/en-US","role":"peer","text":"in the ocean calendar.","finalMs":23.7,"firstPartialMs":1710.7,"locale":"en-US"}
+{"id":"D028","variant":"clean","source":"apple-st/en-US","role":"peer","text":"45 pounds.","finalMs":15.9,"firstPartialMs":1112.4,"locale":"en-US"}
+{"id":"E001","variant":"clean","source":"apple-st/en-US","role":"peer","text":"The light cheese.","finalMs":28.2,"firstPartialMs":1717.6,"locale":"en-US"}
+{"id":"E002","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":10.1,"locale":"en-US"}
+{"id":"E003","variant":"clean","source":"apple-st/en-US","role":"peer","text":"the numbers.","finalMs":25.3,"firstPartialMs":1111.3,"locale":"en-US"}
+{"id":"E004","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Jewish sigma.","finalMs":287.8,"firstPartialMs":1110.9,"locale":"en-US"}
+{"id":"E005","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open tile.","finalMs":224.8,"firstPartialMs":1616.4,"locale":"en-US"}
+{"id":"E006","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open bush.","finalMs":110.1,"firstPartialMs":1289.7,"locale":"en-US"}
+{"id":"E007","variant":"clean","source":"apple-st/en-US","role":"peer","text":"and VS good.","finalMs":267.4,"firstPartialMs":1286.7,"locale":"en-US"}
+{"id":"E008","variant":"clean","source":"apple-st/en-US","role":"peer","text":"The next court.","finalMs":237.8,"firstPartialMs":1289.8,"locale":"en-US"}
+{"id":"E009","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":185.2,"locale":"en-US"}
+{"id":"E010","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Style 45.","finalMs":102.8,"firstPartialMs":1353.6,"locale":"en-US"}
+{"id":"E011","variant":"clean","source":"apple-st/en-US","role":"peer","text":".","finalMs":177.2,"firstPartialMs":1375.8,"locale":"en-US"}
+{"id":"E012","variant":"clean","source":"apple-st/en-US","role":"peer","text":"the listability.","finalMs":63.2,"firstPartialMs":1371.6,"locale":"en-US"}
+{"id":"E013","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open calendar.","finalMs":260.5,"firstPartialMs":1111.2,"locale":"en-US"}
+{"id":"E014","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Switch to the Barbie.","finalMs":30.3,"firstPartialMs":1354.9,"locale":"en-US"}
+{"id":"E015","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open shed GPT.","finalMs":29.6,"firstPartialMs":1316.5,"locale":"en-US"}
+{"id":"E016","variant":"clean","source":"apple-st/en-US","role":"peer","text":"What is 70 times 53.","finalMs":30.1,"firstPartialMs":2010.1,"locale":"en-US"}
+{"id":"E017","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Pone was 5-2 kilometers.","finalMs":192.3,"firstPartialMs":1111.9,"locale":"en-US"}
+{"id":"E018","variant":"clean","source":"apple-st/en-US","role":"peer","text":"What time is it in Tokyo?","finalMs":127.1,"firstPartialMs":1111.4,"locale":"en-US"}
+{"id":"E019","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Such they have 4 best pits are in Berlin.","finalMs":46.7,"firstPartialMs":1126.9,"locale":"en-US"}
+{"id":"E020","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Find my invoice so much.","finalMs":161.1,"firstPartialMs":1110.4,"locale":"en-US"}
+{"id":"E021","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Turn the volume down.","finalMs":275.1,"firstPartialMs":1375.3,"locale":"en-US"}
+{"id":"E022","variant":"clean","source":"apple-st/en-US","role":"peer","text":"What do you say, Mr. tomorrow?","finalMs":62.3,"firstPartialMs":1117.2,"locale":"en-US"}
+{"id":"E023","variant":"clean","source":"apple-st/en-US","role":"peer","text":"How do I tie a screen your own image?","finalMs":297.2,"firstPartialMs":1113.7,"locale":"en-US"}
+{"id":"E024","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Some of I see a pipe.","finalMs":32.6,"firstPartialMs":1344.1,"locale":"en-US"}
+{"id":"E025","variant":"clean","source":"apple-st/en-US","role":"peer","text":"What is on my calendar that will die.","finalMs":98.4,"firstPartialMs":1348.8,"locale":"en-US"}
+{"id":"E026","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Fly Zambuches on Spotify.","finalMs":162.3,"firstPartialMs":1348.6,"locale":"en-US"}
+{"id":"E027","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Remind me to call Anna at 5 p.m.","finalMs":51.8,"firstPartialMs":1363.7,"locale":"en-US"}
+{"id":"E028","variant":"clean","source":"apple-st/en-US","role":"peer","text":"How many days until Christmas?","finalMs":28,"firstPartialMs":1333.8,"locale":"en-US"}
+{"id":"E029","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Oh, you find love in those?","finalMs":201.8,"firstPartialMs":1302.5,"locale":"en-US"}
+{"id":"E030","variant":"clean","source":"apple-st/en-US","role":"peer","text":"to get out.com.","finalMs":214.5,"firstPartialMs":1112.4,"locale":"en-US"}
+{"id":"F001","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open pages.","finalMs":181.4,"firstPartialMs":1363.8,"locale":"en-US"}
+{"id":"F002","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open keynote.","finalMs":25,"firstPartialMs":1112.1,"locale":"en-US"}
+{"id":"F003","variant":"clean","source":"apple-st/en-US","role":"peer","text":"All the numbers.","finalMs":28,"firstPartialMs":1108.3,"locale":"en-US"}
+{"id":"F004","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Launch fichma.","finalMs":31.7,"firstPartialMs":1014.9,"locale":"en-US"}
+{"id":"F005","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open brief.","finalMs":210.9,"firstPartialMs":1196.2,"locale":"en-US"}
+{"id":"F006","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open notion.","finalMs":25.5,"firstPartialMs":1218,"locale":"en-US"}
+{"id":"F007","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Orthum Foul Escort.","finalMs":23.2,"firstPartialMs":1129,"locale":"en-US"}
+{"id":"F008","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open Xcode.","finalMs":34.4,"firstPartialMs":1117.9,"locale":"en-US"}
+{"id":"F009","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open Reichcast.","finalMs":18.7,"firstPartialMs":1126.2,"locale":"en-US"}
+{"id":"F010","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Stadt Spotify.","finalMs":27.6,"firstPartialMs":1128.1,"locale":"en-US"}
+{"id":"F011","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open Alka.","finalMs":21.3,"firstPartialMs":1008.9,"locale":"en-US"}
+{"id":"F012","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Both in this team settings.","finalMs":230.9,"firstPartialMs":1162.6,"locale":"en-US"}
+{"id":"F013","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open calendar.","finalMs":160.5,"firstPartialMs":1343.1,"locale":"en-US"}
+{"id":"F014","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Switch to safari.","finalMs":227.7,"firstPartialMs":1290.1,"locale":"en-US"}
+{"id":"F015","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open Shedgate PT.","finalMs":247.6,"firstPartialMs":1302.8,"locale":"en-US"}
+{"id":"F016","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open activity monitor.","finalMs":29.1,"firstPartialMs":1333.3,"locale":"en-US"}
+{"id":"F017","variant":"clean","source":"apple-st/en-US","role":"peer","text":"That is 17 times 23.","finalMs":24.7,"firstPartialMs":1346,"locale":"en-US"}
+{"id":"F018","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Convert fever miles to kilometers.","finalMs":23.2,"firstPartialMs":1114.1,"locale":"en-US"}
+{"id":"F019","variant":"clean","source":"apple-st/en-US","role":"peer","text":"That time is it in Tokyo.","finalMs":40,"firstPartialMs":1344.9,"locale":"en-US"}
+{"id":"F020","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Search the vet for best pizza in Berlin.","finalMs":36.3,"firstPartialMs":1357.8,"locale":"en-US"}
+{"id":"F021","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Find my invoice from March.","finalMs":251.5,"firstPartialMs":1173.9,"locale":"en-US"}
+{"id":"F022","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Search my computer for text return 2020 fever.","finalMs":45,"firstPartialMs":1222.5,"locale":"en-US"}
+{"id":"F023","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Turn the volume down.","finalMs":19.5,"firstPartialMs":1113.7,"locale":"en-US"}
+{"id":"F024","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open guitab.com.","finalMs":71.8,"firstPartialMs":1112.5,"locale":"en-US"}
+{"id":"F025","variant":"clean","source":"apple-st/en-US","role":"peer","text":"What is the weather tomorrow?","finalMs":32.2,"firstPartialMs":1142.3,"locale":"en-US"}
+{"id":"F026","variant":"clean","source":"apple-st/en-US","role":"peer","text":"How do it take a screenshot on our Mac?","finalMs":38.6,"firstPartialMs":1335.1,"locale":"en-US"}
+{"id":"F027","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":25.1,"locale":"en-US"}
+{"id":"F028","variant":"clean","source":"apple-st/en-US","role":"peer","text":"What is on my calendar today?","finalMs":36.4,"firstPartialMs":1273.3,"locale":"en-US"}
+{"id":"F029","variant":"clean","source":"apple-st/en-US","role":"peer","text":"place on dress on Spotify.","finalMs":150.7,"firstPartialMs":1142,"locale":"en-US"}
+{"id":"F030","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Remained me to call Anna et fever p.m.","finalMs":42,"firstPartialMs":1111.4,"locale":"en-US"}
+{"id":"F031","variant":"clean","source":"apple-st/en-US","role":"peer","text":"How many days until Christmas?","finalMs":192.3,"firstPartialMs":1111.6,"locale":"en-US"}
+{"id":"F032","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Closer alfinder windows.","finalMs":198.2,"firstPartialMs":1115.2,"locale":"en-US"}
+{"id":"G001","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":239.9,"locale":"en-US"}
+{"id":"G002","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open keynote.","finalMs":115.2,"firstPartialMs":1301.5,"locale":"en-US"}
+{"id":"G003","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":221.7,"locale":"en-US"}
+{"id":"G004","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Launsfichma.","finalMs":64,"firstPartialMs":1043,"locale":"en-US"}
+{"id":"G005","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Breif.","finalMs":297.7,"firstPartialMs":1012.5,"locale":"en-US"}
+{"id":"G006","variant":"clean","source":"apple-st/en-US","role":"peer","text":"notion.","finalMs":31.4,"firstPartialMs":1017.6,"locale":"en-US"}
+{"id":"G007","variant":"clean","source":"apple-st/en-US","role":"peer","text":"can be escorted.","finalMs":195.8,"firstPartialMs":1109.1,"locale":"en-US"}
+{"id":"G008","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Welcome Xcode.","finalMs":287.4,"firstPartialMs":1367.7,"locale":"en-US"}
+{"id":"G009","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":105.6,"locale":"en-US"}
+{"id":"G010","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Stach sportifi.","finalMs":136.2,"firstPartialMs":1112.9,"locale":"en-US"}
+{"id":"G011","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Welcome, Alka.","finalMs":32.8,"firstPartialMs":1015,"locale":"en-US"}
+{"id":"G012","variant":"clean","source":"apple-st/en-US","role":"peer","text":"system settings.","finalMs":14.6,"firstPartialMs":1115.1,"locale":"en-US"}
+{"id":"G013","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":217.6,"locale":"en-US"}
+{"id":"G014","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Switch to Safari.","finalMs":251.2,"firstPartialMs":1117.4,"locale":"en-US"}
+{"id":"G015","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Welcome, she, she, Pai Thai.","finalMs":259.8,"firstPartialMs":1741.4,"locale":"en-US"}
+{"id":"G016","variant":"clean","source":"apple-st/en-US","role":"peer","text":"What is 17 times 23?","finalMs":282.2,"firstPartialMs":1111.1,"locale":"en-US"}
+{"id":"G017","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Convert 5 miles to kilometers.","finalMs":21.7,"firstPartialMs":1112.9,"locale":"en-US"}
+{"id":"G018","variant":"clean","source":"apple-st/en-US","role":"peer","text":"What time is it in Tokyo?","finalMs":33.2,"firstPartialMs":1112.8,"locale":"en-US"}
+{"id":"G019","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Without the vet for best pizza in Berlin.","finalMs":30.1,"firstPartialMs":2007.6,"locale":"en-US"}
+{"id":"G020","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Find my info is for March.","finalMs":27,"firstPartialMs":1108.4,"locale":"en-US"}
+{"id":"G021","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Fonze, volume down.","finalMs":20.5,"firstPartialMs":1113.1,"locale":"en-US"}
+{"id":"G022","variant":"clean","source":"apple-st/en-US","role":"peer","text":"What is the vesa tu Moreau?","finalMs":30.8,"firstPartialMs":1111.8,"locale":"en-US"}
+{"id":"G023","variant":"clean","source":"apple-st/en-US","role":"peer","text":"How do I take a screenshot on Emac?","finalMs":28,"firstPartialMs":1111.8,"locale":"en-US"}
+{"id":"G024","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Zamaraizis Peich.","finalMs":27.1,"firstPartialMs":1111.4,"locale":"en-US"}
+{"id":"G025","variant":"clean","source":"apple-st/en-US","role":"peer","text":"What is on my calendar today?","finalMs":31.7,"firstPartialMs":1111.8,"locale":"en-US"}
+{"id":"G026","variant":"clean","source":"apple-st/en-US","role":"peer","text":", , ,.","finalMs":32.5,"firstPartialMs":2014.4,"locale":"en-US"}
+{"id":"G027","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Remind me to call Anna at 5 p.m.","finalMs":38.8,"firstPartialMs":1111.1,"locale":"en-US"}
+{"id":"G028","variant":"clean","source":"apple-st/en-US","role":"peer","text":"How many days until Christmas?","finalMs":31.9,"firstPartialMs":1110.8,"locale":"en-US"}
+{"id":"G029","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Close all finder windows.","finalMs":28.4,"firstPartialMs":1112.6,"locale":"en-US"}
+{"id":"G030","variant":"clean","source":"apple-st/en-US","role":"peer","text":"githab.com.","finalMs":23,"firstPartialMs":1114.2,"locale":"en-US"}
+{"id":"H001","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":17.8,"locale":"en-US"}
+{"id":"H002","variant":"clean","source":"apple-st/en-US","role":"peer","text":"in a keynote.","finalMs":24.3,"firstPartialMs":1010.3,"locale":"en-US"}
+{"id":"H003","variant":"clean","source":"apple-st/en-US","role":"peer","text":"States Spotify.","finalMs":22.1,"firstPartialMs":1110.6,"locale":"en-US"}
+{"id":"H004","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Einsteelungen.","finalMs":33.3,"firstPartialMs":2007.9,"locale":"en-US"}
+{"id":"H005","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":10.4,"locale":"en-US"}
+{"id":"H006","variant":"clean","source":"apple-st/en-US","role":"peer","text":"of ne safari.","finalMs":21.9,"firstPartialMs":1109.9,"locale":"en-US"}
+{"id":"H007","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Nazione.","finalMs":23.1,"firstPartialMs":1209,"locale":"en-US"}
+{"id":"H008","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":21.3,"locale":"en-US"}
+{"id":"H009","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":11.5,"locale":"en-US"}
+{"id":"H010","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Definitely er innerungen.","finalMs":23.4,"firstPartialMs":1115.7,"locale":"en-US"}
+{"id":"H011","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Vas est zip zin mal drayunds vans zich.","finalMs":41.7,"firstPartialMs":2010,"locale":"en-US"}
+{"id":"H012","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Wast in fündt zein protzend von Sweihundad fürltzich.","finalMs":67.4,"firstPartialMs":1107.8,"locale":"en-US"}
+{"id":"H013","variant":"clean","source":"apple-st/en-US","role":"peer","text":"We feel the tunda dollar in a row.","finalMs":29.4,"firstPartialMs":2008,"locale":"en-US"}
+{"id":"H014","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Rechne fün smilen in Kilometer um.","finalMs":35,"firstPartialMs":1114.9,"locale":"en-US"}
+{"id":"H015","variant":"clean","source":"apple-st/en-US","role":"peer","text":"We spit is is in Tokyo.","finalMs":36.5,"firstPartialMs":1111.5,"locale":"en-US"}
+{"id":"H016","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Wotzel aushundad firund fürltzich.","finalMs":48,"firstPartialMs":1114,"locale":"en-US"}
+{"id":"H017","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Zuch in internet nach pizzar in Berlin.","finalMs":35.7,"firstPartialMs":1113,"locale":"en-US"}
+{"id":"H018","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Zorche nach rechnung metz.","finalMs":27.8,"firstPartialMs":1108.1,"locale":"en-US"}
+{"id":"H019","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Findemeine stoyer erkleirung.","finalMs":34.1,"firstPartialMs":1112.3,"locale":"en-US"}
+{"id":"H020","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Mah Lauta.","finalMs":22.3,"firstPartialMs":1012.5,"locale":"en-US"}
+{"id":"H021","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Stel die Lauchstalke aufen sich protzend.","finalMs":45.6,"firstPartialMs":1109,"locale":"en-US"}
+{"id":"H022","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Liza Bitter.","finalMs":22.5,"firstPartialMs":912.8,"locale":"en-US"}
+{"id":"H023","variant":"clean","source":"apple-st/en-US","role":"peer","text":"We will just vetter Morgan.","finalMs":28.6,"firstPartialMs":1110.4,"locale":"en-US"}
+{"id":"H024","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Phasides zeit zuzamen.","finalMs":29.3,"firstPartialMs":1112.3,"locale":"en-US"}
+{"id":"H025","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Vas Stie Teuter in Meinem Kalenda.","finalMs":42,"firstPartialMs":1113.2,"locale":"en-US"}
+{"id":"H026","variant":"clean","source":"apple-st/en-US","role":"peer","text":"In the mission organ, um noin and densan art.","finalMs":41.6,"firstPartialMs":1115.4,"locale":"en-US"}
+{"id":"H027","variant":"clean","source":"apple-st/en-US","role":"peer","text":"We feel a taggers in espis weinachten.","finalMs":40.1,"firstPartialMs":1115.5,"locale":"en-US"}
+{"id":"H028","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Schreich, eine mil and Thomas.","finalMs":32.1,"firstPartialMs":1112.5,"locale":"en-US"}
+{"id":"H029","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Uber zetseguten malgen ins englische.","finalMs":41.7,"firstPartialMs":1116.6,"locale":"en-US"}
+{"id":"H030","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Psych me a minor downloads.","finalMs":35.7,"firstPartialMs":1112.6,"locale":"en-US"}
+{"id":"H031","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Definitely activities and Saighe.","finalMs":26,"firstPartialMs":1112.1,"locale":"en-US"}
+{"id":"H032","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Wishpet ist is.","finalMs":23.8,"firstPartialMs":1110.5,"locale":"en-US"}
+{"id":"I001","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Nepitris.","finalMs":21.4,"firstPartialMs":1116.2,"locale":"en-US"}
+{"id":"I002","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open pages bitter.","finalMs":18.2,"firstPartialMs":1107.5,"locale":"en-US"}
+{"id":"I003","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":15.2,"locale":"en-US"}
+{"id":"I004","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Search my computer for Rechnung Melz.","finalMs":36.4,"firstPartialMs":1112.3,"locale":"en-US"}
+{"id":"I005","variant":"clean","source":"apple-st/en-US","role":"peer","text":"F Nefal escort.","finalMs":24,"firstPartialMs":1115.9,"locale":"en-US"}
+{"id":"I006","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Definitely escort.","finalMs":24.4,"firstPartialMs":1109.9,"locale":"en-US"}
+{"id":"I007","variant":"clean","source":"apple-st/en-US","role":"peer","text":"F, no, excort.","finalMs":25.9,"firstPartialMs":1115.6,"locale":"en-US"}
+{"id":"I008","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":10.2,"locale":"en-US"}
+{"id":"I009","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":21.1,"locale":"en-US"}
+{"id":"I010","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Started in Breisbrowser.","finalMs":26.9,"firstPartialMs":1112.1,"locale":"en-US"}
+{"id":"I011","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":14,"locale":"en-US"}
+{"id":"I012","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":12.8,"locale":"en-US"}
+{"id":"I013","variant":"clean","source":"apple-st/en-US","role":"peer","text":"in a bit of numbers.","finalMs":17.9,"firstPartialMs":1112.3,"locale":"en-US"}
+{"id":"I014","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":15.1,"locale":"en-US"}
+{"id":"I015","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Zulche dikri and nut presentation from Montag.","finalMs":36.3,"firstPartialMs":2013.2,"locale":"en-US"}
+{"id":"I016","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Since the PDF Rechnung from te le comme.","finalMs":49.4,"firstPartialMs":1107.5,"locale":"en-US"}
+{"id":"I017","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Google Better Hamburg.","finalMs":23.8,"firstPartialMs":1113,"locale":"en-US"}
+{"id":"I018","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Olden die einsteelungen.","finalMs":29.6,"firstPartialMs":1111.3,"locale":"en-US"}
+{"id":"I019","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Vas ist zvansich protzend von acht sich euro.","finalMs":54.8,"firstPartialMs":1109.8,"locale":"en-US"}
+{"id":"I020","variant":"clean","source":"apple-st/en-US","role":"peer","text":"What's it?","finalMs":30.1,"firstPartialMs":1119.5,"locale":"en-US"}
+{"id":"I021","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Definitely legrams.","finalMs":19.9,"firstPartialMs":1113.1,"locale":"en-US"}
+{"id":"I022","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":16.2,"locale":"en-US"}
+{"id":"I023","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":11,"locale":"en-US"}
+{"id":"I024","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Open thinder bitter.","finalMs":17.7,"firstPartialMs":1110.7,"locale":"en-US"}
+{"id":"I025","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Wexel zubraif.","finalMs":21.1,"firstPartialMs":1109.6,"locale":"en-US"}
+{"id":"I026","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Definite Jetgate PT.","finalMs":24.4,"firstPartialMs":1111,"locale":"en-US"}
+{"id":"I027","variant":"clean","source":"apple-st/en-US","role":"peer","text":"","finalMs":11,"locale":"en-US"}
+{"id":"I028","variant":"clean","source":"apple-st/en-US","role":"peer","text":"Sporty Fei Kauze.","finalMs":27.5,"firstPartialMs":1114,"locale":"en-US"}

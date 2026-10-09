@@ -178,6 +178,25 @@ let shelfFile = ShelfChipPresentation(id: "item-4", kind: .file, title: "Q3 repo
         panel.setDraft("turn the display off")
         panel.setInstantPreview(InstantPreview.confirm("Sleep display"))
     case "voice-hint": _ = panel.showVoiceOffHint(VoiceOffHint.text)
+    // Voice decisions (DESIGN4 §5.3, §6.6, §7): display only; nothing is learned or opened.
+    case "heard-nothing": panel.showHeardNothing(VoiceCopy.heardNothing)
+    case "did-you-mean", "did-you-mean-two":
+        let two = mode == "did-you-mean-two"
+        guard let response = fixtureInstant(two ? "list-did-you-mean-two" : "list-did-you-mean"), let card = response.card else { return false }
+        let rows = card.openAppRows.map(\.title)
+        panel.setDraft(two ? "open motion" : "open recast")
+        panel.presentVoiceDecision(VoiceDecisionPresentation(kind: .didYouMean, title: VoiceCopy.didYouMean(rows),
+                                                             subtitle: VoiceCopy.heard(response.voice?.heard ?? ""), card: card.choiceCard(numbered: two),
+                                                             footer: VoiceCopy.choicesFooter(rows: rows.count)), onChip: nil)
+    case "check":
+        panel.setDraft("Oh, then kind order.")
+        panel.presentVoiceDecision(VoiceDecisionPresentation(kind: .check, title: VoiceCopy.checkTitle, subtitle: VoiceCopy.checkPick,
+                                                             alternatives: ["Öffne den Kalender"], footer: VoiceCopy.checkFooter), onChip: nil)
+        panel.selectComposerText()
+    case "voice-confirm":
+        panel.setDraft("öffne nummer")
+        panel.setInstantPreview(.hint(VoiceCopy.confirmHint("Open Numbers")))
+    case "acting": panel.presentActing(VoiceCopy.acting("Open Pages"))
     case "instant-files":
         panel.setDraft("find invoice")
         if let card = fixtureInstant("list-files")?.card { panel.setInstantPreview(.list(card)) }
@@ -213,11 +232,25 @@ let shelfFile = ShelfChipPresentation(id: "item-4", kind: .file, title: "Q3 repo
     static let panelStates = ["listening", "transcribing", "instant-calc", "instant-hint", "instant-refuse", "instant-files",
                               "instant-answer", "instant-list", "card", "streaming", "confirmation", "voice-denied", "prompt", "answer",
                               "big-1", "big-2", "big-3", "instant-unit", "hint-web", "confirm-hint", "voice-hint",
-                              "voice-unavailable", "speech-denied", "asset-missing"]
+                              "voice-unavailable", "speech-denied", "asset-missing",
+                              "heard-nothing", "did-you-mean", "did-you-mean-two", "check", "voice-confirm", "acting"]
     static let contextStates = ["chip-off", "chip-suggested", "chip-on", "chip-on-draft", "shelf", "shelf-empty-draft", "shelf-suggestion",
                                 "drop-target", "reader-general", "reader-included", "reader-pointing", "followup-shelf"]
-    static let compositeStates = ["tether", "element", "added-toast", "nothing-toast"]
-    static let settingsStates = ["auto-settings", "voice-settings", "classifier-settings", "context-settings"]
+    static let compositeStates = ["tether", "element", "added-toast", "nothing-toast",
+                                  "not-this-toast", "learned-toast", "ask-toast", "launch-failed-toast"]
+    static let settingsStates = ["auto-settings", "voice-settings", "classifier-settings", "context-settings",
+                                 "dictionary-settings", "recent-takes-settings"]
+    /// The Settings page an offscreen settings state renders (ModelSettingsPreview pages).
+    static func settingsPage(_ state: String) -> String {
+        switch state {
+        case "voice-settings": "voice"
+        case "classifier-settings": "classifier"
+        case "context-settings": "context"
+        case "dictionary-settings": "dictionary"
+        case "recent-takes-settings": "recent-takes"
+        default: "general"
+        }
+    }
     static let presets = ["system", "frost", "contrast", "graphite"]
 
     static func run(directory: URL, only: Set<String>?, larger: Bool = false) async {
@@ -243,9 +276,7 @@ let shelfFile = ShelfChipPresentation(id: "item-4", kind: .file, title: "Q3 repo
                 }
                 if preset == "system" || only != nil {
                     for state in settingsStates where only?.contains(state) ?? true {
-                        let page = state == "voice-settings" ? "voice" : state == "classifier-settings" ? "classifier"
-                            : state == "context-settings" ? "context" : "general"
-                        let (view, keep) = await ModelSettingsPreview.offscreen(page: page)
+                        let (view, keep) = await ModelSettingsPreview.offscreen(page: settingsPage(state))
                         let image = render(view: view, dark: dark)
                         withExtendedLifetime(keep) {
                             written += write(image, directory.appendingPathComponent("\(state)-\(dark ? "dark" : "light").png"))
@@ -258,6 +289,14 @@ let shelfFile = ShelfChipPresentation(id: "item-4", kind: .file, title: "Q3 repo
                     case "tether": image = renderTether(element: false, dark: dark)
                     case "element": image = renderTether(element: true, dark: dark)
                     case "added-toast": image = renderToast("Added to pi", symbol: "checkmark.circle.fill", action: nil, dark: dark)
+                    case "not-this-toast":
+                        image = renderToast(VoiceCopy.opened("Keynote", heard: "kein note"), symbol: "checkmark.circle.fill", actions: [VoiceCopy.notThis], dark: dark)
+                    case "learned-toast":
+                        image = renderToast("Learned: “recast” → Raycast", symbol: "character.book.closed", actions: [VoiceCopy.undo], dark: dark)
+                    case "ask-toast":
+                        image = renderToast("Remember “motion” → Notion?", symbol: "questionmark.circle", actions: [VoiceCopy.remember, VoiceCopy.notNow], dark: dark)
+                    case "launch-failed-toast":
+                        image = renderToast("macOS could not open Pages.", symbol: "exclamationmark.circle", action: nil, dark: dark)
                     default: image = renderToast("Nothing selected · Grab an area?", symbol: "selection.pin.in.out", action: "Grab Area", dark: dark)
                     }
                     guard let image else { continue }
@@ -300,10 +339,13 @@ let shelfFile = ShelfChipPresentation(id: "item-4", kind: .file, title: "Q3 repo
     }
     /// The "Added to pi" confirmation, rendered like the bar (never ordered on screen).
     static func renderToast(_ text: String, symbol: String, action: String?, dark: Bool) -> NSBitmapImageRep {
+        renderToast(text, symbol: symbol, actions: action.map { [$0] } ?? [], dark: dark)
+    }
+    static func renderToast(_ text: String, symbol: String, actions: [String], dark: Bool) -> NSBitmapImageRep {
         let toast = ShelfToast()
         toast.presentsOnScreen = false
         toast.announce = { _, _, _ in }
-        toast.show(text, symbol: symbol, action: action.map { ($0, {}) })
+        toast.show(text, symbol: symbol, actions: actions.map { ($0, {}) }, dwell: nil)
         // The toast follows the preset's appearance (Frost and Contrast are light by design), as in the app.
         let root = toast.snapshotRoot, surface = toast.snapshotSurface
         root.layoutSubtreeIfNeeded()
@@ -490,6 +532,10 @@ let shelfFile = ShelfChipPresentation(id: "item-4", kind: .file, title: "Q3 repo
         if mode == "settings" || mode == "auto-settings" { ModelSettingsPreview.show(); return }
         if mode == "voice-settings" { ModelSettingsPreview.show(page: "voice"); return }
         if mode == "classifier-settings" { ModelSettingsPreview.show(page: "classifier"); return }
+        if mode == "context-settings" { ModelSettingsPreview.show(page: "context"); return }
+        // Settings → Dictionary and its Recent takes list over fixture data (no harness, no journal files, no audio).
+        if mode == "dictionary-settings" { ModelSettingsPreview.show(page: "dictionary"); return }
+        if mode == "recent-takes-settings" { ModelSettingsPreview.show(page: "recent-takes"); return }
         // Process-local appearance overrides never change the installed app's preferences.
         if let index = args.firstIndex(of: "--preset"), args.indices.contains(index + 1) {
             UserDefaults.standard.setVolatileDomain(["appearancePreset": args[index + 1]], forName: UserDefaults.argumentDomain)

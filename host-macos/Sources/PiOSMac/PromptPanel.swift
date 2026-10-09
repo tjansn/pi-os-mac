@@ -52,6 +52,12 @@ enum ComposerKeyPolicy {
                                   repeated: Bool = false) -> Bool {
         keyCode == 51 && modifiers.intersection([.command, .shift, .option, .control]).isEmpty && !composing && empty && !repeated
     }
+    /// 1, 2 or 3 (main row or keypad) without modifiers or marked text: the row a voice choice list picks (0-based).
+    static func pickedRow(characters: String?, modifiers: NSEvent.ModifierFlags, composing: Bool) -> Int? {
+        guard !composing, modifiers.intersection([.command, .option, .control]).isEmpty,
+              let characters, characters.count == 1, let digit = Int(characters), (1...3).contains(digit) else { return nil }
+        return digit - 1
+    }
 }
 private final class PromptEditor: NSTextView {
     var submit: ((CommandController.SubmitIntent) -> Void)?
@@ -63,10 +69,14 @@ private final class PromptEditor: NSTextView {
     var listPreview: (() -> Bool)?
     /// ⌫ in an empty composer: remove the last attachment. False = nothing to remove.
     var removeAttachment: (() -> Bool)?
+    /// 1–3 while a voice choice list shows: pick that row. False = not handled (the digit is typed).
+    var pickRow: ((Int) -> Bool)?
     override func keyDown(with event: NSEvent) {
         if let intent = ComposerKeyPolicy.intent(keyCode: event.keyCode, modifiers: event.modifierFlags, composing: hasMarkedText()) {
             submit?(intent); return
         }
+        if let row = ComposerKeyPolicy.pickedRow(characters: event.characters, modifiers: event.modifierFlags, composing: hasMarkedText()),
+           pickRow?(row) == true { return }
         if ComposerKeyPolicy.togglesContext(keyCode: event.keyCode, modifiers: event.modifierFlags, composing: hasMarkedText(),
                                             listPreview: listPreview?() == true), toggleContext?() == true { return }
         if ComposerKeyPolicy.removesAttachment(keyCode: event.keyCode, modifiers: event.modifierFlags, composing: hasMarkedText(),
@@ -191,6 +201,30 @@ final class ListeningIndicator: NSView {
     var failureMessageFrame: NSRect { failureMessage.frame }
     var failureMessageNeededHeight: CGFloat { failureMessageHeight(width: failureMessage.frame.width) }
     var displayedCard: CardSpec? { cardSource == nil ? nil : cardView.spec }
+    /// The voice decision as shown above the bar (nil when none is visible).
+    var displayedDecision: VoiceDecisionPresentation? { decisionVisible ? voiceDecision : nil }
+    var decisionTexts: (title: String, subtitle: String, footer: String) {
+        (decisionTitle.isHidden ? "" : decisionTitle.stringValue, decisionSubtitle.isHidden ? "" : decisionSubtitle.stringValue,
+         decisionFooter.isHidden ? "" : decisionFooter.stringValue)
+    }
+    var decisionChipTitles: [String] { decisionChips.filter { !$0.isHidden }.map(\.title) }
+    /// Frames (root coordinates) of the decision's visible pieces, for overlap and clipping checks.
+    var decisionFrames: [NSRect] {
+        ([decisionTitle, decisionSubtitle, decisionFooter, cardView] + decisionChips).filter { !$0.isHidden && $0.superview != nil }
+            .map { $0.convert($0.bounds, to: root) }
+    }
+    var readingFrame: NSRect? { reading.isHidden ? nil : reading.frame }
+    var composerSelection: NSRange { input.selectedRange() }
+    /// The voice note's view tree (offscreen previews).
+    var voiceToastSnapshot: (frame: NSRect, radius: CGFloat, content: NSView) { voiceToast.snapshotSurface }
+    var voiceToastRoot: NSView { voiceToast.snapshotRoot }
+    var voiceToastLabel: (frame: NSRect, needed: CGFloat) { voiceToast.labelLayout }
+    /// The frame the voice note sits above while it is up (nil: bottom-centre).
+    var voiceToastAnchor: NSRect? { voiceToast.showing ? voiceToast.anchor : nil }
+    func pressVoiceToast(_ index: Int) { voiceToast.press(index) }
+    func pressDecisionChip(_ index: Int) { if decisionChips.indices.contains(index) { decisionChips[index].performClick(nil) } }
+    /// The 1–3 keys as the composer handles them.
+    @discardableResult func pickRow(_ index: Int) -> Bool { pickDecisionRow(index) }
     var cardActionsEnabled: Bool { cardView.isInteractive }
     var cardHasFocus: Bool { panel.firstResponder === cardView }
     var listeningPresentation: ListeningState { listeningState }
@@ -262,6 +296,16 @@ final class ListeningIndicator: NSView {
     private let failureIcon = NSImageView()
     private let failureTitle = PanelStyle.label("", size: 16, weight: .semibold, color: .labelColor)
     private let failureMessage = NSTextField(wrappingLabelWithString: "")
+    /// A voice decision above the bar (DESIGN4 §5.3, §6.6): title, "Heard …", rows or chips, key hints.
+    private let decisionTitle = PanelStyle.label("", size: 13, weight: .semibold, color: .labelColor)
+    private let decisionSubtitle = PanelStyle.label("", size: 11.5)
+    private let decisionFooter = PanelStyle.label("", size: 11)
+    private var decisionChips: [PanelButton] = []
+    private var voiceDecision: VoiceDecisionPresentation?
+    private var decisionChipHandler: ((Int) -> Void)?
+    /// "Not this", the learned footer and "Remember …?" outlive the bar: a separate non-activating note.
+    private let voiceToast = ShelfToast()
+    private(set) var displayedVoiceToast: VoiceToast?
     private lazy var ask = PanelButton("", symbol: "arrow.up", kind: .primary) { [weak self] in self?.submit(.plain) }
     private lazy var sendFollowup = PanelButton("", symbol: "arrow.up", kind: .primary) { [weak self] in self?.submitFollowup() }
     private lazy var close = PanelButton("", symbol: "xmark") { [weak self] in self?.escape() }
@@ -305,11 +349,14 @@ final class ListeningIndicator: NSView {
         var included = false; var pulled = false; var pointing: String?
     }
     private var sourcePulled = false
-    /// Typed list results sit above the bar while the composer keeps focus.
+    /// Typed list results (and a voice choice list) sit above the bar while the composer keeps focus.
     private var previewCardVisible: Bool {
-        guard mode == .prompt, case .list? = instantPreview else { return false }
+        guard mode == .prompt else { return false }
+        if voiceDecision?.card != nil { return cardView.spec != nil }
+        guard case .list? = instantPreview else { return false }
         return cardView.spec != nil
     }
+    private var decisionVisible: Bool { mode == .prompt && voiceDecision != nil }
     private var showingCard: Bool { cardSource != nil && cardView.spec != nil && presentedFailure == nil }
 
     public override init() {
@@ -333,9 +380,13 @@ final class ListeningIndicator: NSView {
             bar.embedded.addSubview(view)
         }
         for view in [appIcon, sourceLabel, questionLabel, responseStatus, answerScroll, cardView,
-                     failureIcon, failureTitle, failureMessage, close, copyButton, permissions] {
+                     failureIcon, failureTitle, failureMessage, close, copyButton, permissions,
+                     decisionTitle, decisionSubtitle, decisionFooter] {
             reading.embedded.addSubview(view)
         }
+        decisionTitle.lineBreakMode = .byTruncatingTail; decisionSubtitle.lineBreakMode = .byTruncatingMiddle
+        decisionFooter.lineBreakMode = .byTruncatingTail
+        decisionTitle.setAccessibilityRole(.staticText)
         identity.isBordered = false; identity.font = .systemFont(ofSize: 22, weight: .medium)
         identity.image = PanelStyle.symbol("chevron.down", size: 8)
         identity.imagePosition = .imageTrailing; identity.target = self; identity.action = #selector(showContext)
@@ -366,6 +417,10 @@ final class ListeningIndicator: NSView {
             }
             editor.listPreview = { [weak self] in self?.previewCardVisible == true }
             editor.removeAttachment = { [weak self] in self?.onRemoveLastAttachment?() ?? false }
+            editor.pickRow = { [weak self, weak editor] index in
+                guard let self, editor === self.input else { return false }
+                return self.pickDecisionRow(index)
+            }
         }
         input.setAccessibilityHelp("Return to ask or run a quick command. Option-Return always asks pi. Shift-Return for a new line. Escape closes.")
         input.submit = { [weak self] in self?.submit($0) }; input.dismiss = { [weak self] in self?.escape() }
@@ -537,6 +592,7 @@ final class ListeningIndicator: NSView {
         question = ""; retryStatus = nil; streamStatus = nil; presentedFailure = nil
         listeningState = .off; instantPreview = nil; streaming = false; placeholder.stringValue = idlePlaceholder
         voiceHintShown = false; placeholder.toolTip = nil
+        voiceDecision = nil; decisionChipHandler = nil
         clearCard()
         reset(.prompt); reveal(); panel.makeFirstResponder(input)
     }
@@ -558,6 +614,8 @@ final class ListeningIndicator: NSView {
         panel.setFrame(Placement.bottomPanel(width: width, height: height, workArea: workArea,
             lowerInset: PanelStyle.preferences.lowerInset).cg, display: false)
         root.frame = NSRect(origin: .zero, size: panel.frame.size)
+        // A voice note ("Not this", Undo, Remember) that is still up stays clear of the bar as it opens or grows.
+        if mode == .prompt || mode == .reader { voiceToast.follow(above: panel.frame) }
     }
     /// The inline preview as laid out in the bar: exactly one line, never wrapped. `full` is the
     /// complete text for the tooltip and VoiceOver when `text` had to be shortened.
@@ -694,7 +752,7 @@ final class ListeningIndicator: NSView {
             let activeAnswer = $0 === answerScroll && mode == .reader && presentedFailure == nil && !showingCard
             if !activeAnswer && !($0 === cardView && cardShown) { $0.isHidden = true }
         }
-        reading.isHidden = !(mode == .reader || previewCardVisible)
+        reading.isHidden = !(mode == .reader || previewCardVisible || decisionVisible)
         let width: CGFloat = min(PanelMetrics.width, CGFloat(max(1, workArea.width - 24)))
         let warningWidth: CGFloat = isTrusted ? 66 : 0
         // The chip sits left of the send slot; its width comes out of the editor's (DESIGN2 §3.2).
@@ -713,14 +771,13 @@ final class ListeningIndicator: NSView {
             }
             let composerWidth = max(40, editorWidth - trailing)
             let barHeight = max(baseBarHeight, editorHeight(input, width: composerWidth) + 22) + shelfHeight
-            if previewCardVisible {
-                cardView.maximumHeight = PanelMetrics.previewCardMaximum
-                let cardHeight = max(1, cardView.fittingHeight(forWidth: width - 44))
-                let readHeight = cardHeight + 28
+            if previewCardVisible || decisionVisible {
+                let placed = layoutDecision(width: width)
+                let readHeight = placed.height
                 frame(width: width, height: readHeight + 12 + barHeight)
                 reading.frame = NSRect(x: 0, y: 0, width: root.bounds.width, height: readHeight); reading.radius = 21; reading.isHidden = false
                 bar.frame = NSRect(x: 0, y: readHeight + 12, width: root.bounds.width, height: barHeight)
-                show(cardView, NSRect(x: 22, y: 14, width: root.bounds.width - 44, height: cardHeight))
+                for (view, rect) in placed.frames { show(view, rect) }
             } else {
                 frame(width: width, height: barHeight); bar.frame = root.bounds
             }
@@ -808,6 +865,70 @@ final class ListeningIndicator: NSView {
     private var shelfRowHeight: CGFloat {
         guard !shelfChips.isEmpty, mode == .prompt || (mode == .reader && presentedFailure == nil && followupEnabled) else { return 0 }
         return ShelfChipsView.rowHeight(larger: PanelStyle.preferences.largerText) + 8
+    }
+    /// The reading surface above the bar in prompt mode: a typed list preview (the card alone, as before), or a voice
+    /// decision: title, "Heard …", the numbered rows or the reading chips, then the key hints. Returns the surface
+    /// height and each piece's frame (surface coordinates).
+    private func layoutDecision(width: CGFloat) -> (height: CGFloat, frames: [(NSView, NSRect)]) {
+        let inner = max(1, width - 44)
+        var frames: [(NSView, NSRect)] = []
+        var y: CGFloat = 14
+        let scale = PanelStyle.textScale
+        let contrast = PanelStyle.preferences.preset == .contrast || PanelStyle.increaseContrast
+        let decision = decisionVisible ? voiceDecision : nil
+        func line(_ font: NSFont) -> CGFloat { ceil(font.ascender - font.descender + font.leading) + 2 }
+        if let decision {
+            decisionTitle.font = .systemFont(ofSize: 13 * scale, weight: .semibold)
+            decisionTitle.stringValue = decision.title; decisionTitle.toolTip = decision.title
+            frames.append((decisionTitle, NSRect(x: 22, y: y, width: inner, height: line(decisionTitle.font!))))
+            y += line(decisionTitle.font!)
+            if let subtitle = decision.subtitle, !subtitle.isEmpty {
+                decisionSubtitle.font = .systemFont(ofSize: 11.5 * scale)
+                decisionSubtitle.textColor = contrast ? .labelColor : PanelStyle.secondaryInk
+                decisionSubtitle.stringValue = subtitle; decisionSubtitle.toolTip = subtitle
+                y += 1
+                frames.append((decisionSubtitle, NSRect(x: 22, y: y, width: inner, height: line(decisionSubtitle.font!))))
+                y += line(decisionSubtitle.font!)
+            }
+        }
+        if previewCardVisible {
+            cardView.maximumHeight = PanelMetrics.previewCardMaximum
+            let cardHeight = max(1, cardView.fittingHeight(forWidth: inner))
+            if decision != nil { y += 8 }
+            frames.append((cardView, NSRect(x: 22, y: y, width: inner, height: cardHeight)))
+            y += cardHeight
+        }
+        if decision != nil, !decisionChips.isEmpty {
+            y += 10
+            let chipHeight: CGFloat = PanelStyle.preferences.largerText ? 32 : 28
+            var x: CGFloat = 22
+            for chip in decisionChips {
+                chip.font = .systemFont(ofSize: 12 * scale, weight: .medium)
+                let natural = ceil((chip.title as NSString).size(withAttributes: [.font: chip.font!]).width) + 28
+                let chipWidth = min(natural, inner)
+                if x > 22, x + chipWidth > 22 + inner { x = 22; y += chipHeight + 6 }
+                frames.append((chip, NSRect(x: x, y: y, width: chipWidth, height: chipHeight)))
+                x += chipWidth + 8
+            }
+            y += chipHeight
+        }
+        if let decision, !decision.footer.isEmpty {
+            decisionFooter.font = .systemFont(ofSize: 11 * scale)
+            decisionFooter.textColor = contrast ? .labelColor : PanelStyle.secondaryInk
+            decisionFooter.stringValue = decision.footer; decisionFooter.toolTip = decision.footer
+            y += 8
+            frames.append((decisionFooter, NSRect(x: 22, y: y, width: inner, height: line(decisionFooter.font!))))
+            y += line(decisionFooter.font!)
+        }
+        return (y + 14, frames)
+    }
+    /// 1–3 on a shown choice list: select that row and act on it as Return would.
+    private func pickDecisionRow(_ index: Int) -> Bool {
+        guard decisionVisible, voiceDecision?.card != nil, previewCardVisible else { return false }
+        let keys = cardView.selectableKeys
+        guard keys.indices.contains(index) else { return false }
+        cardView.select(keys[index])
+        return cardView.perform(.primary)
     }
     /// `top`: the composer row starts below the shelf row.
     private func layoutIdentity(top: CGFloat = 0) {
@@ -1144,7 +1265,7 @@ final class ListeningIndicator: NSView {
         instantPreview = preview
         if case .list(let card)? = preview {
             cardSource = .instant; cardView.actionsEnabled = true; cardView.update(spec: card, complete: true)
-        } else if cardSource != nil { clearCard() }
+        } else if cardSource != nil, voiceDecision?.card == nil { clearCard() }
         layoutCurrent()
         announcePreview()
     }
@@ -1179,15 +1300,82 @@ final class ListeningIndicator: NSView {
         instantPreview = nil; listeningState = .off; streaming = false; streamStatus = nil
         presentAnswer(result.copyText, failure: nil, save: true, card: result.card, cardSource: .instant, focusCard: result.focusCard)
     }
-    public func presentConfirmation(_ text: String) {
+    public func presentConfirmation(_ text: String) { presentCapsule(text, symbol: "checkmark.circle.fill") }
+    /// "Opening Pages…" at once: the same quiet non-key capsule, with the app-launch glyph (the launch is not awaited).
+    public func presentActing(_ text: String) { presentCapsule(text, symbol: "arrow.up.forward.app") }
+    private func presentCapsule(_ text: String, symbol: String) {
         activity.stringValue = text; activity.toolTip = text
-        confirmIcon.image = PanelStyle.symbol("checkmark.circle.fill", size: 18)
-        listeningState = .off; instantPreview = nil; clearCard()
+        confirmIcon.image = PanelStyle.symbol(symbol, size: 18)
+        listeningState = .off; instantPreview = nil; voiceDecision = nil; decisionChipHandler = nil; clearCard()
         reset(.confirmation)
         if presentsOnScreen { panel.orderFrontRegardless() }
         panel.resignKey()
         Accessibility.announce(text, on: activity, priority: .medium, using: announce)
     }
+    var capsuleSymbol: NSImage? { confirmIcon.image }
+    /// Nothing usable was heard: the empty composer's placeholder says so until the first keystroke (as the voice-off
+    /// hint); the bar stays, so the user can type or hold the hotkey again.
+    public func showHeardNothing(_ text: String) {
+        guard mode == .prompt else { return }
+        if !input.string.isEmpty { setComposerText("") }
+        listeningState = .off
+        voiceHintShown = true
+        placeholder.stringValue = text; placeholder.toolTip = text
+        layoutCurrent()
+        Accessibility.announce(text, on: input, priority: .medium, using: announce)
+    }
+    public func selectComposerText() {
+        guard mode == .prompt else { return }
+        panel.makeFirstResponder(input)
+        input.setSelectedRange(NSRange(location: 0, length: (input.string as NSString).length))
+    }
+    /// A voice decision above the composer (nil removes it). The composer keeps focus and its text; rows are the card
+    /// (↑/↓, Return, 1–3, a click), chips report through `onChip`.
+    public func presentVoiceDecision(_ presentation: VoiceDecisionPresentation?, onChip: ((Int) -> Void)?) {
+        guard mode == .prompt else { voiceDecision = nil; decisionChipHandler = nil; return }
+        voiceDecision = presentation; decisionChipHandler = onChip
+        var typedList = false
+        if case .list? = instantPreview { typedList = true }
+        if let card = presentation?.card {
+            cardSource = .instant; cardView.actionsEnabled = true; cardView.update(spec: card, complete: true)
+        } else if cardSource != nil, !typedList {
+            clearCard()
+        }
+        decisionChips.forEach { $0.removeFromSuperview() }
+        decisionChips = (presentation?.alternatives ?? []).enumerated().map { index, text in
+            let shown = CardText.clamp(text, 60)
+            let chip = PanelButton(shown, symbol: "text.bubble", kind: .filled) { [weak self] in self?.decisionChipHandler?(index) }
+            chip.rounded = true; chip.symbolSize = 12
+            chip.setAccessibilityLabel("Use “\(text)”"); chip.toolTip = text
+            reading.embedded.addSubview(chip)
+            return chip
+        }
+        layoutCurrent()
+        guard let presentation else { return }
+        // VoiceOver hears what Return would do; nothing is spoken over dictation.
+        var spoken = [presentation.title] + (presentation.subtitle.map { [$0] } ?? [])
+        if let opens = cardView.defaultItemTitle, presentation.card != nil { spoken.append("Return opens " + opens) }
+        if !presentation.alternatives.isEmpty { spoken.append(presentation.alternatives.map { "“\($0)”" }.joined(separator: ", ")) }
+        if listeningState == .off { Accessibility.announce(spoken.joined(separator: ". "), on: decisionTitle, priority: .medium, using: announce) }
+    }
+    /// The note sits just above the open bar, or where the bar was once it has gone.
+    public func presentVoiceToast(_ toast: VoiceToast, onAction: @escaping @MainActor (Int) -> Void) {
+        voiceToast.presentsOnScreen = presentsOnScreen
+        voiceToast.announce = announce
+        let symbol = switch toast.kind {
+        case .notThis: "checkmark.circle.fill"
+        case .learned: "character.book.closed"
+        case .ask: "questionmark.circle"
+        case .undone: "arrow.uturn.backward.circle"
+        }
+        let actions: [(title: String, handler: () -> Void)] = toast.actions.enumerated().map { index, title in
+            (title, { onAction(index) })
+        }
+        let open = isVisible && (mode == .prompt || mode == .reader)
+        voiceToast.show(toast.text, symbol: symbol, actions: actions, dwell: toast.dwell, above: open ? panel.frame : nil)
+        displayedVoiceToast = toast
+    }
+    public func dismissVoiceToast() { voiceToast.hide(); displayedVoiceToast = nil }
     public func presentActionNotice(_ text: String) {
         guard mode == .reader, presentedFailure == nil else { return }
         retryStatus = text; responseStatus.toolTip = text; layoutCurrent()
@@ -1256,6 +1444,14 @@ final class ListeningIndicator: NSView {
     public func dismissWorking() {
         guard mode == .pill || (mode == .reader && streaming) else { return }
         appearancePopover.close(); progress.stopAnimation(nil); panel.orderOut(nil)
+    }
+    /// A finished answer steps aside after pi opened something (AutoMinimizePolicy): the panel goes, the reader keeps its
+    /// answer, card and follow-up composer, and `reveal()` brings exactly that back. False when no finished answer is up
+    /// or the user already started a follow-up there.
+    @discardableResult public func stepAside() -> Bool {
+        guard mode == .reader, !streaming, followup.string.isEmpty else { return false }
+        appearancePopover.close(); shelfPopover.close(); panel.orderOut(nil)
+        return true
     }
     /// Native input is about to start: get out of the target's way (working capsule or a streaming reader).
     public func suspendForInput() -> Bool {

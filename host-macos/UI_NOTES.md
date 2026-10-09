@@ -1,5 +1,56 @@
 # Native UI polish
 
+## 2026-10-07 Settings → Voice languages and Recognition, Settings → Dictionary, Recent takes (offscreen-verified only)
+
+DESIGN4 §4.2, §4.4, §6.7, §6.8, D-T1, D-T7. The Settings window keeps its 560 × 708 size, its tabs and its manual
+frames; Voice gains two sections and scrolls, Dictionary is a new tab after Voice. Buttons keep the window's Title
+Case (“Add Word…”, “Delete All Takes”, “Forget Everything…”); labels and notes are sentence case. No new animation.
+
+| Severity | Location | Before | After | Why |
+| --- | --- | --- | --- | --- |
+| HIGH | `SettingsWindow.swift` (Voice → Languages I speak) | One language picker: a German take ran on the English recognizer | One checkbox row per language (English (US), Deutsch (Deutschland)) with its model status and **Download** when the dictation model is missing; every checked language runs at once and the arbiter picks (*pi-os listens for every checked language at once and picks the one you spoke.*); at least one stays checked; after the migration from the single language a one-time note: *New: pi-os now listens for English and German at the same time. Uncheck any language you don’t speak.* | Tom speaks both and mixes (D-T7); an unchecked language is never started and never chosen as the take's locale |
+| HIGH | `RecognitionSettingsView.swift` (Voice → Recognition) | — | *Multilingual model · Parakeet TDT 0.6B v3 (483 MB) · Download…* behind a consent sheet (*Download enhanced recognition?*: size, Hugging Face repository at the pinned revision, the CC BY 4.0 line, *It stays on this Mac; audio never leaves pi-os.*); *Downloading 37%* + Cancel; *Preparing for the Neural Engine… (first time, about 30 s)*; *Waiting for the local AI benchmark to finish…* + Try Again; *Ready* + Delete (asks first); a failure's message + Retry; the note *Until it is ready, pi-os uses Apple’s recognition. Audio never leaves pi-os.* | 483 MB only after consent; the shipped model is pinned, so the row never reads “Not available in this build”; opening the page with voice on loads an installed model (never a download) |
+| HIGH | `DictionarySettingsView.swift` (new Dictionary tab) | What pi learned was invisible and could not be undone | *Learn from my corrections* (Picks learn immediately / Ask / Off), *Apply to the recognizer*, *Explain to pi*; App names · Phrases · Fixes · Words · Recent takes; rows read *“recast” → opens Raycast* over *Parakeet · used 5 times · from “Did you mean”*; pin, on/off switch, Edit inline, delete with Undo; Add Word…; a shadowing entry is marked (*“siri” will open Spotify instead of Siri*) and Node's *Save anyway?* gets **Save Anyway**; Export… (0600 JSON), Import…, Forget Everything… (asks; also deletes kept takes) | Tom: “the app should improve from my corrections” — and he can see, fix and undo what it learned; every write refetches the recognizer's contextual strings |
+| MEDIUM | `RecentTakesView.swift` (Dictionary → Recent takes) | — | *Keep my last voice takes to improve recognition* (off by default; switching off keeps what is there); newest first: *Today at 17:07 · 1.4 s*, what each engine heard (*Apple · English: “Open recast”*), the decision and outcome (*Did you mean… · You picked Raycast*, *Fixed: “…”*); ▶ plays one take at a time (stops on another list, another tab or close); **Fix…** → an app, or *Just fix the words* (keeps the first word, at most four words, never a command word; deletion and yes/no words teach nothing); delete one or **Delete All Takes** (asks) | Corrections from real takes, with a visible privacy switch |
+| LOW | `SettingsWindow.swift` (Voice page) | Fixed height | The page scrolls (about 30 pt more with Recognition); the window size is unchanged | Fits the existing window |
+
+Offscreen pass (`pi-os-ui-preview --snapshot DIR --states voice-settings,dictionary-settings,recent-takes-settings`,
+light and dark; live fixture windows: `pi-os-ui-preview dictionary-settings` / `recent-takes-settings`):
+`SettingsSnapshotTests` renders Voice with the Recognition row in every model state, Dictionary empty, populated,
+shadowing and needs-confirmation, Recent takes, and the open Add Word and Fix forms in every preset, and checks that
+nothing visible is clipped. The S3 review fixed a tab click that kept a take playing and a Fix that could rewrite a
+command word.
+
+Not verified: any live window; NSAlert, NSSavePanel and NSOpenPanel; real playback through AVAudioPlayer; VoiceOver;
+keyboard focus in the inline editors (Escape triggers the window's Done and drops an unsaved edit).
+
+## 2026-10-07 voice decisions in the bar (offscreen-verified only)
+
+DESIGN4 §3, §5.3, §6.6, §7. New states extend Whisper: the bar stays the bar, its composer keeps focus and the heard
+words, and every decision sits on the reading material above it (as typed list previews do). No new animation; the
+capsule and notes change state instantly.
+
+| Severity | Location | Before | After | Why |
+| --- | --- | --- | --- | --- |
+| HIGH | `CommandController.swift` (empty final) | A take that heard nothing returned silently (9 % of takes) | The empty composer says *Didn’t catch that. Hold and say it again.* (placeholder, announced); holding the hotkey again starts a new take instead of closing the bar | Never a silent failure |
+| HIGH | `PromptPanel.swift` (did you mean) | A misheard name went to the LLM, which asked back | Title *Did you mean Raycast?* (one row) or *Did you mean…* (2–3), subtitle *Heard “recast”*, Node's rows without the redundant list header and numbered **1–3** in the row detail, key hints *1–2 or ↩ Open · ⌥↩ Ask pi instead*; Return, a click, 1–3, ↑/↓, or a spoken *yes / ja / the second / die zweite / zwei / <name>* on the next hold | One Return instead of a 3–6 s agent turn; spoken and keyboard answers both work |
+| HIGH | `PromptPanel.swift` (check state) | A garbled final started an LLM run that asked “What would you like to do?” | *Did I hear that right?*, the heard text selected in the composer (typing replaces it), the other language's reading as a chip, *↩ Run it · ⌥↩ Ask pi*; holding the hotkey re-says it | Fix or re-say locally, in 0 s |
+| MEDIUM | `PromptPanel.swift` (confirm) | “Return to confirm: Open Numbers” | *Open Numbers? ↩* as the inline hint; a spoken *ja / yes* on the next hold also confirms | Shorter, spoken-friendly |
+| MEDIUM | `PromptPanel.swift` (acting) | “✓ Opened Figma” after waiting up to 3 s for the launch, then 1.2 s | *Opening Pages…* at once in the quiet non-key capsule (app glyph, not a checkmark: the launch is not awaited), gone after 0.4 s; a launch that fails afterwards is a note | The bar no longer holds after a correct hear |
+| MEDIUM | `ShelfToastView.swift` (voice notes) | One optional button, 1.4/3 s | Up to two buttons and a 4 s dwell: *Opened Keynote (heard “kein note”) · Not this*, *Learned: “recast” → Raycast · Undo*, *Remember “motion” → Notion? · Remember · Not now*; non-activating, above the open bar or where the bar was (a note still up when the bar reopens or grows moves above it); announced with its buttons; width up to 600 pt | Undo and correction without stealing focus |
+
+Offscreen pass (`pi-os-ui-preview --snapshot`, System/Frost/Contrast/Graphite × light/dark, standard and Larger text;
+states `heard-nothing`, `did-you-mean`, `did-you-mean-two`, `check`, `voice-confirm`, `acting`, `not-this-toast`,
+`learned-toast`, `ask-toast`, `launch-failed-toast`) found and fixed: Node's “Applications” list header repeated what
+the title says (dropped for choice cards). `PanelPreviewTests` lays out and renders every state in every preset at both
+text sizes and checks that no piece leaves the reading surface or overlaps another, the bar keeps its place and height,
+the composer keeps focus, and notes are never truncated.
+
+Not verified: any live window; VoiceOver with the decision header, chips and notes; real Escape after an act (the
+launched app is key, so Escape cannot reach pi-os without a global key monitor, which pi-os does not install: “Not
+this” is the note's button or a spoken/typed “no” within 5 s); glass over busy wallpapers; the 1–3 keys with
+non-US keyboard layouts.
+
 ## 2026-10-05 context chip, shelf, tether and Brave access (offscreen-verified only)
 
 New states extend Whisper (480 × 50 bar, glass presets, readable reader material); nothing replaces

@@ -11,6 +11,7 @@ import { AppIndexCache } from "../src/instant/apps.js";
 import { createInstantDispatcher } from "../src/instant/dispatcher.js";
 import { EcbRateStore } from "../src/instant/engines/fx.js";
 import { parseInstant } from "../src/instant/grammar/index.js";
+import { openStrength } from "../src/instant/grammar/launch.js";
 import { normalize } from "../src/instant/normalize.js";
 
 /*
@@ -419,4 +420,143 @@ test("grammar parse is microseconds per utterance", () => {
   for (let round = 0; round < 20; round++) for (const input of inputs) parseInstant(normalize(input), ctx);
   const perUtterance = ((performance.now() - started) * 1_000) / (20 * inputs.length);
   assert.ok(perUtterance < 500, `${perUtterance.toFixed(1)} µs per utterance`);
+});
+
+// ---------------------------------------------------------------- voice grammar (DESIGN4 §5.1)
+
+const voiceParse = (input: string, locale?: string) => parseInstant(normalize(input, locale), ctx, { voice: true });
+const typedParse = (input: string, locale?: string) => parseInstant(normalize(input, locale), ctx);
+/** "target" or "target/weak" or "target/bare"; anything else as its kind. */
+function voiceOpen(input: string, locale?: string): string {
+  const parsed = voiceParse(input, locale);
+  if (parsed?.kind !== "open") return parsed?.kind ?? "null";
+  const strength = openStrength(parsed);
+  return strength === "strong" ? parsed.target : `${parsed.target}/${strength}`;
+}
+
+test("voice: EN wrapper families reduce to the open target", () => {
+  for (const input of [
+    "open Pages", "Okay, open Pages.", "Um, open Pages.", "Hey, open Pages.", "So open Pages.", "Hey pi, open Pages.", "Open, Pages.",
+    "Open Pages for me.", "Can you open Pages for me?", "Could you open Pages please?", "Would you mind opening Pages?",
+    "Go ahead and open Pages.", "I want to open Pages.", "I'd like to open Pages.", "Let's open Pages.", "Just open Pages.",
+    "Open open Pages.", "Open up Pages.", "Start up Pages.", "Switch over to Pages.", "Switch back to Pages.", "Jump to Pages.",
+    "Bring Pages to the front.", "Pull Pages up.", "Get Pages up.", "Switch to the Pages window.", "Open the Pages app.",
+    "Okay so open Pages please.", "Open Pages now.", "Can you launch Pages?",
+  ]) assert.equal(voiceOpen(input), "pages", input);
+});
+
+test("voice: German verb-first, particles, verb-final and split forms", () => {
+  for (const input of [
+    "Öffne Pages.", "Öffne bitte Pages.", "Öffne mir bitte Pages.", "Öffne mal Pages.", "Öffne Pages bitte.", "Öffne Pages für mich.",
+    "Pages öffnen.", "Pages bitte öffnen.", "Bitte Pages öffnen.", "Kannst du Pages öffnen?", "Kannst du mal Pages aufmachen?",
+    "Könntest du bitte Pages starten?", "Ich will Pages öffnen.", "Ich möchte Pages öffnen.", "Pages starten.", "Pages aufrufen.",
+    "Mach Pages auf.", "Mach mal Pages auf.", "Mach bitte Pages auf.", "Mach mir mal Pages auf.", "Hol Pages nach vorne.",
+    "Hol mir Pages her.", "Ruf Pages auf.", "Starte mal Pages.", "Starte bitte Pages.", "Wechsel zu Pages.", "Wechsle in Pages.",
+    "Geh mal zu Pages.", "Okay, öffne Pages.", "Äh, öffne Pages.", "Also öffne Pages.", "Hey pi, öffne Pages.",
+    "Öffne das Programm Pages.",
+  ]) assert.equal(voiceOpen(input, "de-DE"), "pages", input);
+  // Particles never end up in the target.
+  assert.equal(voiceOpen("Öffne mir bitte mal die Systemeinstellungen.", "de-DE"), "systemeinstellungen");
+  assert.equal(voiceOpen("Kannst du mir bitte Notion Calendar öffnen?", "de-DE"), "notion calendar");
+  assert.equal(voiceOpen("Kannst du mir mal Pages aufmachen?", "de-DE"), "pages");
+  assert.equal(voiceOpen("Könntest du uns bitte die Systemeinstellungen öffnen?", "de-DE"), "systemeinstellungen");
+});
+
+test("voice: weak verbs, indefinite objects and bare names are marked; noise words are not names", () => {
+  assert.equal(voiceOpen("Show me Pages."), "pages/weak");
+  assert.equal(voiceOpen("Zeig mir Pages.", "de-DE"), "pages/weak");
+  assert.equal(voiceOpen("Focus Ghostty."), "ghostty/weak");
+  assert.equal(voiceOpen("Open a new tab."), "a new tab/weak");
+  assert.equal(voiceOpen("Starte einen Timer.", "de-DE"), "einen timer/weak");
+  assert.equal(voiceOpen("Spotify."), "spotify/bare");
+  assert.equal(voiceOpen("Notion Calendar, please."), "notion calendar/bare");
+  for (const input of ["Yes.", "No.", "Okay.", "Thanks.", "Danke.", "Hmm.", "Open.", "Launch.", "Hallo.", "Page 2.", "Tell me a joke about cats."]) {
+    assert.notEqual(voiceParse(input)?.kind, "open", input);
+  }
+  // Known site names keep their fallback URL; a bare site name does not open it.
+  assert.deepEqual(voiceParse("Okay, open YouTube."), { kind: "open", target: "youtube", siteUrl: "https://www.youtube.com/" });
+  assert.equal(voiceOpen("YouTube."), "youtube/bare");
+  assert.equal(voiceParse("YouTube.")?.kind === "open" && "siteUrl" in voiceParse("YouTube.")!, false);
+});
+
+test("voice: the target keeps App Store and page names (no 'app '/'page ' prefix eats them)", () => {
+  assert.equal(voiceOpen("Open App Store."), "app store");
+  assert.equal(voiceOpen("Open page is."), "page is");
+  assert.equal(voiceOpen("Open the App Store app."), "app store");
+  assert.equal(typedParse("open app store")?.kind === "open" && typedParse("open app store")!.kind, "open");
+  assert.deepEqual(typedParse("open app store"), { kind: "open", target: "app store" });
+  assert.deepEqual(typedParse("open page is"), { kind: "open", target: "page is" });
+  // …but a URL after "page"/"app" still opens, and typed known-site names keep today's fallback.
+  for (const parse of [typedParse, voiceParse]) {
+    assert.deepEqual(parse("open the page github.com"), { kind: "url", url: "https://github.com", label: "github.com" });
+  }
+  assert.deepEqual(typedParse("open the app youtube"), { kind: "open", target: "app youtube", siteUrl: "https://www.youtube.com/" });
+  assert.deepEqual(typedParse("öffne die app youtube", "de-DE"), { kind: "open", target: "app youtube", siteUrl: "https://www.youtube.com/" });
+  assert.deepEqual(typedParse("open page x"), { kind: "open", target: "page x", siteUrl: "https://x.com/" });
+});
+
+test("voice: URLs keep their punctuation through the spoken core", () => {
+  for (const [input, url] of [
+    ["Open https://github.com.", "https://github.com"], ["Okay, open https://github.com.", "https://github.com"],
+    ["Go to example.com/search?q=pizza", "https://example.com/search?q=pizza"], ["Open example.com:8080.", "https://example.com:8080"],
+  ] as const) {
+    const parsed = voiceParse(input);
+    assert.equal(parsed?.kind === "url" ? parsed.url : null, url, input);
+    assert.deepEqual(parsed, typedParse(input.replace(/^okay, /i, "")), input);
+  }
+});
+
+test("voice: policy runs on the raw text and again on the core; wrappers never hide deletion or deixis", () => {
+  for (const input of ["Okay, empty the trash.", "Kannst du bitte den Papierkorb leeren?", "Um, delete this file.", "Go ahead and delete my downloads."]) {
+    assert.equal(voiceParse(input, /[äöü]|kannst/i.test(input) ? "de-DE" : undefined)?.kind, "refuse", input);
+  }
+  // "delete <app>" is refused by the dispatcher when the object is an installed app: the core names it cleanly.
+  assert.deepEqual(voiceParse("Can you delete Pages for me?"), { kind: "delete_target", target: "pages" });
+  assert.deepEqual(voiceParse("Okay, delete Spotify please."), { kind: "delete_target", target: "spotify" });
+  assert.deepEqual(typedParse("Can you delete Pages for me?"), { kind: "delete_target", target: "pages for me" });
+  // Spoken text editing is never refused, wrapped or not (AGENTS.md: preserve ordinary text editing).
+  for (const edit of TEXT_EDITS) {
+    for (const input of [edit, `okay, ${edit}`, `um, ${edit} please`, `can you ${edit} for me`, `kannst du mal ${edit}`]) {
+      assert.notEqual(voiceParse(input)?.kind, "refuse", input);
+    }
+  }
+  for (const input of FILE_DELETIONS) assert.ok(["refuse", "delete_target"].includes(voiceParse(`okay, ${input} please`)?.kind ?? ""), input);
+  assert.deepEqual(voiceParse("Okay, summarize this page."), { kind: "fallthrough", reason: "deictic" });
+  // A wrapped bare edit stays deictic (the agent gets the screen); it is never guessed as a name said alone.
+  for (const input of ["Okay, delete it.", "Um, delete it please.", "Okay, lösche alles."]) {
+    assert.deepEqual(voiceParse(input, /lösche/.test(input) ? "de-DE" : undefined), { kind: "fallthrough", reason: "deictic" }, input);
+  }
+  // "Go ahead and open X" is one request; "open X and write Y" stays a compound.
+  assert.equal(voiceOpen("Go ahead and open Pages."), "pages");
+  assert.deepEqual(voiceParse("Open Pages and write a letter."), { kind: "fallthrough", reason: "compound" });
+  assert.deepEqual(voiceParse("Öffne Pages und schreib einen Brief.", "de-DE"), { kind: "fallthrough", reason: "compound" });
+});
+
+test("voice: the core parse also reaches the other instant intents", () => {
+  assert.deepEqual(voiceParse("Okay, what's 17 times 23?"), { kind: "calc", expression: "17 * 23", display: "17 × 23", units: false });
+  assert.equal(voiceParse("Mach mal lauter.", "de-DE")?.kind, "system");
+  assert.deepEqual(voiceParse("Turn the volume down a bit."), { kind: "system", op: "volume.step", value: -0.1, title: "Volume down" });
+  assert.deepEqual(voiceParse("Could you mute the sound please?"), { kind: "system", op: "volume.mute", value: true, title: "Mute" });
+  assert.deepEqual(voiceParse("Make it louder."), { kind: "system", op: "volume.step", value: 0.1, title: "Volume up" });
+  assert.equal(voiceParse("Um, open github dot com.")?.kind, "url");
+});
+
+test("typed text keeps today's grammar (spoken forms are voice-only)", async () => {
+  for (const input of [
+    "could you bring figma up", "pages öffnen", "mach mal figma auf", "show me figma", "figma", "switch over to figma", "bring figma to the front",
+    "okay open figma", "open figma for me",
+  ]) {
+    const typed = typedParse(input);
+    assert.ok(typed === null || typed.kind !== "open" || typed.target !== "figma", `${input}: ${JSON.stringify(typed)}`);
+  }
+  // Typed open parses never carry a strength.
+  assert.deepEqual(typedParse("open a new window"), { kind: "open", target: "a new window" });
+  // "zeig mir" stays a typed open form; a leading "app" word still finds the app.
+  await check("zeig mir figma", openApp("com.figma.Desktop"));
+  await check("open the app figma", openApp("com.figma.Desktop"));
+  await check("öffne die app spotify", openApp("com.spotify.client"));
+  await check("mach die app slack auf", openApp("com.tinyspeck.slackmacgap"));
+  // Unambiguous volume phrasings are a strict improvement for typing too.
+  await check("make it louder", system("volume.step", 0.1));
+  await check("turn down the volume", system("volume.step", -0.1));
 });

@@ -14,9 +14,9 @@ process.env.PI_OS_SUPPORT_DIR ??= join(tmpdir(), "pi-os-test-support", String(pr
 
 const originalFetch = globalThis.fetch;
 // Matched against pathname + query: the final harness route set (protocol.md) plus host tool
-// routes. /invocations/... covers status, events (SSE), prepare, cancel, followup and close.
-// No route takes a query string.
-const testRoutes = /^(?:\/health|\/tools(?:\/[^?]*)?|\/invoke|\/instant|\/invocations\/[^?]*|\/models|\/settings\/(?:model|resources|routing|classifier))$/;
+// routes. /invocations/... covers status, events (SSE), prepare, cancel, followup and close;
+// /dictionary... the personal dictionary. Only recognizer-terms takes a query (`max`).
+const testRoutes = /^(?:\/health|\/tools(?:\/[^?]*)?|\/invoke|\/instant|\/invocations\/[^?]*|\/models|\/settings\/(?:model|resources|routing|classifier)|\/dictionary(?:\/[a-z-]{1,32})?|\/dictionary\/recognizer-terms\?max=[^&]{0,8})$/;
 globalThis.fetch = async (input, init) => {
   const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
   const loopback = url.hostname === "127.0.0.1" || url.hostname === "localhost";

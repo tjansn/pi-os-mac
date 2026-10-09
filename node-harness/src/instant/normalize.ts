@@ -109,6 +109,56 @@ export function normalize(raw: string, localeHint?: string): Normalized {
   return { raw, text, lower, numeric, lang };
 }
 
+// ---------------------------------------------------------------- spoken command core
+
+/** Discourse fillers a recognizer keeps at the start ("Okay, open Pages", "Äh, öffne Pages", "Hey, …"). */
+const FILLER_LEAD = /^(?:(?:okay|ok|alright|all right|um+|uh+|uhm+|erm|hm+|so|now|well|yeah|yes|right|hey|hi|hello|hallo|äh+m?|ähm|eh|also|ja|na|nun|jetzt|und|and|then|dann)\b[,.!]?\s+)+/;
+/** Request wrappers before the verb ("can you", "I want to", "kannst du", "ich möchte"). */
+const REQUEST_LEAD = new RegExp(
+  "^(?:(?:please|bitte|just|quickly|kindly|go ahead and|can you|could you|would you mind|would you|will you|can u|do you mind|"
+    + "i want to|i wanna|i'd like to|i would like to|i need to|i need you to|let's|lets|let me|you can|"
+    + "kannst du|könntest du|koenntest du|würdest du|wuerdest du|kannste|ich will|ich möchte|ich moechte|ich würde gerne?|"
+    + "ich wuerde gerne?|ich muss|schnell|mal|doch|kurz|einfach)\\b,?\\s+)+",
+);
+/** Trailing politeness and softeners ("… for me", "… bitte", "… a bit", "… jetzt"). */
+const TAIL_WRAP = /(?:[,\s]+(?:please|bitte|for me|für mich|fuer mich|now|right now|jetzt|mal|thanks|thank you|danke|real quick|quickly|again|nochmal|noch mal|schnell|a bit|a little|a little bit|ein bisschen|etwas))+$/;
+const GERUND = /^(?:mind |minding )?(opening|launching|starting|running|switching to|pulling up|bringing up)\b/;
+const GERUND_BASE: Readonly<Record<string, string>> = {
+  opening: "open", launching: "launch", starting: "start", running: "run", "switching to": "switch to", "pulling up": "pull up", "bringing up": "bring up",
+};
+/** German modal particles between the verb and its object ("öffne mir bitte mal Pages" → "öffne Pages"). */
+const DE_PARTICLES = /^(öffne|oeffne|starte|start|mach|mache|hol|hole|zeig|zeige|ruf|rufe|geh|gehe|wechsel|wechsle|open|launch)((?:\s+(?:mir|mal|bitte|doch|kurz|schnell|einfach|eben|jetzt|uns|gleich))+)\s+/;
+/**
+ * ASR punctuation inside a command ("Open, Pages."). A comma between digits is a decimal or group separator
+ * and stays; so do a URL's "://", a port or clock colon ("example.com:8080", "10:30") and a "?" inside a URL.
+ */
+const INNER_PUNCTUATION = /[;!…]+|:(?!\/\/|\d)|\?(?!\w)|(?<!\d),|,(?!\d)/g;
+
+/**
+ * The command core of a spoken request (DESIGN4 §5.1): up to three rounds of leading fillers, request
+ * wrappers and trailing politeness; ASR commas inside the command ("Open, Pages"); gerunds ("would you
+ * mind opening Pages" → "open pages"); stutters ("open open Pages") and doubled takes ("open pages open
+ * pages"); German particles after the verb. Input and output are `Normalized.lower`-style text. The voice
+ * grammar parses the raw text first and the core second; policy checks run on both.
+ */
+export function spokenCore(lower: string): string {
+  let text = lower.replace(INNER_PUNCTUATION, " ").replace(/\s+-\s+/g, " ").replace(/\s+/g, " ").trim();
+  for (let round = 0; round < 3; round++) {
+    const before = text;
+    text = text.replace(FILLER_LEAD, "").replace(REQUEST_LEAD, "").replace(TAIL_WRAP, "").trim();
+    text = text.replace(GERUND, (_match, verb: string) => GERUND_BASE[verb] ?? verb);
+    if (text === before) break;
+  }
+  text = text.replace(/^(\S+)(?:\s+\1\b)+/, "$1");
+  const words = text.split(" ");
+  if (words.length >= 4 && words.length % 2 === 0) {
+    const half = words.length / 2;
+    const first = words.slice(0, half).join(" ");
+    if (first === words.slice(half).join(" ")) text = first;
+  }
+  return text.replace(DE_PARTICLES, "$1 ").trim();
+}
+
 // ---------------------------------------------------------------- spoken math → fend syntax
 
 const CALC_PREFIX = new RegExp(

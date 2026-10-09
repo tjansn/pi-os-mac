@@ -1,0 +1,10 @@
+{
+  "status": "needs_confirmation",
+  "code": "regression",
+  "conflicts": [
+    0,
+    3
+  ],
+  "line": "This would change 2 earlier takes. Remember anyway?",
+  "revision": 42
+}
