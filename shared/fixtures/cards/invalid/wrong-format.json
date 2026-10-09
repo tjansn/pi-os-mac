@@ -1,0 +1,31 @@
+{
+  "format": "pi-os-ui/2",
+  "root": "root",
+  "elements": {
+    "root": {
+      "type": "Answer",
+      "props": {
+        "summary": "15% of 340 = 51"
+      },
+      "children": [
+        "n1"
+      ]
+    },
+    "n1": {
+      "type": "ResultCard",
+      "props": {
+        "kind": "math",
+        "input": "15% of 340",
+        "value": "51"
+      },
+      "on": {
+        "copy": {
+          "action": "copyText",
+          "params": {
+            "text": "51"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,123 @@
+{
+  "format": "pi-os-ui/1",
+  "root": "root",
+  "elements": {
+    "root": {
+      "type": "Answer",
+      "props": {
+        "summary": "3 files match “invoice”"
+      },
+      "children": [
+        "n1"
+      ]
+    },
+    "n1": {
+      "type": "ItemList",
+      "props": {
+        "title": "Files matching “invoice”",
+        "total": 3
+      },
+      "children": [
+        "n2",
+        "n3",
+        "n4"
+      ]
+    },
+    "n2": {
+      "type": "Item",
+      "props": {
+        "title": "Invoice-2026-03.pdf",
+        "subtitle": "~/Documents/Finance",
+        "icon": {
+          "kind": "file",
+          "uti": "com.adobe.pdf"
+        },
+        "detail": "Mar 14"
+      },
+      "on": {
+        "primary": {
+          "action": "openFile",
+          "params": {
+            "token": "tok_3fa8c2d1e9b0"
+          }
+        },
+        "secondary": {
+          "action": "revealFile",
+          "params": {
+            "token": "tok_3fa8c2d1e9b0"
+          }
+        },
+        "tertiary": {
+          "action": "copyPath",
+          "params": {
+            "token": "tok_3fa8c2d1e9b0"
+          }
+        }
+      }
+    },
+    "n3": {
+      "type": "Item",
+      "props": {
+        "title": "invoice_march_acme.pdf",
+        "subtitle": "~/Downloads",
+        "icon": {
+          "kind": "file",
+          "uti": "com.adobe.pdf"
+        },
+        "detail": "Mar 2"
+      },
+      "on": {
+        "primary": {
+          "action": "openFile",
+          "params": {
+            "token": "tok_9be0a7c4d2f1"
+          }
+        },
+        "secondary": {
+          "action": "revealFile",
+          "params": {
+            "token": "tok_9be0a7c4d2f1"
+          }
+        },
+        "tertiary": {
+          "action": "copyPath",
+          "params": {
+            "token": "tok_9be0a7c4d2f1"
+          }
+        }
+      }
+    },
+    "n4": {
+      "type": "Item",
+      "props": {
+        "title": "Invoices 2025.numbers",
+        "subtitle": "~/Documents/Finance",
+        "icon": {
+          "kind": "file",
+          "uti": "com.adobe.pdf"
+        },
+        "detail": "Jan 8"
+      },
+      "on": {
+        "primary": {
+          "action": "openFile",
+          "params": {
+            "token": "tok_51d0e3b8a6c7"
+          }
+        },
+        "secondary": {
+          "action": "revealFile",
+          "params": {
+            "token": "tok_51d0e3b8a6c7"
+          }
+        },
+        "tertiary": {
+          "action": "copyPath",
+          "params": {
+            "token": "tok_51d0e3b8a6c7"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "seq": 3,
+  "elapsedMs": 4,
+  "source": "grammar",
+  "decision": "answer",
+  "intent": "currency",
+  "title": "85.93 EUR",
+  "subtitle": "100 USD in EUR · ECB 2026-10-01",
+  "card": {
+    "format": "pi-os-ui/1",
+    "root": "root",
+    "elements": {
+      "root": {
+        "type": "Answer",
+        "props": {
+          "summary": "100 USD = 85.93 EUR"
+        },
+        "children": [
+          "n1"
+        ]
+      },
+      "n1": {
+        "type": "ResultCard",
+        "props": {
+          "kind": "currency",
+          "input": "100 USD in EUR",
+          "value": "85.93 EUR",
+          "detail": "1 USD = 0.8593 EUR",
+          "freshness": {
+            "label": "ECB reference rate 2026-10-01 · info only",
+            "level": "aging"
+          }
+        },
+        "on": {
+          "copy": {
+            "action": "copyText",
+            "params": {
+              "text": "85.93"
+            }
+          }
+        }
+      }
+    }
+  }
+}

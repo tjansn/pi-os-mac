@@ -1,0 +1,14 @@
+{
+  "seq": 2,
+  "elapsedMs": 1,
+  "source": "grammar",
+  "decision": "act",
+  "intent": "system",
+  "title": "Set volume to 30%",
+  "action": {
+    "type": "system",
+    "op": "volume.set",
+    "value": 0.3
+  },
+  "confirm": false
+}

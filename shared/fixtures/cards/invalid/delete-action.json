@@ -1,0 +1,27 @@
+{
+  "format": "pi-os-ui/1",
+  "root": "root",
+  "elements": {
+    "root": {
+      "type": "Answer",
+      "props": {},
+      "children": [
+        "n1"
+      ]
+    },
+    "n1": {
+      "type": "Item",
+      "props": {
+        "title": "report.pdf"
+      },
+      "on": {
+        "primary": {
+          "action": "deleteFile",
+          "params": {
+            "token": "tok_3fa8c2d1e9b0"
+          }
+        }
+      }
+    }
+  }
+}

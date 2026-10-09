@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "result": {
+    "items": [
+      { "token": "tok_3fa8c2d1e9b0", "name": "Invoice-2026-03.pdf", "path": "/Users/fixture/Documents/Finance/Invoice-2026-03.pdf", "contentType": "com.adobe.pdf", "createdMs": 1773446400000, "modifiedMs": 1773446400000, "lastUsedMs": 1774051200000, "useCount": 3, "isDirectory": false, "isPackage": false },
+      { "token": "tok_9be0a7c4d2f1", "name": "invoice_march_acme.pdf", "path": "/Users/fixture/Downloads/invoice_march_acme.pdf", "contentType": "com.adobe.pdf", "createdMs": 1772409600000, "modifiedMs": 1772409600000, "isDirectory": false, "isPackage": false },
+      { "token": "tok_51d0e3b8a6c7", "name": "Rechnung_März_Telekom.pdf", "path": "/Users/fixture/Documents/Finance/Rechnung_März_Telekom.pdf", "contentType": "com.adobe.pdf", "modifiedMs": 1773964800000, "isDirectory": false, "isPackage": false }
+    ],
+    "truncated": false,
+    "elapsedMs": 44.7
+  }
+}

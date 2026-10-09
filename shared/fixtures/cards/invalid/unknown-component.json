@@ -1,0 +1,19 @@
+{
+  "format": "pi-os-ui/1",
+  "root": "root",
+  "elements": {
+    "root": {
+      "type": "Answer",
+      "props": {},
+      "children": [
+        "n1"
+      ]
+    },
+    "n1": {
+      "type": "WebView",
+      "props": {
+        "url": "https://example.com"
+      }
+    }
+  }
+}

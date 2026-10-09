@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "result": {
+    "version": "apps-17",
+    "apps": [
+      { "bundleId": "com.figma.Desktop", "name": "Figma", "aliases": ["Figma"], "path": "/Applications/Figma.app", "running": false },
+      { "bundleId": "com.apple.calculator", "name": "Calculator", "aliases": ["Rechner", "Calculator"], "path": "/System/Applications/Calculator.app", "running": false },
+      { "bundleId": "com.microsoft.VSCode", "name": "Visual Studio Code", "aliases": ["Code", "Visual Studio Code"], "path": "/Applications/Visual Studio Code.app", "running": true },
+      { "bundleId": "com.apple.systempreferences", "name": "System Settings", "aliases": ["Systemeinstellungen", "System Settings"], "path": "/System/Applications/System Settings.app", "running": false }
+    ]
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "seq": 5,
+  "elapsedMs": 1,
+  "source": "grammar",
+  "decision": "refuse",
+  "code": "file_deletion_blocked",
+  "message": "pi-os never deletes files, moves them to the Trash or empties the Trash.",
+  "card": {
+    "format": "pi-os-ui/1",
+    "root": "root",
+    "elements": {
+      "root": {
+        "type": "Answer",
+        "props": {},
+        "children": [
+          "n1"
+        ]
+      },
+      "n1": {
+        "type": "Notice",
+        "props": {
+          "tone": "error",
+          "text": "pi-os never deletes files, moves them to the Trash or empties the Trash."
+        }
+      }
+    }
+  }
+}

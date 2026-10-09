@@ -1,0 +1,13 @@
+{
+  "seq": 9,
+  "elapsedMs": 1,
+  "source": "grammar",
+  "decision": "act",
+  "intent": "web",
+  "title": "Search the web for “best espresso grinder”",
+  "action": {
+    "type": "openURL",
+    "url": "https://duckduckgo.com/?q=best+espresso+grinder"
+  },
+  "confirm": false
+}

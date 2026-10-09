@@ -1,0 +1,76 @@
+{
+  "seq": 4,
+  "elapsedMs": 1,
+  "source": "grammar",
+  "decision": "act",
+  "intent": "open_app",
+  "title": "Open Figma",
+  "action": {
+    "type": "openApp",
+    "bundleId": "com.figma.Desktop"
+  },
+  "confirm": false,
+  "card": {
+    "format": "pi-os-ui/1",
+    "root": "root",
+    "elements": {
+      "root": {
+        "type": "Answer",
+        "props": {
+          "summary": "Open Figma"
+        },
+        "children": [
+          "n1"
+        ]
+      },
+      "n1": {
+        "type": "ItemList",
+        "props": {
+          "title": "Applications"
+        },
+        "children": [
+          "n2",
+          "n3"
+        ]
+      },
+      "n2": {
+        "type": "Item",
+        "props": {
+          "title": "Figma",
+          "subtitle": "/Applications/Figma.app",
+          "icon": {
+            "kind": "app",
+            "bundleId": "com.figma.Desktop"
+          }
+        },
+        "on": {
+          "primary": {
+            "action": "openApp",
+            "params": {
+              "bundleId": "com.figma.Desktop"
+            }
+          }
+        }
+      },
+      "n3": {
+        "type": "Item",
+        "props": {
+          "title": "FigJam",
+          "subtitle": "/Applications/FigJam.app",
+          "icon": {
+            "kind": "app",
+            "bundleId": "com.figma.FigJam"
+          }
+        },
+        "on": {
+          "primary": {
+            "action": "openApp",
+            "params": {
+              "bundleId": "com.figma.FigJam"
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,1 @@
+{ "ok": false, "error": { "code": "policy_blocked", "message": "Only http and https links can be opened." } }

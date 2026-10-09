@@ -1,0 +1,20 @@
+{
+  "format": "pi-os-ui/1",
+  "root": "root",
+  "elements": {
+    "root": {
+      "type": "Answer",
+      "props": {},
+      "children": [
+        "n1"
+      ]
+    },
+    "n1": {
+      "type": "Notice",
+      "props": {
+        "tone": "error",
+        "text": "pi-os never deletes files, moves them to the Trash or empties the Trash."
+      }
+    }
+  }
+}

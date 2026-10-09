@@ -1,0 +1,14 @@
+{
+  "seq": 6,
+  "elapsedMs": 3,
+  "source": "grammar",
+  "decision": "fallthrough",
+  "reason": "deictic",
+  "hints": {
+    "source": "heuristic",
+    "latencyMs": 0,
+    "intent": "act_in_app",
+    "intentP": 0.7,
+    "needsScreen": 0.9
+  }
+}

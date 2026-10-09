@@ -1,0 +1,9 @@
+{
+  "arguments": {
+    "contextId": "ctx-3f2a",
+    "nameGroups": [["invoice"], ["rechnung"]],
+    "contentType": "com.adobe.pdf",
+    "scopes": ["home"],
+    "maxResults": 100
+  }
+}

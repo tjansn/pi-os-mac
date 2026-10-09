@@ -1,0 +1,27 @@
+{
+  "format": "pi-os-ui/1",
+  "root": "root",
+  "elements": {
+    "root": {
+      "type": "Answer",
+      "props": {},
+      "children": [
+        "n1"
+      ]
+    },
+    "n1": {
+      "type": "Item",
+      "props": {
+        "title": "run"
+      },
+      "on": {
+        "primary": {
+          "action": "openURL",
+          "params": {
+            "url": "file:///Applications/Utilities/Terminal.app"
+          }
+        }
+      }
+    }
+  }
+}
