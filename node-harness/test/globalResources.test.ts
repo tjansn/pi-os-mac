@@ -14,7 +14,7 @@ test("global skill and extension tool are visible beside Computer Use", async ()
     { invokeTool: async () => ({ ok: true, result: {} }) } as unknown as HostClient,
     join(process.cwd(), "test", "captures"),
   );
-  const loader = await loadAgentResources(extension, process.cwd(), fixtureAgentDir);
+  const loader = await loadAgentResources([extension], process.cwd(), fixtureAgentDir);
 
   assert.ok(loader.getSkills().skills.some((skill) => skill.name === "fixture-global-skill"));
 

@@ -12,9 +12,9 @@ See [PARITY.md](PARITY.md) for implemented features, evidence and remaining gaps
 
 ## Build and launch
 
-Requires Xcode/Command Line Tools, Swift 5.9+, Node 22+, and pi authentication
+Requires Xcode/Command Line Tools, Swift 5.9+, Node 22.19+, and pi authentication
 (`pi /login` or your normal provider environment). No shell profiles are evaluated
-by the app. The checked-in lockfile remains on pi SDK 0.83.0.
+by the app. The checked-in lockfile pins pi SDK 1.0.0.
 
 From the repository root:
 

@@ -27,7 +27,7 @@ export async function createModelCatalogContext(trustedResources = false): Promi
   const runtime = await getModelRuntime();
   let dispose = () => {};
   if (trustedResources) {
-    const loader = await loadAgentResources({ name: "pi-os-catalog", factory() {} });
+    const loader = await loadAgentResources([{ name: "pi-os-catalog", factory() {} }]);
     dispose = await registerResourceProviders(loader, runtime);
   }
   return { runtime, dispose };

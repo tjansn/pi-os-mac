@@ -48,7 +48,7 @@ test("failed image ingestion cannot advance coordinate authority; mutations are 
 test("full Mac desktop control still excludes built-ins and global extension bypasses", async () => {
   const dir = resolve("test/fixtures/global-agent-dir");
   const extension = createComputerUseExtension("ctx-fixed", {} as HostClient, "/captures", false, "darwin");
-  const loader = await loadAgentResources(extension, process.cwd(), dir, true);
+  const loader = await loadAgentResources([extension], process.cwd(), dir, true);
   const runtime = await ModelRuntime.create({ authPath: resolve(dir, "auth.json"), modelsPath: resolve(dir, "models.json") });
   const names = [...READ_ONLY_TOOLS, "desktop_act"];
   const { session } = await createAgentSession({ resourceLoader: loader, modelRuntime: runtime, agentDir: dir,

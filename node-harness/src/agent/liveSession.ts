@@ -27,18 +27,24 @@ export class LiveAgentSession {
     const capture = this.capture;
     if (!capture || this.closed) return;
     if (event.type === "tool_execution_start") {
-      capture.toolCalls++;
-      this.callbacks.log(`[agent] tool -> ${event.toolName}`);
+      // pi >= 0.99: calls a tool makes through ctx.executeTool() (e.g. codemode scripts) carry
+      // parentToolCallId. They stay in the step log, but only model-issued calls are counted
+      // and drive the activity marker (the parent call already shows as running).
+      const nested = Boolean(event.parentToolCallId);
+      if (!nested) capture.toolCalls++;
+      this.callbacks.log(`[agent] tool -> ${event.toolName}${nested ? " (nested)" : ""}`);
       this.callbacks.onToolCall?.(event.toolName);
-      this.callbacks.onActivity?.(event.toolName);
+      if (!nested) this.callbacks.onActivity?.(event.toolName);
     } else if (event.type === "tool_execution_end") {
-      this.callbacks.onActivity?.(undefined);
+      if (!event.parentToolCallId) this.callbacks.onActivity?.(undefined);
     } else if (event.type === "message_update") {
       if (event.assistantMessageEvent.type === "thinking_delta") this.callbacks.onActivity?.("thinking");
       if (event.assistantMessageEvent.type === "text_delta") this.callbacks.onActivity?.(undefined);
     } else if (event.type === "message_end" && event.message.role === "assistant") {
       capture.responseText = assistantMessageText(event.message);
-      if (event.message.stopReason === "error") capture.providerError = event.message.errorMessage ?? "Provider failed";
+      // pi auto-retries transient provider errors; the latest assistant message decides the outcome.
+      capture.providerError = event.message.stopReason === "error"
+        ? event.message.errorMessage ?? "Provider failed" : undefined;
     }
   }
   async prompt(text: string, signal?: AbortSignal, image?: ImageContent): Promise<AgentRunResult> {

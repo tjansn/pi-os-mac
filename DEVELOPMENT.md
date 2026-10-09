@@ -11,7 +11,7 @@ below cover Windows unless noted otherwise.
 ## Prerequisites
 
 - .NET SDK 10
-- Node.js 22 or later
+- Node.js 22.19 or later (required by the pi 1.0 SDK)
 - pi authentication through `pi /login` or a provider API key
 
 Install the Node dependencies once:

@@ -26,7 +26,7 @@ test("read-only agent has exactly the pinned observation tools, no global or pla
   await writeFile(join(cwd, ".pi/SYSTEM.md"), "THIS_SYSTEM_PROMPT_MUST_NOT_LOAD");
   const extension = createComputerUseExtension("ctx-pinned", {} as HostClient, root, true);
   try {
-    const loader = await loadAgentResources(extension, cwd, agentDir, true);
+    const loader = await loadAgentResources([extension], cwd, agentDir, true);
     assert.deepEqual(loader.getSkills().skills, []);
     assert.deepEqual(loader.getAgentsFiles().agentsFiles, []);
     assert.equal(loader.getExtensions().errors.length, 0);

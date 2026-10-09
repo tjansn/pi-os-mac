@@ -12,7 +12,7 @@ import type { HostClient } from "../src/hostClient.js";
 test("Brave route replaces native mutations in the actual isolated SDK tool set", async () => {
   const dir = resolve("test/fixtures/global-agent-dir"), browser = new BrowserSession({} as HostClient, "ctx-fixed");
   const extension = createComputerUseExtension("ctx-fixed", {} as HostClient, "/captures", false, "darwin", undefined, browser);
-  const loader = await loadAgentResources(extension, process.cwd(), dir, true);
+  const loader = await loadAgentResources([extension], process.cwd(), dir, true);
   const runtime = await ModelRuntime.create({ authPath: resolve(dir, "auth.json"), modelsPath: resolve(dir, "models.json") });
   const names = [...READ_ONLY_TOOLS, ...BROWSER_TOOLS];
   const { session } = await createAgentSession({ resourceLoader: loader, modelRuntime: runtime, agentDir: dir,

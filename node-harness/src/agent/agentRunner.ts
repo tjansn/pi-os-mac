@@ -5,7 +5,6 @@ import {
   getAgentDir,
   ModelRuntime,
   SessionManager,
-  SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import type { HostClient, DesktopContextSnapshot, ScreenshotRef } from "../hostClient.js";
 import { createComputerUseExtension } from "./computerUseExtension.js";
@@ -15,9 +14,9 @@ import { LiveAgentSession } from "./liveSession.js";
 export { LiveAgentSession } from "./liveSession.js";
 import { loadScreenshotImage } from "./screenshotImage.js";
 import { resolveModel } from "./modelCatalog.js";
-import { loadAgentResources, registerResourceProviders } from "./resources.js";
+import { createSessionSettings, loadAgentResources, registerResourceProviders } from "./resources.js";
 import { effectiveResourceMode, TRUST_WARNING, type ResourceSelection } from "./resourceSettings.js";
-export { loadAgentResources } from "./resources.js";
+export { createSessionSettings, loadAgentResources, PI_OS_SETTINGS_OVERRIDES } from "./resources.js";
 
 /**
  * One in-memory session per pinned thread; sequential follow-ups retain history,
@@ -142,7 +141,7 @@ export async function createLiveSession(options: AgentRunOptions): Promise<LiveA
   if (signal?.aborted) throw abortError(signal);
   const isolated = effectiveResourceMode(process.platform, readOnly, options.resourceSelection) === "isolated";
   const extension = createComputerUseExtension(contextId, hostClient, capturesDir, readOnly, process.platform, snapshot.screenshot?.imageId, browser);
-  const loader = await loadAgentResources(extension, process.cwd(), getAgentDir(), isolated);
+  const loader = await loadAgentResources([extension], process.cwd(), getAgentDir(), isolated);
 
   const modelRuntime = await ModelRuntime.create();
   const disposeProviderBootstrap = !isolated ? await registerResourceProviders(loader, modelRuntime) : undefined;
@@ -161,9 +160,8 @@ export async function createLiveSession(options: AgentRunOptions): Promise<LiveA
     ...(isolated ? {
       tools: readOnly ? READ_ONLY_TOOLS : [...READ_ONLY_TOOLS, ...(browser ? BROWSER_TOOLS : ["desktop_act"])],
     } : {}),
-    ...(process.platform === "darwin" || isolated ? {
-      settingsManager: SettingsManager.create(process.cwd(), getAgentDir(), { projectTrusted: false }),
-    } : {}),
+    // Always explicit (also Windows trusted mode) so the image override applies to every session.
+    settingsManager: createSessionSettings(isolated),
   };
   if (resolved.model) {
     sessionOptions.model = resolved.model;

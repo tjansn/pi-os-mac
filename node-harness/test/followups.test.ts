@@ -153,17 +153,24 @@ test("cancel/timeout during follow-up closes input authority; context revocation
   }
 });
 
-test("real SDK retains finalized conversation between sequential prompts using an in-memory stream fixture", async () => {
+/** Real SDK session against an in-process provider; the stream function is replaced per test. */
+async function sdkFixture(settings: Parameters<typeof SettingsManager.inMemory>[0]) {
   const dir = resolve("test/fixtures/global-agent-dir");
-  const loader = await loadAgentResources({ name: "history-fixture", factory(pi) {
+  const loader = await loadAgentResources([{ name: "history-fixture", factory(pi) {
     pi.registerProvider("history-fixture", { api: "openai-completions", baseUrl: "https://never-called.invalid/v1", apiKey: "dummy-fixture-key",
       models: [{ id: "dummy", name: "Dummy", reasoning: false, input: ["text"], contextWindow: 8192, maxTokens: 1024,
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }] });
-  } }, process.cwd(), dir, true);
+  } }], process.cwd(), dir, true);
   const runtime = await ModelRuntime.create({ authPath: join(dir, "auth.json"), modelsPath: join(dir, "missing-models.json") });
   const cleanup = await registerResourceProviders(loader, runtime);
   const { session } = await createAgentSession({ modelRuntime: runtime, resourceLoader: loader, model: runtime.getModel("history-fixture", "dummy"),
-    tools: [], sessionManager: SessionManager.inMemory(), settingsManager: SettingsManager.inMemory({ retry: { enabled: false }, compaction: { enabled: false } }) });
+    tools: [], sessionManager: SessionManager.inMemory(), settingsManager: SettingsManager.inMemory(settings) });
+  return { session, cleanup };
+}
+const zeroUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+
+test("real SDK retains finalized conversation between sequential prompts using an in-memory stream fixture", async () => {
+  const { session, cleanup } = await sdkFixture({ retry: { enabled: false }, compaction: { enabled: false } });
   const seen: string[] = [];
   session.agent.streamFunction = (model, context) => {
     seen.push(JSON.stringify(context.messages));
@@ -192,4 +199,78 @@ test("per-turn abort listeners do not survive an idle prompt and busy prompts ar
   await assert.rejects(live.prompt("concurrent"), /not_idle/);
   transport.release!(); await pending;
   await live.close(); await live.close(); assert.equal(transport.disposed, 1);
+});
+
+/** Replays a fixed pi event sequence for each prompt (shapes as emitted by pi 1.0). */
+class ScriptedSession implements SessionTransport {
+  listener?: (event: AgentSessionEvent) => void;
+  constructor(private readonly script: AgentSessionEvent[]) {}
+  subscribe(listener: (event: AgentSessionEvent) => void) { this.listener = listener; return () => { this.listener = undefined; }; }
+  async prompt() { for (const event of this.script) this.listener?.(event); }
+  async abort() {}
+  dispose() {}
+}
+const assistantEnd = (text: string, error?: string) => ({ type: "message_end", message: { role: "assistant", content: text ? [{ type: "text", text }] : [],
+  stopReason: error ? "error" : "stop", ...(error ? { errorMessage: error } : {}) } }) as AgentSessionEvent;
+
+test("a provider error followed by a successful automatic retry resolves with the retried answer", async () => {
+  // Order observed in pi 0.83 and 1.0: error message_end, agent_end(willRetry), auto_retry_start, success.
+  const retried = new LiveAgentSession(new ScriptedSession([
+    assistantEnd("", "529 overloaded_error: Overloaded"),
+    { type: "agent_end", messages: [], willRetry: true } as AgentSessionEvent,
+    { type: "auto_retry_start", attempt: 1, maxAttempts: 3, delayMs: 1, errorMessage: "529 overloaded_error: Overloaded" },
+    assistantEnd("ok after retry"),
+    { type: "auto_retry_end", success: true, attempt: 1 },
+  ]), new AbortController(), { log() {} });
+  assert.deepEqual(await retried.prompt("hello"), { responseText: "ok after retry", toolCalls: 0 });
+  await retried.close();
+  const failed = new LiveAgentSession(new ScriptedSession([assistantEnd("partial"), assistantEnd("", "529 overloaded_error: Overloaded")]),
+    new AbortController(), { log() {} });
+  await assert.rejects(failed.prompt("hello"), /529 overloaded_error/);
+  await failed.close();
+});
+
+test("real SDK automatic retry success is reported as success; exhausted retries still fail", async () => {
+  for (const succeedOn of [2, Infinity]) {
+    const { session, cleanup } = await sdkFixture({ retry: { enabled: true, maxRetries: 1, baseDelayMs: 1 }, compaction: { enabled: false } });
+    let calls = 0;
+    session.agent.streamFunction = (model) => {
+      const stream = createAssistantMessageEventStream();
+      const fail = ++calls < succeedOn;
+      const message: AssistantMessage = { role: "assistant", content: fail ? [] : [{ type: "text", text: "ok after retry" }], provider: model.provider,
+        model: model.id, api: model.api, stopReason: fail ? "error" : "stop", ...(fail ? { errorMessage: "529 overloaded_error: Overloaded" } : {}),
+        timestamp: Date.now(), usage: zeroUsage };
+      stream.push(fail ? { type: "error", reason: "error", error: message } : { type: "done", reason: "stop", message }); stream.end();
+      return stream;
+    };
+    const live = new LiveAgentSession(session, new AbortController(), { log() {} }, async () => { cleanup(); });
+    try {
+      if (succeedOn === 2) assert.equal((await live.prompt("hello")).responseText, "ok after retry");
+      else await assert.rejects(live.prompt("hello"), /529 overloaded_error/);
+      assert.equal(calls, 2, "one automatic retry");
+    } finally { await live.close(); }
+  }
+});
+
+test("nested tool calls (parentToolCallId) are logged but neither counted nor allowed to churn activity", async () => {
+  const activity: (string | undefined)[] = [], steps: string[] = [], logs: string[] = [];
+  const tool = (type: "tool_execution_start" | "tool_execution_end", toolCallId: string, toolName: string, parentToolCallId?: string) =>
+    ({ type, toolCallId, toolName, ...(type === "tool_execution_start" ? { args: {} } : { result: {}, isError: false }),
+      ...(parentToolCallId ? { parentToolCallId } : {}) }) as AgentSessionEvent;
+  const live = new LiveAgentSession(new ScriptedSession([
+    tool("tool_execution_start", "call_1", "codemode"),
+    tool("tool_execution_start", "n1", "desktop_get_context", "call_1"),
+    tool("tool_execution_start", "n2", "desktop_refresh_context", "call_1"),
+    tool("tool_execution_end", "n1", "desktop_get_context", "call_1"),
+    tool("tool_execution_end", "n2", "desktop_refresh_context", "call_1"),
+    tool("tool_execution_end", "call_1", "codemode"),
+    tool("tool_execution_start", "call_2", "desktop_capture_window"),
+    tool("tool_execution_end", "call_2", "desktop_capture_window"),
+    assistantEnd("done"),
+  ]), new AbortController(), { log: line => logs.push(line), onToolCall: name => steps.push(name), onActivity: value => activity.push(value) });
+  assert.deepEqual(await live.prompt("hello"), { responseText: "done", toolCalls: 2 });
+  assert.deepEqual(activity, ["codemode", undefined, "desktop_capture_window", undefined]);
+  assert.deepEqual(steps, ["codemode", "desktop_get_context", "desktop_refresh_context", "desktop_capture_window"]);
+  assert.deepEqual(logs.filter(line => line.includes("(nested)")), ["[agent] tool -> desktop_get_context (nested)", "[agent] tool -> desktop_refresh_context (nested)"]);
+  await live.close();
 });
