@@ -29,7 +29,7 @@ function copyAction(text: string | undefined): HostAction | undefined {
 }
 
 export function resultCard(r: ResultCardInput): CardSpec {
-  const summary = r.summary ?? (r.input ? `${r.input} = ${r.value}` : r.value);
+  const summary = r.summary ?? (r.input ? `${r.input}${r.value.startsWith("≈") ? " " : " = "}${r.value}` : r.value);
   return buildCard(ui.answer({ summary: truncate(summary) }, [
     ui.result({
       kind: r.kind,

@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 import {
   EcbRateStore, ECB_DAILY_URL, fxFreshness, fxFreshnessLabel, fxNeedsRefresh, isTargetDay, parseEcbXml, type FxSnapshot,
 } from "../src/instant/engines/fx.js";
+import { assertOwnerOnly } from "./ownerOnly.js";
 
 // Fixture XML only: every fetch is injected; the test guard rejects any real network call.
 
@@ -62,7 +63,8 @@ test("first refresh: 200 → rates stored, cache file written atomically with ow
   const saved = JSON.parse(readFileSync(file, "utf8")) as FxSnapshot;
   assert.equal(saved.asOf, "2026-10-02");
   assert.equal(saved.lastModified, LAST_MODIFIED);
-  assert.equal(statSync(file).mode & 0o777, 0o600);
+  assertOwnerOnly(file, 0o600);
+  assertOwnerOnly(dirname(file), 0o700); // the store creates cache/ itself
   assert.deepEqual(lines, ["[instant] ecb fx refresh status=200 currencies=6"]);
   assert.equal(store.version, 1);
 });
@@ -196,4 +198,26 @@ test("convert uses EUR-based cross rates and carries freshness and the ECB label
   const cross = store.convert(10_000, "USD", "GBP")!;
   assert.ok(Math.abs(cross.value - 10_000 / 1.1225 * 0.85033) < 1e-6);
   assert.equal(store.convert(1, "BTC", "EUR"), null);
+});
+
+test("an oversized ECB body is rejected without buffering it whole (streamed byte cap and Content-Length)", async () => {
+  let pulled = 0;
+  const huge = () => new ReadableStream<Uint8Array>({
+    pull(controller) {
+      pulled++;
+      if (pulled > 1_000) { controller.close(); return; }
+      controller.enqueue(new Uint8Array(64 * 1024).fill(0x20));
+    },
+  });
+  const streamed = new EcbRateStore({ file: cacheFile(), fetch: (async () => new Response(huge(), { status: 200 })) as typeof fetch, log: () => {} });
+  assert.equal(await streamed.refresh(), "failed");
+  assert.ok(pulled < 10, `stopped reading after ${pulled} chunks`);
+  const declared = new EcbRateStore({
+    file: cacheFile(), log: () => {},
+    fetch: (async () => new Response(fixtureXml, { status: 200, headers: { "content-length": String(10 * 1024 * 1024) } })) as typeof fetch,
+  });
+  assert.equal(await declared.refresh(), "failed");
+  // The real fixture still parses through the capped reader.
+  const normal = new EcbRateStore({ file: cacheFile(), fetch: (async () => new Response(fixtureXml, { status: 200 })) as typeof fetch, log: () => {} });
+  assert.equal(await normal.refresh(), "updated");
 });

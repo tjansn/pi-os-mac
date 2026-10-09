@@ -45,6 +45,18 @@ public enum CardMetrics {
     static let chipGap: CGFloat = 8
 }
 
+/// Posts an accessibility notification. The default is NSAccessibility.post; tests record instead.
+public typealias AccessibilityAnnouncer = @MainActor (_ element: Any, _ notification: NSAccessibility.Notification,
+                                                     _ userInfo: [NSAccessibility.NotificationUserInfoKey: Any]?) -> Void
+public enum Accessibility {
+    public static let system: AccessibilityAnnouncer = { NSAccessibility.post(element: $0, notification: $1, userInfo: $2) }
+    /// A spoken announcement at `priority` (VoiceOver queues .low, interrupts for .high).
+    @MainActor static func announce(_ text: String, on element: Any, priority: NSAccessibilityPriorityLevel = .low,
+                                    using post: AccessibilityAnnouncer) {
+        post(element, .announcementRequested, [.announcement: text, .priority: priority.rawValue])
+    }
+}
+
 /// Keyboard-level commands a host can route from its own key handling
 /// (e.g. the composer's Return, or ⌘⇧C before falling back to Copy Answer).
 public enum CardCommand: Equatable { case primary, secondary, tertiary, next, previous }
@@ -60,6 +72,8 @@ public enum CardCommand: Equatable { case primary, secondary, tertiary, next, pr
     /// Element events: ResultCard "copy", Item "primary"/"secondary"/"tertiary", Suggestion "press";
     /// plus "link" with `.openURL` for an http(s) link clicked inside a Markdown block.
     public var onAction: ActionHandler?
+    /// Accessibility notifications go through here (tests inject a recorder).
+    public var announce: AccessibilityAnnouncer = Accessibility.system
     public private(set) var spec: CardSpec?
     public private(set) var isComplete = false
     /// Hosts disable actions for recalled cards whose thread or tokens are gone.
@@ -240,8 +254,7 @@ public enum CardCommand: Equatable { case primary, secondary, tertiary, next, pr
         onAction?(key, event, action)
         if case .copyText = action {
             views[key]?.showCopied(event: event)
-            NSAccessibility.post(element: self, notification: .announcementRequested,
-                userInfo: [.announcement: "Copied", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+            Accessibility.announce("Copied", on: self, priority: .medium, using: announce)
         }
         return true
     }
@@ -269,6 +282,24 @@ public enum CardCommand: Equatable { case primary, secondary, tertiary, next, pr
     var defaultKey: String? {
         selectedKey ?? selectableKeys.first { views[$0] is CardResultView || (views[$0] as? CardItemRowView)?.inList == true }
     }
+    /// Title of the row Return opens (VoiceOver: "Return opens …").
+    var defaultItemTitle: String? {
+        guard let key = defaultKey, case .item(let title, _, _, _)? = spec?.elements[key]?.props else { return nil }
+        return title
+    }
+    /// What VoiceOver hears for a row: its label, plus ", 2 of 3" inside a list.
+    func spokenRow(_ key: String) -> String? {
+        guard let row = views[key], let label = row.accessibilityLabel(), !label.isEmpty else { return nil }
+        guard let list = row.superview as? CardItemListView, let index = list.rows.firstIndex(where: { $0 === row }) else { return label }
+        return label + ", \(index + 1) of \(list.rows.count)"
+    }
+    /// Keyboard selection moved: VoiceOver follows it like a native list (a programmatic select does not).
+    private func announceSelection() {
+        guard let key = selectedKey, let row = views[key] else { return }
+        if let list = row.superview as? CardItemListView { announce(list, .selectedChildrenChanged, nil) }
+        if focused { announce(row, .focusedUIElementChanged, nil) }
+        if let spoken = spokenRow(key) { Accessibility.announce(spoken, on: row, using: announce) }
+    }
 
     /// Navigation works while streaming; actions only once the card is complete.
     @discardableResult public func perform(_ command: CardCommand) -> Bool {
@@ -278,7 +309,10 @@ public enum CardCommand: Equatable { case primary, secondary, tertiary, next, pr
             let step = command == .next ? 1 : -1
             let current = selectedKey.flatMap { selectableKeys.firstIndex(of: $0) }
             let target = current.map { min(max(0, $0 + step), selectableKeys.count - 1) } ?? (step > 0 ? 0 : selectableKeys.count - 1)
-            select(selectableKeys[target]); return true
+            let previous = selectedKey
+            select(selectableKeys[target])
+            if selectedKey != previous { announceSelection() }
+            return true
         case .primary, .secondary, .tertiary:
             guard isInteractive, let key = command == .primary ? defaultKey : selectedKey,
                   let event = views[key]?.event(for: command) else { return false }
@@ -288,9 +322,22 @@ public enum CardCommand: Equatable { case primary, secondary, tertiary, next, pr
 
     public override var acceptsFirstResponder: Bool { !selectableKeys.isEmpty }
     public override func becomeFirstResponder() -> Bool {
+        let was = focused
         focused = true
         if selectedKey == nil { selectedKey = selectableKeys.first }
-        refreshSelection(); return true
+        refreshSelection()
+        // A list taking focus (the reader's focusCard) reads its summary and the selected row.
+        if !was, let key = selectedKey, let row = views[key] {
+            announce(row, .focusedUIElementChanged, nil)
+            let spoken = [spec?.summary, spokenRow(key)].compactMap { $0 }.joined(separator: ". ")
+            if !spoken.isEmpty { Accessibility.announce(spoken, on: row, using: announce) }
+        }
+        return true
+    }
+    /// The VoiceOver cursor follows the keyboard selection while the card has focus.
+    public override var accessibilityFocusedUIElement: Any? {
+        guard focused, let key = selectedKey, let row = views[key] else { return super.accessibilityFocusedUIElement }
+        return row
     }
     public override func resignFirstResponder() -> Bool { focused = false; refreshSelection(); return true }
     public override func viewWillMove(toWindow newWindow: NSWindow?) {

@@ -80,3 +80,12 @@ test("cardToText tolerates unvalidated input (cycles, unknown types, missing roo
   assert.equal(cardToText({ ...cyclic, root: "nope" }), "");
   assert.equal(cardToText({ ...cyclic, root: "constructor" }), "");
 });
+
+test("cardToText: an approximate value reads \"≈ …\", never \"= ≈ …\" (the Windows responseText)", () => {
+  const card = buildCard(ui.answer({ summary: "100 km in miles ≈ 62.1371 miles" }, [
+    ui.result({ kind: "conversion", input: "100 km in miles", value: "≈ 62.1371 miles" }),
+  ]));
+  assert.equal(cardToText(card), "100 km in miles ≈ 62.1371 miles");
+  const exact = buildCard(ui.answer({}, [ui.result({ kind: "math", input: "15% of 340", value: "51" })]));
+  assert.equal(cardToText(exact), "15% of 340 = 51");
+});

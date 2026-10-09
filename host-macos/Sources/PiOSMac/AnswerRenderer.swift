@@ -115,9 +115,23 @@ struct PanelMetrics {
     }
 }
 
+extension DomainError {
+    /// A terminal invocation record as an error. Node prefixes some failure messages with a code
+    /// ("no_authenticated_model: …", "session_closed: …"); for a plain "failed" record that code
+    /// becomes the error's code so the reader can explain it. Other states keep their own code.
+    static func invocation(state: String, message: String?) -> DomainError {
+        let text = message ?? "The task did not complete"
+        guard state == "failed", let colon = text.range(of: ": "),
+              text[..<colon.lowerBound].range(of: #"^[a-z][a-z0-9_]{2,40}$"#, options: .regularExpression) != nil else {
+            return DomainError(state, text)
+        }
+        return DomainError(String(text[..<colon.lowerBound]), String(text[colon.upperBound...]))
+    }
+}
+
 struct FailurePresentation {
     /// The one recovery button a failure may offer. Presenting a failure never requests a grant.
-    enum Action: Equatable { case permissions, voiceSettings }
+    enum Action: Equatable { case permissions, voiceSettings, settings }
     let title: String
     let message: String
     let symbol: String
@@ -127,6 +141,7 @@ struct FailurePresentation {
         switch action {
         case .permissions?: return "Open Permissions…"
         case .voiceSettings?: return "Open Voice Settings…"
+        case .settings?: return "Open Settings…"
         case nil: return nil
         }
     }
@@ -134,7 +149,7 @@ struct FailurePresentation {
         let domain = error as? DomainError
         let code = domain?.code ?? ""
         action = ["permission_denied", "accessibility_denied", "input_permission_denied", "control_disabled"].contains(code) ? .permissions
-            : VoiceErrorCode(rawValue: code) != nil ? .voiceSettings : nil
+            : VoiceErrorCode(rawValue: code) != nil ? .voiceSettings : code == "no_authenticated_model" ? .settings : nil
         switch domain?.code {
         case VoiceErrorCode.microphoneDenied.rawValue:
             title = "Let pi-os hear you"
@@ -200,6 +215,10 @@ struct FailurePresentation {
             title = "The agent couldn’t connect"
             message = "Try your question again. If it keeps happening, open Diagnostics from the pi-os menu."
             symbol = "bolt.slash"
+        case "no_authenticated_model":
+            title = "Choose a model"
+            message = domain?.message ?? "Auto found no model you are signed in to. Choose a model in Settings or sign in to a provider."
+            symbol = "person.crop.circle.badge.questionmark"
         case "timed_out":
             title = "This is taking too long"
             message = "The request reached its time limit. Try a shorter or more specific question."

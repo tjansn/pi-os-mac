@@ -154,6 +154,10 @@ test("socket kill-switch ends the sidecar with exit 97 before any connection", {
   assert.equal(guarded("socket.socket(socket.AF_INET, socket.SOCK_STREAM).bind(('127.0.0.1', 0))"), 97);
   assert.equal(guarded("socket.socket(socket.AF_INET, socket.SOCK_DGRAM).sendto(b'x', ('127.0.0.1', 9))"), 97);
   assert.equal(guarded("socket.getaddrinfo('localhost', 80)"), 97);
+  // The C-level module is guarded too (defense in depth; native code stays out of reach).
+  assert.equal(guarded("import _socket; _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM).connect(('127.0.0.1', 9))"), 97);
+  assert.equal(guarded("import _socket; _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM).sendto(b'x', ('127.0.0.1', 9))"), 97);
+  assert.equal(guarded("import _socket; _socket.getaddrinfo('localhost', 80)"), 97);
   if (process.platform !== "win32") {
     assert.equal(guarded("a, b = socket.socketpair(); a.sendall(b'ok'); assert b.recv(2) == b'ok'"), 0);
   }

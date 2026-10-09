@@ -33,8 +33,8 @@ test("read-only agent has exactly the pinned observation, instant/launcher-read,
       assert.deepEqual(loader.getSkills().skills, []);
       assert.deepEqual(loader.getAgentsFiles().agentsFiles, []);
       assert.equal(loader.getExtensions().errors.length, 0);
-      // computer use, launcher tools, show_result, pi_os_escalate, codemode policy, pi codemode.
-      assert.equal(loader.getExtensions().extensions.length, 6);
+      // computer use, launcher tools, show_result, pi_os_escalate, prompt-cache key, codemode policy, pi codemode.
+      assert.equal(loader.getExtensions().extensions.length, 7);
       const { session } = await createAgentSession({
         cwd, agentDir, resourceLoader: loader, modelRuntime: runtime,
         tools: sessionToolAllowlist({ readOnly: true, auto }), sessionManager: SessionManager.inMemory(cwd),

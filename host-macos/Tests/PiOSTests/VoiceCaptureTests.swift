@@ -101,6 +101,44 @@ final class VoiceCaptureTests: XCTestCase {
         }
     }
 
+    /// An AirPods/HFP switch restarts capture on a new device format mid-take (48 kHz → 24 kHz):
+    /// the stream keeps going, the old resampler's tail is kept, and the take ends normally.
+    func testADeviceFormatChangeMidTakeKeepsTheStreamGoing() async throws {
+        guard #available(macOS 26, *) else { throw XCTSkip("SpeechAnalyzer needs macOS 26") }
+        func filled(_ rate: Double, frames: Int) -> AVAudioPCMBuffer {
+            let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: rate, channels: 1, interleaved: false)!
+            let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames))!
+            buffer.frameLength = AVAudioFrameCount(frames)
+            for index in 0..<frames { buffer.floatChannelData![0][index] = 0.5 * sin(Float(index) / 8) }
+            return buffer
+        }
+        let capture = MicrophoneCapture(maximumSeconds: 10)
+        let failed = Box(false)
+        capture.onFailure = { _ in failed.value = true }
+        capture.setAnalyzerFormat(analyzerFormat)
+        for _ in 0..<3 { capture.ingest(filled(48_000, frames: 4_800), owned: true) }   // 0.3 s on the A2DP format
+        for _ in 0..<3 { capture.ingest(filled(24_000, frames: 2_400), owned: true) }   // 0.3 s after the HFP switch
+        capture.stop()
+        let drained = await drain(capture)
+        let result = try XCTUnwrap(drained, "the stream finishes normally after the format change")
+        XCTAssertEqual(Double(result.frames), 9_600, accuracy: 64, "0.6 s at 16 kHz: nothing dropped across the switch")
+        XCTAssertTrue(result.formats.allSatisfy { $0 == analyzerFormat })
+        XCTAssertFalse(failed.value)
+    }
+
+    func testOneConfigurationChangeRestartsAndASecondEndsTheTake() {
+        var policy = CaptureRestartPolicy()
+        XCTAssertEqual(policy.onConfigurationChange(ending: false), .restart, "e.g. AirPods switching to HFP as the mic opens")
+        XCTAssertEqual(policy.restarts, 1)
+        XCTAssertEqual(policy.onConfigurationChange(ending: true), .ignore, "a change while the take ends changes nothing")
+        XCTAssertEqual(policy.onConfigurationChange(ending: false), .halt)
+        XCTAssertTrue(CaptureRestartPolicy.failureMessage.contains("Bluetooth"))
+        XCTAssertTrue(CaptureRestartPolicy.failureMessage.contains("built-in microphone"))
+        var ending = CaptureRestartPolicy()
+        XCTAssertEqual(ending.onConfigurationChange(ending: true), .ignore)
+        XCTAssertEqual(ending.restarts, 0)
+    }
+
     func testMatchingFormatPassesThroughAsACopy() async throws {
         guard #available(macOS 26, *) else { throw XCTSkip("SpeechAnalyzer needs macOS 26") }
         let capture = MicrophoneCapture(maximumSeconds: 10)

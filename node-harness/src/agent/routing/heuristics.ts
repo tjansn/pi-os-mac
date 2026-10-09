@@ -63,6 +63,14 @@ const STRONG_DEIXIS = anywhere([
 ].join("|"));
 const WEAK_DEIXIS = anywhere("this|these|those|here|dies|diese|dieser|dieses|diesen|diesem|hier|das da");
 /**
+ * A definite on-screen noun ("summarize the page", "reply to the email", "fasse die Seite
+ * zusammen", "was sagt die Fehlermeldung") points at the pinned window as much as "this" does.
+ */
+const DEFINITE_SCREEN = anywhere([
+  `the (?:${SCREEN_NOUNS})s?`,
+  `(?:die|der|das|den|dem) (?:${SCREEN_NOUNS_DE})(?:n|en|s|e)?`,
+].join("|"));
+/**
  * German "das" as an object pronoun ("fass das zusammen", "übersetz das ins Englische", "kannst du
  * das übersetzen"), the DE counterpart of "summarize this". Only utterance-final forms count: "das"
  * as an article ("das Wetter morgen") is followed by its noun.
@@ -151,7 +159,7 @@ function needsScreenOf(text: string, intent: AgentIntent): number {
   if (STRONG_DEIXIS.test(text)) return 0.9;
   if (intent === "act_in_app") return 0.8;
   const cleaned = text.replace(NON_DEICTIC, " ");
-  if (WEAK_DEIXIS.test(cleaned) || DAS_PRONOUN.test(cleaned)) return 0.6;
+  if (WEAK_DEIXIS.test(cleaned) || DAS_PRONOUN.test(cleaned) || DEFINITE_SCREEN.test(cleaned)) return 0.6;
   return 0.1;
 }
 

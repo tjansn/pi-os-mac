@@ -88,6 +88,9 @@ public enum InstantPreview: Equatable {
     case list(CardSpec)
 
     static let valueIntents: Set<String> = ["calc", "unit", "currency", "base", "time", "time_convert", "date"]
+    /// A confirm-first action after the first Return ("Return to confirm: Sleep display").
+    public static let confirmPrefix = "Return to confirm: "
+    public static func confirm(_ title: String) -> InstantPreview { .hint(confirmPrefix + title) }
     /// Preview for a typing/partial response; nil = nothing to show (fallthrough).
     public static func make(_ response: InstantResponse, inputMode: String) -> InstantPreview? {
         switch response.decision {
@@ -114,6 +117,26 @@ public struct InstantResult: Equatable {
     public init(question: String, card: CardSpec, copyText: String, focusCard: Bool) {
         self.question = question; self.card = card; self.copyText = copyText; self.focusCard = focusCard
     }
+}
+
+/// First-run discoverability (voice ships off): while voice is switched off but could run, a real
+/// hold of the hotkey says how to turn it on, at most `limit` times and never again once voice was
+/// enabled. Nothing here touches the microphone, TCC or VoiceInput.
+@MainActor public final class VoiceOffHint {
+    public static let countKey = "voiceOffHintCount"
+    public static let limit = 3
+    public static let text = "Voice is off — turn it on in Settings → Voice"
+    private let defaults: UserDefaults
+    private let eligible: () -> Bool
+    /// `eligible`: voice is switched off and the speech engine is available (macOS 26+).
+    public init(defaults: UserDefaults = .standard, eligible: @escaping () -> Bool) {
+        self.defaults = defaults; self.eligible = eligible
+    }
+    public var shown: Int { defaults.integer(forKey: Self.countKey) }
+    public var shouldOffer: Bool { shown < Self.limit && eligible() }
+    func recordShown() { defaults.set(shown + 1, forKey: Self.countKey) }
+    /// Voice was turned on at least once: the hint has done its job for good.
+    public func retire() { if shown < Self.limit { defaults.set(Self.limit, forKey: Self.countKey) } }
 }
 
 /// Main-actor timers behind a seam (tests drive a manual clock).
@@ -145,27 +168,35 @@ public struct InstantResult: Equatable {
     public struct Timing {
         public var holdThreshold: TimeInterval = TalkGesture.defaultHoldThreshold
         public var maximumHold: TimeInterval = TalkGesture.defaultMaximumHold
-        /// Partial transcripts and keystrokes: one /instant preview after this much quiet (file
-        /// search included), latest wins.
+        /// Voice partials only: one /instant preview after this much quiet, latest wins (partials
+        /// arrive in bursts and the transcript tail keeps changing).
         public var previewDebounce: TimeInterval = 0.15
+        /// Typing: /instant on the leading edge of an edit, then at most once per this interval, and
+        /// always once more for the final text (≤ 30 requests/s; Node answers in under 1 ms and holds
+        /// file search back itself until typing goes quiet).
+        public var typingThrottle: TimeInterval = 0.033
         /// How long "✓ Opened Figma" stays before the bar goes away.
         public var confirmationDwell: TimeInterval = 1.2
+        /// A Return or release still resolving after this long shows the "…" disc in the send slot
+        /// (typically a cold Node start), so the bar never looks frozen.
+        public var pendingFeedback: TimeInterval = 0.12
         public init() {}
     }
     /// DESIGN §3.3: /instant accepts ≤ 500 characters (UTF-16 units, as Node counts them);
     /// longer utterances go straight to the agent.
     public static let maximumInstantText = 500
-    /// The Mac's locale as a plain BCP 47 tag for /instant and /invoke ("en-US", "sr-Latn-RS").
-    /// macOS appends Unicode extensions when Region differs from Language ("en-US-u-rg-dezzzz"),
-    /// and the harness accepts a language plus at most three subtags, so extensions and private
-    /// use are dropped. nil (no locale sent) when nothing valid remains.
+    /// The Mac's formatting locale as a plain BCP 47 tag for typed /instant and /invoke: language,
+    /// an explicit script only ("sr-Latn-RS"), and the effective region. Region honours the rg
+    /// override, so English with Region Germany ("en_US@rg=dezzzz") is "en-DE": Node then parses and
+    /// shows numbers with a decimal comma. Extensions and private use are dropped (the harness
+    /// accepts a language plus at most three subtags). nil (no locale sent) when nothing valid remains.
+    /// Voice takes send the speech language instead ("de-DE").
     public static func wireLocale(_ locale: Locale = .current) -> String? {
-        var subtags: [Substring] = []
-        for subtag in locale.identifier(.bcp47).split(separator: "-") {
-            guard subtag.count > 1 else { break } // "u", "t", "x": an extension or private use follows
-            subtags.append(subtag)
-        }
-        let tag = subtags.prefix(4).joined(separator: "-")
+        guard let language = locale.language.languageCode?.identifier else { return nil }
+        var subtags = [language]
+        if let script = Locale.Components(identifier: locale.identifier).languageComponents.script?.identifier { subtags.append(script) }
+        if let region = locale.region?.identifier { subtags.append(region) }
+        let tag = subtags.joined(separator: "-")
         return tag.range(of: #"^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8}){0,3}$"#, options: .regularExpression) == nil ? nil : tag
     }
 
@@ -174,6 +205,8 @@ public struct InstantResult: Equatable {
     public var language: VoiceLanguage = .defaultValue
     /// Asks the app to recompute `readiness` asynchronously (after a voice failure).
     public var refreshReadiness: (() -> Void)?
+    /// nil: no first-run hint (tests, echo mode).
+    public var voiceOffHint: VoiceOffHint?
     public private(set) var gesture: TalkGesture
     public private(set) var listening = false
     /// A released take (or a Return) is resolving: the hotkey treats the surface as working.
@@ -194,6 +227,15 @@ public struct InstantResult: Equatable {
     private var holdTimer: CommandTimer?
     private var startErrorTimer: CommandTimer?
     private var previewTimer: CommandTimer?
+    /// Typing throttle window: open while a leading-edge request was sent; `throttledText` is the
+    /// latest edit inside it, `throttleSent` what the window last sent.
+    private var throttleTimer: CommandTimer?
+    private var throttledText: String?
+    private var throttleSent: String?
+    /// A typing fallthrough right after a value keeps "= 51" one throttle interval longer, so
+    /// "15% o" does not make the bar blink; any newer preview cancels it.
+    private var previewClearTimer: CommandTimer?
+    private var shownPreview: InstantPreview?
     private var confirmationTimer: CommandTimer?
     private var previewTask: Task<Void, Never>?
     private var finalTask: Task<Void, Never>?
@@ -222,7 +264,8 @@ public struct InstantResult: Equatable {
         keyDown = true; pressedAt = clock(); releasedAt = nil; pendingStartError = nil
         let surfaceState: TalkSurface = host?.isWorking == true || finalizing ? .working
             : surface?.showsComposer == true && !listening ? .composer : .idle
-        apply(gesture.press(surface: surfaceState, voice: readiness))
+        apply(gesture.press(surface: surfaceState, voice: readiness,
+                            voiceOffHint: readiness == .disabled && voiceOffHint?.shouldOffer == true))
     }
     public func hotkeyReleased() {
         keyDown = false; releasedAt = clock()
@@ -291,7 +334,7 @@ public struct InstantResult: Equatable {
             case .finalize: finalize()
             case .stopMicDiscard:
                 voice.abandon(); listening = false; transcript = VoiceTranscript()
-                previewTimer?.cancel(); previewTask?.cancel(); preview = nil
+                previewTimer?.cancel(); previewTask?.cancel(); closeThrottleWindow(); preview = nil
             case .showComposer:
                 listening = false
                 surface?.setListening(.off)
@@ -300,6 +343,11 @@ public struct InstantResult: Equatable {
             case .voiceFailed(let error):
                 surface?.presentFailure(error)
                 refreshReadiness?()
+            case .voiceOffHint:
+                // Only over an empty composer that is still this take's; the first keystroke clears it.
+                guard take != nil, let hint = voiceOffHint, hint.shouldOffer,
+                      surface?.showVoiceOffHint(VoiceOffHint.text) == true else { continue }
+                hint.recordShown()
             }
         }
         if refused {
@@ -328,7 +376,7 @@ public struct InstantResult: Equatable {
     private func finalize() {
         guard let take else { return }
         listening = false; finalizing = true
-        previewTimer?.cancel(); previewTask?.cancel()
+        previewTimer?.cancel(); previewTask?.cancel(); closeThrottleWindow()
         surface?.setListening(.finishing)
         let duration = Int(max(0, (releasedAt ?? clock()) - pressedAt) * 1000)
         let started = clock()
@@ -409,9 +457,35 @@ public struct InstantResult: Equatable {
         previewTimer?.cancel(); previewTimer = nil
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.utf16.count <= Self.maximumInstantText else { cancelPreview(); return }
-        previewTimer = scheduler.after(timing.previewDebounce) { [weak self] in
-            self?.sendPreview(trimmed, phase: phase, inputMode: inputMode)
+        guard phase == .typing else {
+            previewTimer = scheduler.after(timing.previewDebounce) { [weak self] in
+                self?.sendPreview(trimmed, phase: phase, inputMode: inputMode)
+            }
+            return
         }
+        // Typing: leading edge, then at most one request per throttle window, the latest text last.
+        if throttleTimer == nil {
+            throttleSent = trimmed
+            sendPreview(trimmed, phase: .typing, inputMode: inputMode)
+            openThrottleWindow(inputMode: inputMode)
+        } else {
+            throttledText = trimmed
+        }
+    }
+    private func openThrottleWindow(inputMode: String) {
+        throttleTimer = scheduler.after(timing.typingThrottle) { [weak self] in
+            guard let self else { return }
+            self.throttleTimer = nil
+            guard let latest = self.throttledText else { return }
+            self.throttledText = nil
+            guard latest != self.throttleSent else { return }
+            self.throttleSent = latest
+            self.sendPreview(latest, phase: .typing, inputMode: inputMode)
+            self.openThrottleWindow(inputMode: inputMode)
+        }
+    }
+    private func closeThrottleWindow() {
+        throttleTimer?.cancel(); throttleTimer = nil; throttledText = nil; throttleSent = nil
     }
     private func sendPreview(_ text: String, phase: InstantPhase, inputMode: String) {
         guard let take, let preparation = take.preparation, !finalizing else { return }
@@ -426,12 +500,30 @@ public struct InstantResult: Equatable {
             guard let response = try? await self.harness.instant(request), !Task.isCancelled,
                   self.take?.takeId == take.takeId, mine == self.seq, response.seq == mine, !self.finalizing else { return }
             self.preview = (text, response)
-            self.surface?.setInstantPreview(InstantPreview.make(response, inputMode: inputMode))
+            let next = InstantPreview.make(response, inputMode: inputMode)
+            if next == nil, phase == .typing, case .value? = self.shownPreview {
+                // Hold the last value for one interval; a newer preview replaces or clears it first.
+                guard self.previewClearTimer == nil else { return }
+                self.previewClearTimer = self.scheduler.after(self.timing.typingThrottle) { [weak self] in
+                    self?.previewClearTimer = nil; self?.showPreview(nil)
+                }
+                return
+            }
+            self.showPreview(next)
         }
+    }
+    private func showPreview(_ next: InstantPreview?) {
+        previewClearTimer?.cancel(); previewClearTimer = nil
+        shownPreview = next
+        surface?.setInstantPreview(next)
     }
     private func cancelPreview() {
         previewTimer?.cancel(); previewTimer = nil; previewTask?.cancel(); previewTask = nil
-        if preview != nil || pendingConfirmation != nil { preview = nil; pendingConfirmation = nil; surface?.setInstantPreview(nil) }
+        closeThrottleWindow()
+        let shown = shownPreview != nil || previewClearTimer != nil
+        if preview != nil || pendingConfirmation != nil || shown {
+            preview = nil; pendingConfirmation = nil; showPreview(nil)
+        }
     }
 
     /// Final decision for a released take or a Return. Never blocks the user: any instant
@@ -441,9 +533,20 @@ public struct InstantResult: Equatable {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         seq += 1
         let mine = seq
-        previewTimer?.cancel(); previewTask?.cancel()
+        previewTimer?.cancel(); previewTask?.cancel(); closeThrottleWindow()
         finalizing = true
-        defer { if self.take?.takeId == take.takeId && mine == seq { finalizing = false } }
+        var pending = false
+        let feedback = scheduler.after(timing.pendingFeedback) { [weak self] in
+            guard let self, self.take?.takeId == take.takeId, mine == self.seq, self.finalizing else { return }
+            pending = true; self.surface?.setListening(.finishing)
+        }
+        defer {
+            feedback.cancel()
+            if pending { surface?.setListening(.off) }
+            if self.take?.takeId == take.takeId && mine == seq { finalizing = false }
+        }
+        // A spoken "never mind" / "vergiss es" ends the take silently instead of starting an agent run.
+        if input.mode == "voice", Self.isSpokenCancel(trimmed) { resetTake(); host?.finishInstant(); return }
         let agent = AgentRequest(prompt: trimmed, question: trimmed, takeId: take.takeId, input: input)
         guard let preparation = take.preparation, trimmed.utf16.count <= Self.maximumInstantText else { submit(agent); return }
         let started = clock()
@@ -469,17 +572,25 @@ public struct InstantResult: Equatable {
             if confirm {
                 // Never performed implicitly: the next Return on the same text confirms it.
                 pendingConfirmation = (trimmed, action)
-                surface?.setInstantPreview(.hint("Return to confirm: " + title))
+                showPreview(InstantPreview.confirm(title))
                 return
             }
             await perform(action, confirmed: false, origin: .instantAct)
         case .answer(_, let title, _, let card):
+            // As /invoke does: only a real result replaces the agent. A Notice-only answer (rates
+            // still downloading, an unknown currency) is a preview hint, not an answer to this request.
+            guard card.elements.values.contains(where: { $0.type == .resultCard }) else { submit(agent); return }
             present(question: trimmed, card: card, answer: title, focusCard: false)
         case .list(_, let title, let card, _):
             present(question: trimmed, card: card, answer: ([title] + card.itemTitles.prefix(8)).joined(separator: "\n"), focusCard: true)
         case .refuse(_, let message, let card):
             present(question: trimmed, card: card, answer: message, focusCard: false)
         }
+    }
+    /// Whole-utterance cancel words (EN/DE), anchored: "stop the timer" is a request, "stop" is not.
+    static func isSpokenCancel(_ text: String) -> Bool {
+        let words = text.lowercased().trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters))
+        return words.range(of: #"^(never ?mind|cancel|stop|forget it|nothing|vergiss es|abbrechen|egal|nichts)$"#, options: .regularExpression) != nil
     }
     private static func decisionName(_ response: InstantResponse) -> String {
         switch response.decision {
@@ -491,7 +602,8 @@ public struct InstantResult: Equatable {
         }
     }
     private func present(question: String, card: CardSpec, answer: String, focusCard: Bool) {
-        preview = nil; pendingConfirmation = nil
+        preview = nil; pendingConfirmation = nil; shownPreview = nil
+        previewClearTimer?.cancel(); previewClearTimer = nil
         quickAnswer = (question, String(answer.prefix(600)))
         surface?.presentInstant(InstantResult(question: question, card: card, copyText: card.copyValue ?? card.plainText,
                                               focusCard: focusCard))
@@ -509,18 +621,21 @@ public struct InstantResult: Equatable {
     }
     private func perform(_ action: HostAction, confirmed: Bool, origin: Origin) async {
         let contextId = take?.contextId
+        // A typed list previewed above the bar has no reader footer for a notice: confirm in the
+        // bar ("✓ Copied path") and show failures there, as for an instant act.
+        let inBar = origin == .instantAct || (origin == .instantCard && surface?.showsComposer == true)
         do {
             guard let host else { return }
             let status = try await host.perform(action, contextId: contextId, confirmed: confirmed)
             switch action {
-            case .copyText where origin != .instantAct: break // the card already shows "Copied"
+            case .copyText where !inBar: break // the card already shows "Copied"
             case .copyPath, .copyText:
-                if origin == .instantAct { confirm(status) } else { surface?.presentActionNotice(status) }
+                if inBar { confirm(status) } else { surface?.presentActionNotice(status) }
             default:
                 if origin == .agentCard { surface?.presentActionNotice(status) } else { confirm(status) }
             }
         } catch {
-            if origin == .instantAct { surface?.presentFailure(error) }
+            if inBar { surface?.presentFailure(error) }
             else { surface?.presentActionNotice((error as? DomainError)?.message ?? error.localizedDescription) }
         }
     }
@@ -565,6 +680,7 @@ public struct InstantResult: Equatable {
     private func resetTake() {
         holdTimer?.cancel(); startErrorTimer?.cancel(); previewTimer?.cancel(); confirmationTimer?.cancel()
         holdTimer = nil; startErrorTimer = nil; previewTimer = nil; confirmationTimer = nil
+        closeThrottleWindow(); previewClearTimer?.cancel(); previewClearTimer = nil; shownPreview = nil
         previewTask?.cancel(); finalTask?.cancel(); previewTask = nil; finalTask = nil
         take = nil; preview = nil; pendingConfirmation = nil; quickAnswer = nil; pendingStartError = nil
         listening = false; finalizing = false; transcript = VoiceTranscript()
@@ -581,6 +697,9 @@ public struct InstantResult: Equatable {
     /// Replace the composer text (the final transcript), never counted as typing.
     func setComposerText(_ text: String)
     func setInstantPreview(_ preview: InstantPreview?)
+    /// The voice-off hint in the empty composer (cleared by the first keystroke); false when the
+    /// composer is not up or already has text.
+    func showVoiceOffHint(_ text: String) -> Bool
     /// Return/⌘Return/⌘⇧C on a visible list preview; false when nothing actionable is selected.
     func performPreview(_ command: CardCommand) -> Bool
     func presentInstant(_ result: InstantResult)

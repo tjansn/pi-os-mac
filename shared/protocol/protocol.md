@@ -39,6 +39,12 @@ X-Harness-Token: <hex token>
 - Wrong or missing token: `401`. An unconfigured token fails closed; only explicit
   `PI_OS_INSECURE_DEV=1` opts out in isolated development. Mac supervised mode cannot opt out.
 - Rationale: loopback binding alone does not stop other local processes.
+- Browser requests are refused on the Node harness: any request (except `GET /health`) that
+  carries an `Origin` header or a `Sec-Fetch-Site` other than `none` gets
+  `403 {"error":{"code":"forbidden_origin"}}`, in token and insecure-dev modes alike, and
+  every request body must be `Content-Type: application/json` (`415 unsupported_media_type`
+  otherwise), so a web page cannot drive the loopback API with a CORS "simple request".
+  The native hosts (URLSession, .NET HttpClient, Node fetch) send neither header.
 
 ## Message conventions
 
@@ -80,9 +86,11 @@ HTTP statuses used:
 | 202 | accepted for async processing |
 | 400 | malformed request or failed argument validation |
 | 401 | missing/wrong token |
+| 403 | browser-originated request (`forbidden_origin`, Node harness) |
 | 404 | unknown route or closed/expired thread |
 | 409 | duplicate invocation, busy thread or retained-thread capacity reached |
 | 413 | request body too large (`POST /instant` and `/invocations/prepare` > 4 KB, `/settings/routing` and `/settings/classifier` > 16 KB, others > 1 MB) |
+| 415 | request body that is not `application/json` (`unsupported_media_type`, Node harness) |
 | 500 | unexpected server failure |
 
 Tool outcome codes (open set, snake_case):
@@ -281,7 +289,8 @@ Contract code: `node-harness/src/contracts/launcher.ts`; exact wire fixtures:
 `shared/fixtures/launcher/*.json` (the conformance suite checks both sides). Same
 envelope as every host tool (`{arguments}` → `{ok:true,result}` | `{ok:false,error}`);
 `contextId` is optional on all three. The Windows host has none of these routes: Node
-then registers only its engine-only instant tools and never calls them.
+then registers only its engine-only instant tools and never calls them (the `/invoke`
+instant lane runs without app and file lookups on every host).
 
 | Route | Kind | Arguments | Result |
 |-------|------|-----------|--------|
@@ -356,10 +365,32 @@ type InstantResponse = { seq: number; elapsedMs: number; source: "grammar" | "cl
   currency, time zones, date math, open app/URL, web search, file search, volume/display
   sleep, and file-deletion refusal (every phase). Deictic words ("this", "hier", "markiert")
   and two-step requests fall through to the agent.
+- The deletion refusal is narrow so ordinary text editing keeps working: trash phrases,
+  shell deletion commands with a flag or path, strong verbs (trash/shred with an object,
+  wipe, purge, destroy, uninstall) and delete/remove/erase/löschen/entfernen with an evident
+  file object (file nouns, file names and paths, "old screenshots", "remove Zoom from my
+  Mac", a bare installed app name) are refused. Text and in-app edits ("delete the comma",
+  "lösche den Termin") are not; "delete it", "lösch das", "delete everything I typed" fall
+  through as `deictic`. Information questions ("how do I empty the trash"), web and file
+  searches and reminders are never refused unless a follow-on clause asks for the deletion.
 - `act` only on `phase: "final"`; `typing`/`partial` return previews (`answer`/`list`) or
   `fallthrough`. Node never performs effects: the host executes `action` after its own
-  `LauncherPolicy` check. Budgets: 60 ms, 250 ms for file search and the first rate download.
-  It never fails: errors and timeouts are `fallthrough`.
+  `LauncherPolicy` check. Budgets: 60 ms; 250 ms for the first rate download; file search
+  600 ms for `typing`/`partial` previews and 1600 ms for a `final` (longer than the macOS
+  host's own 1.5 s `FileSearch` deadline, so a final gets the host's list or its
+  `search_timeout`, never a Node timeout). It never fails: errors and timeouts are
+  `fallthrough`.
+- Typed previews: hosts may send `phase: "typing"` on every keystroke. Calculations, units,
+  currency, times, dates and app matches answer at once; a typed file search reaches the
+  host only after 150 ms without a newer request for the take (the newer one supersedes it
+  and the older answers `fallthrough`/`timeout`). `partial` and `final` are never delayed.
+- `locale` is the formatting locale: the host's language plus its effective region (macOS
+  honours a region override, e.g. `en-DE` for an English UI with region Germany); for voice
+  it is the speech language (`de-DE`). Numbers are parsed with its decimal separator
+  (comma-decimal when the locale's decimal separator is "," or the utterance is German) and
+  every number on a card (input, value) is shown in that convention; ResultCard copy values
+  of calculations, units and currency use the same decimal separator, without grouping.
+  UI words stay English. No wire shape changes (an optional BCP 47 tag as before).
 - Latest wins per take (`takeId`, else `contextId`): a newer `seq` aborts the dispatch still
   running for that take (it answers `fallthrough`/`timeout`), and a request older than the
   newest seen is answered `fallthrough`/`timeout` at once. The final wins: once a take's
@@ -370,10 +401,17 @@ type InstantResponse = { seq: number; elapsedMs: number; source: "grammar" | "cl
   (`openFile`/`revealFile`/`copyPath`), never paths. Every card passes the strict catalog
   check before it is returned (see Result cards).
 - Currency: the first currency question (also a typed preview) downloads the ECB
-  reference rates once (conditional GET, cached; disclosed in Settings; `PI_OS_FX_RATES=0`
-  disables it). Until then the answer is a Notice card ("Downloading ECB reference rates…").
-- On a grammar miss in `partial`/`final`, the optional advisory classifier (Settings; off by
-  default) may add `hints` within 250 ms. Hints never trigger or authorize anything; for a
+  reference rates once (conditional GET, cached, body capped at 256 KB; disclosed in
+  Settings; `PI_OS_FX_RATES=0` disables it). Until then a `typing`/`partial` preview is a
+  Notice card ("Downloading ECB reference rates…"); a `final` without a result (no rates, an
+  unknown currency) falls through to the agent instead of ending the turn on a notice.
+- On a grammar miss in `partial`, the optional advisory classifier (Settings; off by
+  default) may add `hints` within 250 ms. A `final` never waits for it: the fallthrough is
+  answered at once (with only the local deixis hint, if any) and the classifier runs in the
+  background under the same deadline; hints that arrive are kept for the take's `/invoke`,
+  which fuses them only if they are already there. A classifier that sends text off the machine
+  (kind `pi`, e.g. a Workers AI model) is consulted for `final` only: partials (including
+  takes the user then cancels) never leave the machine. Hints never trigger or authorize anything; for a
   `takeId` they are kept briefly so the following `/invoke` can raise (never lower) the
   routed tier or request the screenshot. The classifier receives the cleaned utterance
   (wake word and politeness removed); neither text nor hints are logged.
@@ -434,15 +472,17 @@ instant dispatcher on the prompt (`phase: "final"`, no classifier): an `answer` 
 session (`followupAvailable: false`; a follow-up is a fresh `/invoke`, e.g. "Earlier quick
 answer: Q → A"). Everything else falls through to the agent: `act` and `list` need host
 effects, an `answer` that carries only a Notice (for example "Downloading ECB reference
-rates. Try again in a moment.") answers nothing, and `refuse` stays with the agent, which is
-bound by the same file-deletion prohibition (the deletion grammar also matches some ordinary
-edits, such as deleting a message or typed text, that Windows keeps handling as before).
+rates. Try again in a moment.") answers nothing, and `refuse` is not short-circuited there:
+the agent is bound by the same file-deletion prohibition (with the host's native checks),
+so Windows keeps its previous behaviour for every request the grammar refuses.
 
 Response: `202 {"accepted": true, "invocationId": "inv-abc"}`.
 The agent then runs its observe/act loop asynchronously.
 
-Agent sessions use the stored Settings model, or the Auto virtual model `pi-os/auto` when
-none is stored (see Model settings). On Auto, `decide()` picks the physical model and level
+Agent sessions use the stored Settings model. With nothing stored, macOS uses the Auto
+virtual model `pi-os/auto`, while Windows passes no model so pi resolves its own default
+(`defaultProvider`/`defaultModel`/`defaultThinkingLevel`) as before Auto existed; Auto is
+opt-in there (see Model settings). On Auto, `decide()` picks the physical model and level
 from content-free heuristics before the prompt is sent (< 1 ms, no classifier wait) and
 sets the turn's active tools (light quick/fast lanes leave `codemode` inactive until a
 `pi_os_escalate` hand-off). The pinned screenshot is attached to the first prompt only
@@ -481,6 +521,10 @@ Result-surfacing fields (ux-design-notes.md):
   executes, `"thinking"` during reasoning, absent when idle. Cleared when the
   invocation reaches a terminal state.
 - `responseText`: final agent answer, capped (~8 KB); set on completion.
+- Every string Node serializes in a record (`responseText`, `partialText`, `failureMessage`,
+  `activity`, step details, the prompt) is well-formed UTF-16: caps never split a surrogate
+  pair and lone surrogates become U+FFFD, so strict decoders (Swift `JSONDecoder`) never
+  fail a record. Unchanged `activity`/`partialText` values publish no new revision.
 - `failureMessage`: why the invocation failed/aborted/timed out; terminal
   failure states only. Machine-readable prefixes include `session_closed:`,
   `not_idle:`, `control_disabled:` and `no_authenticated_model:` (Auto found no model with
@@ -517,8 +561,10 @@ data: {"invocationId":"…","revision":7,"state":"running","partialText":"…",�
 ```
 
 with the **full** record JSON (same shape as `GET /invocations/{id}`), at most one write per
-33 ms window (the latest revision wins; a reader that falls behind gets the latest record
-once it catches up, never a backlog). The stream starts with the current record, ends
+33 ms window for growing text (the latest revision wins; a reader that falls behind gets the
+latest record once it catches up, never a backlog). Milestones are written at once: a state
+change (including the terminal one), the first `partialText`, a card appearing or becoming
+complete, and `responseText`. The stream starts with the current record, ends
 after the record reaches a terminal state (that record is always sent), and carries
 `: ping` comments every 15 s. A follow-up turn is a new stream. Disconnecting is safe at
 any time; polling `GET /invocations/{id}` remains the fallback and the Windows path.
@@ -598,10 +644,11 @@ virtual model whenever at least one physical model is usable:
 - `thinkingLevels`: pi thinking levels this exact model accepts, ascending;
   non-reasoning models report `["off"]` only. Derived via pi-ai's
   `getSupportedThinkingLevels` (`thinkingLevelMap` null entries excluded).
-- `current`: the stored selection. With nothing stored, Auto is the default:
-  `current` is `{"provider":"pi-os","modelId":"auto","thinkingLevel":<bias level>}` plus an
-  additive `"currentIsDefault": true`. `current` is `null` only when no model is usable
-  (then `models` is empty).
+- `current`: the stored selection. With nothing stored the default is per host. macOS:
+  Auto, reported as `{"provider":"pi-os","modelId":"auto","thinkingLevel":<bias level>}` plus
+  an additive `"currentIsDefault": true`. Windows: pi's own default model, reported as
+  `current: null` (as before Auto existed); Auto is listed and becomes the selection only
+  when chosen. `current` is also `null` when no model is usable (then `models` is empty).
 - Auto (`pi-os/auto`) is a pi 1.0 virtual model: for every request it picks a physical
   model and thinking level among the authenticated models (heuristics, measured latency,
   routing settings) and escalates or fails over within the turn. Its thinking levels are
@@ -627,7 +674,8 @@ Windows or `~/Library/Application Support/pi-os/settings.json` on macOS (an atom
 read-modify-write that keeps every other key, e.g. `routing`) and is re-applied to each
 new invocation, which also logs the effective pair
 (`[agent] model=<provider>/<id> effort=<level>`) as the session starts. A stored model
-that is no longer registered falls back to Auto.
+that is no longer registered falls back to Auto on macOS and to pi's automatic default on
+Windows.
 
 #### `GET /settings/routing` / `POST /settings/routing`
 
@@ -659,18 +707,29 @@ Measured latency per `provider/model@level` and temporary provider health blocks
 Optional advisory intent classifier, stored separately in `classifier.json`; default off.
 
 ```json
-{ "kind": "off" | "laya" | "pi", "python": "/abs/venv/bin/python", "script": "/abs/…", "modelDir": "/abs/…",
+{ "kind": "off" | "laya" | "pi", "python": "/abs/venv/bin/python", "modelDir": "/abs/…",
   "sha256": "…", "calibration": "/abs/….json", "threads": 4, "provider": "cloudflare-workers-ai", "model": "typesafe/jev",
   "shadowLog": false,
   "status": { "kind": "laya", "state": "stopped", "reason": "…", "name": "laya", "shadowLog": false,
-              "laya": { "failures": 0, "maxRestarts": 3, "lastError": "…", "model": { … }, "requestErrors": 0 } } }
+              "laya": { "failures": 0, "maxRestarts": 3, "lastError": "…", "model": { … }, "requestErrors": 0 },
+              "layaLaunch": { "ok": false, "reason": "model_dir_not_configured" } } }
 ```
 
 - `laya`: a local CPU-only sidecar (stdio child of the harness, never the GPU), started
   lazily on first use and warmed at `/invocations/prepare`; it stops after 10 idle minutes
   and with the harness. ~5 GB RAM while loaded, ~18 s to load. `pi`: a pi catalog
   classifier (e.g. Cloudflare Workers AI Jev); this sends utterances to that provider.
-- Paths must be absolute; `PI_OS_LAYA_PYTHON` / `PI_OS_LAYA_MODEL_DIR` fill missing ones.
+- Paths must be absolute; `PI_OS_LAYA_PYTHON` / `PI_OS_LAYA_MODEL_DIR` fill missing ones, then
+  `<support dir>/laya/venv/bin/python` and `<support dir>/laya/model` when they exist. The
+  interpreter must be named `python`, `python3` or `python3.x`. The sidecar script is never a
+  setting (it is the copy shipped with pi-os, or `PI_OS_LAYA_SCRIPT` for development): a
+  `script` key in a POST body or an older `classifier.json` is accepted and dropped.
+- `status.layaLaunch: {ok, reason?}` (read-only, every kind including `off`) says whether
+  Laya could start with the stored paths, so Settings can name what is missing before the
+  switch is turned on. `reason` is one of `python_not_configured`, `python_not_found`,
+  `model_dir_not_configured`, `model_dir_not_found` (no `rl_agent_config.json`),
+  `script_not_found`, `calibration_not_found`, `disabled_by_env` (`PI_OS_LAYA=0`). Only
+  existence checks run; nothing is spawned and no path is reported.
 - `status` is read-only (an echoed `status` in a POST is ignored): `state` is
   `off | unavailable | configured | stopped | starting | ready | stopping | backoff | failed`,
   with `reason`/`laya.lastError` such as `disabled_by_env`, `model_not_configured`,

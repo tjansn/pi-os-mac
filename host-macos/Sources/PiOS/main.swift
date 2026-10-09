@@ -35,7 +35,7 @@ if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--conformance"
         let launcher = try env["PI_OS_LAUNCHER_FIXTURES"].map { directory in
             try MainActor.assumeIsolated { try conformanceLauncher(URL(fileURLWithPath: directory, isDirectory: true)) }
         }
-        let server = try LoopbackServer(port: port) { request in
+        let server = try LoopbackServer(port: port, cancelsOnDisconnect: LoopbackServer.launcherReads) { request in
             if request.method == "GET", request.path == "/health" { return .json(["service": "macos-conformance"]) }
             guard HostRoutes.authorized(request.headers["x-harness-token"], token: token) else {
                 return .error(401, "unauthorized", "Missing or wrong X-Harness-Token")

@@ -55,7 +55,9 @@ function blockText(spec: CardSpec, element: CardElement, seen: Set<string>): str
     case "ResultCard": {
       const input = line(props.input);
       const value = line(props.value);
-      const head = input ? `${input}${EQUALS_KINDS.has(str(props.kind)) ? " = " : ": "}${value}` : value;
+      // "100 km in miles ≈ 62.1371 miles", never "= ≈": an approximate value carries its own sign.
+      const joiner = EQUALS_KINDS.has(str(props.kind)) ? (value.startsWith("≈") ? " " : " = ") : ": ";
+      const head = input ? `${input}${joiner}${value}` : value;
       const freshness = typeof props.freshness === "object" && props.freshness !== null
         ? line((props.freshness as Record<string, unknown>).label) : "";
       return lines(head, line(props.detail), freshness);

@@ -7,15 +7,23 @@ public final class LoopbackServer {
     private let queue = DispatchQueue(label: "pi-os.http", qos: .userInitiated)
     private let listener: NWListener
     private let handler: Handler
+    private let cancelsOnDisconnect: @Sendable (HTTPRequest) -> Bool
     private var connections: [UUID: Client] = [:]
     public var onFailure: ((String) -> Void)?
 
-    public init(port: UInt16, handler: @escaping Handler) throws {
+    /// `cancelsOnDisconnect` picks read-only requests whose work is cancelled when the client goes
+    /// away before the response (Node aborted a superseded file search). Effects never qualify.
+    public init(port: UInt16, cancelsOnDisconnect: @escaping @Sendable (HTTPRequest) -> Bool = { _ in false },
+                handler: @escaping Handler) throws {
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!)
         parameters.allowLocalEndpointReuse = false
         listener = try NWListener(using: parameters)
-        self.handler = handler
+        self.handler = handler; self.cancelsOnDisconnect = cancelsOnDisconnect
+    }
+    /// Launcher reads (file search, app list): abandoned searches must not hold the serial queue.
+    public static let launcherReads: @Sendable (HTTPRequest) -> Bool = { request in
+        request.method == "POST" && LauncherRoutes.name(forPath: request.path).map(LauncherRoutes.readNames.contains) == true
     }
 
     public func start(ready: @escaping () -> Void) {
@@ -30,7 +38,7 @@ public final class LoopbackServer {
             guard let self else { connection.cancel(); return }
             guard self.connections.count < 16 else { connection.cancel(); return }
             let id = UUID()
-            let client = Client(connection, queue: self.queue, handler: self.handler) { [weak self] in
+            let client = Client(connection, queue: self.queue, handler: self.handler, cancelsOnDisconnect: self.cancelsOnDisconnect) { [weak self] in
                 self?.connections.removeValue(forKey: id)
             }
             self.connections[id] = client
@@ -53,13 +61,16 @@ public final class LoopbackServer {
         let connection: NWConnection
         let queue: DispatchQueue
         let handler: Handler
+        let cancelsOnDisconnect: (HTTPRequest) -> Bool
         let onClose: () -> Void
         var parser = HTTPParser()
         var timeout: DispatchWorkItem?
         var operation: Task<Void, Never>?
         var closed = false
-        init(_ connection: NWConnection, queue: DispatchQueue, handler: @escaping Handler, onClose: @escaping () -> Void) {
-            self.connection = connection; self.queue = queue; self.handler = handler; self.onClose = onClose
+        init(_ connection: NWConnection, queue: DispatchQueue, handler: @escaping Handler,
+             cancelsOnDisconnect: @escaping (HTTPRequest) -> Bool, onClose: @escaping () -> Void) {
+            self.connection = connection; self.queue = queue; self.handler = handler
+            self.cancelsOnDisconnect = cancelsOnDisconnect; self.onClose = onClose
         }
         func deadline(_ seconds: Double) {
             timeout?.cancel()
@@ -86,6 +97,7 @@ public final class LoopbackServer {
                             let response = await self.handler(request)
                             self.queue.async { self.send(response) }
                         }
+                        if self.cancelsOnDisconnect(request) { self.watchDisconnect() }
                         return
                     }
                     if complete { self.send(.error(400, "invalid_arguments", "Incomplete request")) }
@@ -93,6 +105,15 @@ public final class LoopbackServer {
                 } catch let failure as HTTPFailure {
                     self.send(.error(failure.status, "invalid_arguments", failure.message))
                 } catch { self.send(.error(400, "invalid_arguments", "Malformed request")) }
+            }
+        }
+        /// After a complete request the client sends nothing more until it reads the response
+        /// (fetch never half-closes). End of stream or an error therefore means it went away:
+        /// close, which cancels the operation. Stray bytes are ignored.
+        func watchDisconnect() {
+            connection.receive(minimumIncompleteLength: 1, maximumLength: 1_024) { [weak self] _, _, complete, error in
+                guard let self, !self.closed else { return }
+                if error != nil || complete { self.close() } else { self.watchDisconnect() }
             }
         }
         func send(_ response: HTTPResponse) {

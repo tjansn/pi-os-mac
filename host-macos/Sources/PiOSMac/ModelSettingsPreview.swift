@@ -7,6 +7,10 @@ import PiOSCore
     final class Service: ModelSettingsService {
         var current: HarnessClient.ModelSelection?
         var classifierKind = "off"
+        var classifierPython: String?
+        var classifierModel: String?
+        /// Every POSTed /settings/classifier body, as JSON objects.
+        private(set) var classifierPosts: [[String: Any]] = []
         init(current: HarnessClient.ModelSelection? = nil) { self.current = current }
         func reserve() -> UUID { UUID() }
         func release(_ id: UUID) {}
@@ -21,12 +25,18 @@ import PiOSCore
         func setModel(_ selection: HarnessClient.ModelSelection) async throws { /* preview only */ }
         func resources() async throws -> HarnessClient.ResourceSettings { .init(current: .init(mode: "isolated"), warning: "Mock preview only") }
         func setResources(trusted: Bool) async throws { /* preview only; no code loaded */ }
+        /// Mirrors Node: paths come only from what was posted (no PI_OS_LAYA_* here); nothing spawns.
         func classifier() async throws -> ClassifierSettings {
-            ClassifierSettings(kind: classifierKind, statusState: classifierKind == "laya" ? "idle" : "off",
-                               statusReason: classifierKind == "laya" ? "starts on first use" : nil)
+            let reason = classifierPython == nil ? "python_not_configured" : classifierModel == nil ? "model_dir_not_configured" : nil
+            let laya = classifierKind == "laya"
+            return ClassifierSettings(kind: classifierKind, statusState: laya ? (reason == nil ? "stopped" : "unavailable") : "off",
+                                      statusReason: laya ? reason : nil, launchOK: reason == nil, launchReason: reason,
+                                      python: classifierPython, modelDir: classifierModel)
         }
         func setClassifier(_ settings: ClassifierSettings) async throws -> ClassifierSettings {
-            classifierKind = settings.kind; return try await classifier()
+            classifierPosts.append(try JSONSerialization.jsonObject(with: settings.body()) as? [String: Any] ?? [:])
+            classifierKind = settings.kind; classifierPython = settings.python; classifierModel = settings.modelDir
+            return try await classifier()
         }
     }
     /// Scripted voice services: fixed permission/asset states, nothing prompts or downloads.

@@ -17,6 +17,7 @@ import PiOSCore
     private var availability: NSMenuItem!
     private var lastAnswerItem: NSMenuItem!
     private var cancelItem: NSMenuItem!
+    private var voiceItem: NSMenuItem!
     private let panel = PromptPanel()
     private let notifier = ResultNotifier()
     /// One engine for the app's lifetime (B6): Apple's on-device speech on macOS 26+, else unavailable.
@@ -27,6 +28,8 @@ import PiOSCore
     private var appearanceWindow: AppearanceWindow?
     private var invocationReservation: UUID?
     private var workDismissed = false
+    /// The current take pinned a Brave tab: typing goes through the browser route, not the window.
+    private var takeBrowserPinned = false
     private var nativeInputStarted = false
     private var latestResultID: String?
     private var context: String?
@@ -84,6 +87,10 @@ import PiOSCore
             }
             controller = CommandController(voice: voice, harness: harness, host: self, surface: panel)
             controller.refreshReadiness = { [weak self] in self?.refreshVoiceReadiness() }
+            let voiceSystem = voiceSystem
+            let hint = VoiceOffHint { !VoiceSettings.shared.enabled && voiceSystem.engineAvailable }
+            if VoiceSettings.shared.enabled { hint.retire() }
+            controller.voiceOffHint = hint
             createMenu()
             panel.onSubmit = { [weak self] in self?.controller.composerSubmitted($0, intent: .plain) }
             panel.onCommand = { [weak self] in self?.controller.composerSubmitted($0, intent: $1) }
@@ -92,12 +99,15 @@ import PiOSCore
             panel.onCardAction = { [weak self] action, fromAgent in self?.controller.cardAction(action, fromAgent: fromAgent) }
             panel.onCancel = { [weak self] in self?.cancel() }
             panel.onPermissions = { [weak self] in self?.permissions() }
-            panel.onVoiceSettings = { [weak self] in self?.showSettings(page: .voice) }
+            // A failure reader's settings button ends that take first, so the floating reader never
+            // covers the Settings window it opened.
+            panel.onVoiceSettings = { [weak self] in self?.leaveFailure(); self?.showSettings(page: .voice) }
+            panel.onSettings = { [weak self] in self?.leaveFailure(); self?.showSettings(page: .general) }
             panel.onDismissWork = { [weak self] in
                 self?.workDismissed = true; self?.panel.dismissWorking()
             }
             NotificationCenter.default.addObserver(self, selector: #selector(voiceSettingsChanged), name: VoiceSettings.changed, object: nil)
-            server = try LoopbackServer(port: config.hostPort) { await service.handle($0) }
+            server = try LoopbackServer(port: config.hostPort, cancelsOnDisconnect: LoopbackServer.launcherReads) { await service.handle($0) }
             server?.onFailure = { [weak self] message in
                 Task { @MainActor in self?.fatal(message) }
             }
@@ -147,6 +157,8 @@ import PiOSCore
         menu.addItem(cancelItem); menu.addItem(.separator())
         let settings = menuItem("Settings…", #selector(showSettingsFromMenu), symbol: "slider.horizontal.3")
         settings.keyEquivalent = ","; menu.addItem(settings)
+        voiceItem = menuItem("Voice…", #selector(showVoiceSettings), symbol: "mic")
+        menu.addItem(voiceItem)
         menu.addItem(menuItem("Appearance…", #selector(showAppearance), symbol: "paintpalette"))
         menu.addItem(menuItem("Brave Connection…", #selector(browserSetup), symbol: "globe"))
         menu.addItem(menuItem("Permissions…", #selector(permissions), symbol: "lock.shield"))
@@ -176,6 +188,13 @@ import PiOSCore
         lastAnswerItem.isEnabled = (invocation != nil && !nativeInputStarted) || panel.mode == .prompt || (invocation == nil && panel.hasLastAnswer)
         cancelItem.isHidden = invocation == nil
         cancelItem.isEnabled = !cancelRequested
+        let voice = Self.voiceMenu(enabled: VoiceSettings.shared.enabled, engineAvailable: voiceSystem.engineAvailable)
+        voiceItem.title = voice.title; voiceItem.isEnabled = voice.isEnabled
+    }
+    /// The status menu's voice entry: discoverable while voice ships off (it opens Settings → Voice).
+    static func voiceMenu(enabled: Bool, engineAvailable: Bool) -> (title: String, isEnabled: Bool) {
+        guard engineAvailable else { return ("Voice needs macOS 26", false) }
+        return (enabled ? "Voice…" : "Turn On Hold to Talk…", true)
     }
     private func setStatus(_ text: String, attention: Bool = false) {
         status?.button?.image = PanelStyle.menuIcon(attention: attention)
@@ -212,6 +231,7 @@ import PiOSCore
         }
     }
     @objc private func voiceSettingsChanged() {
+        if VoiceSettings.shared.enabled { controller.voiceOffHint?.retire() }
         refreshVoiceReadiness(prepare: true)
         // A new TTL applies from the next idle period.
         if invocationReservation == nil { harness.retainWarm() }
@@ -229,7 +249,7 @@ import PiOSCore
         var snapshot = DesktopIdentity.pin()
         DesktopAX.enrichBeforePanel(&snapshot)
         let browserPin = BrowserPin.capture(&snapshot)
-        context = snapshot.id
+        context = snapshot.id; takeBrowserPinned = snapshot.browser != nil
         workDismissed = false; nativeInputStarted = false; latestResultID = nil
         let appName = NSWorkspace.shared.frontmostApplication?.localizedName ?? "Desktop"
         panel.prompt(snapshot: snapshot, appName: appName, canControl: config.canControl, trustedCompatibility: config.trustedCompatibility)
@@ -360,7 +380,7 @@ import PiOSCore
             let card = state.card.flatMap { state.cardComplete == true && $0.usesOnly(CardSpec.modelActionTypes) ? $0 : nil }
             let text = state.responseText?.isEmpty == false ? state.responseText! : card?.plainText ?? "The agent returned no answer."
             // Without a retained thread, finish() discards the context and its file tokens: read-only card.
-            panel.presentAgentAnswer(text, card: card, cardActions: thread != nil, present: !workDismissed)
+            panel.presentAgentAnswer(text, card: card, cardActions: thread != nil, present: !workDismissed, route: Self.routeNote(state.route))
             await backgroundResult(invocationID, failed: false)
             guard invocation == invocationID else { return true }
             finish(); return true
@@ -370,8 +390,14 @@ import PiOSCore
         default:
             throttle.cancel()
             thread = state.followupAvailable == true ? invocationID : nil
-            throw DomainError(state.state, state.failureMessage ?? "The task did not complete")
+            throw DomainError.invocation(state: state.state, message: state.failureMessage)
         }
+    }
+    /// Which model Auto picked, for the reader footer ("Auto · gpt-6-luna"). Model ids only;
+    /// an explicitly chosen model needs no note.
+    static func routeNote(_ route: HarnessClient.Status.Route?) -> String? {
+        guard let route, route.auto == true, let model = route.model, !model.isEmpty else { return nil }
+        return "Auto · " + model
     }
     private func presentRunning(_ presentation: RunningPresentation) {
         guard invocation != nil, !cancelRequested else { return }
@@ -521,6 +547,8 @@ import PiOSCore
         else { panel.reopenLastAnswer() }
     }
     @objc private func showSettingsFromMenu() { showSettings(page: .general) }
+    private func leaveFailure() { if invocation == nil { hardCancel() } }
+    @objc private func showVoiceSettings() { showSettings(page: .voice) }
     private func showSettings(page: SettingsWindow.Page) {
         if let settingsWindow { settingsWindow.show(page); settingsWindow.present(); return }
         let controller = SettingsWindow(harness: harness, notifier: notifier, voice: voiceSystem)
@@ -589,7 +617,10 @@ import PiOSCore
 extension Application: CommandHost {
     public var isWorking: Bool { invocation != nil }
     public var hasThread: Bool { thread != nil }
-    public var canTypeIntoPinned: Bool { config.canControl }
+    public var canTypeIntoPinned: Bool { Self.canType(control: config.canControl, browserPinned: takeBrowserPinned) }
+    /// ⌘Return types a value only into a native window; with a pinned Brave tab it copies instead
+    /// (typing there needs the browser route, which instant commands never use).
+    static func canType(control: Bool, browserPinned: Bool) -> Bool { control && !browserPinned }
     public func beginTake() -> CommandTake? { beginTakeInternal() }
     public func cancelTake() { cancel() }
     public func revealWork() { if invocation != nil && !nativeInputStarted { workDismissed = false; panel.reveal() } }

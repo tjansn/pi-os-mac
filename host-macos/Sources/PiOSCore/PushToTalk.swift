@@ -33,6 +33,9 @@ public enum TalkOutput: Equatable {
     case reveal
     /// A hold asked for voice, but voice cannot run; show this failure.
     case voiceFailed(DomainError)
+    /// Voice is switched off (and could run): a real hold says how to turn it on. Never a failure,
+    /// never the microphone; a tap stays exactly today's tap.
+    case voiceOffHint
 }
 
 /// Push-to-talk gesture on the existing hotkey: hold ≥ `holdThreshold` = voice, shorter = today's
@@ -54,7 +57,7 @@ public struct TalkGesture {
         case held
     }
 
-    private enum Arm: Equatable { case microphone, failure(DomainError) }
+    private enum Arm: Equatable { case microphone, failure(DomainError), hint }
     private enum State: Equatable {
         case idle
         case armed(since: TimeInterval, Arm)
@@ -95,8 +98,10 @@ public struct TalkGesture {
         }
     }
 
-    /// Key-down. `voice` is the host's cached readiness; it is never computed here.
-    public mutating func press(surface: TalkSurface, voice: VoiceReadiness) -> [TalkOutput] {
+    /// Key-down. `voice` is the host's cached readiness; it is never computed here. `voiceOffHint`
+    /// (only with `.disabled`): voice is switched off but could run, and the host still offers the
+    /// first-run hint; a hold past the threshold then emits `.voiceOffHint` from `tick()`.
+    public mutating func press(surface: TalkSurface, voice: VoiceReadiness, voiceOffHint: Bool = false) -> [TalkOutput] {
         guard state == .idle else { return [] }   // repeated press while held: nothing new
         let now = clock()
         switch surface {
@@ -106,6 +111,7 @@ public struct TalkGesture {
             switch voice {
             case .ready: state = .armed(since: now, .microphone); return [.beginTake, .startMic]
             case .unavailable(let error): state = .armed(since: now, .failure(error)); return [.beginTake]
+            case .disabled where voiceOffHint: state = .armed(since: now, .hint); return [.beginTake, .showComposer]
             case .disabled: state = .held; return [.beginTake, .showComposer]
             }
         }
@@ -123,6 +129,8 @@ public struct TalkGesture {
             return now - since >= holdThreshold ? [.beginListeningUI, .finalize] : [.stopMicDiscard, .showComposer]
         case .armed(let since, .failure(let error)):
             return now - since >= holdThreshold ? [.voiceFailed(error)] : [.showComposer]
+        // The composer is already up; a late hint never comes from a release.
+        case .armed(_, .hint): return []
         }
     }
 
@@ -132,6 +140,7 @@ public struct TalkGesture {
         switch state {
         case .armed(let since, .microphone): state = .listening(since: since); return [.beginListeningUI]
         case .armed(_, .failure(let error)): state = .held; return [.voiceFailed(error)]
+        case .armed(_, .hint): state = .held; return [.voiceOffHint]
         case .listening: state = .held; return [.finalize]
         case .idle, .held: return []
         }
@@ -143,6 +152,7 @@ public struct TalkGesture {
         switch state {
         case .armed(_, .microphone), .listening: state = .held; return [.stopMicDiscard, .showComposer]
         case .armed(_, .failure): state = .held; return [.showComposer]
+        case .armed(_, .hint): state = .held; return []
         case .idle, .held: return []
         }
     }
@@ -152,7 +162,7 @@ public struct TalkGesture {
     public mutating func interrupt() -> [TalkOutput] {
         switch state {
         case .armed(_, .microphone), .listening: state = .held; return [.stopMicDiscard]
-        case .armed(_, .failure): state = .held; return []
+        case .armed(_, .failure), .armed(_, .hint): state = .held; return []
         case .idle, .held: return []
         }
     }

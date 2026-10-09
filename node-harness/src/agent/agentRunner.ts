@@ -28,6 +28,7 @@ import {
   type ClassifierHints, type LatencyStats, type LatencyView, type RouteDecision, type RouteInput, type RoutingCatalog, type RoutingSettings,
 } from "./routing/index.js";
 import { createShowResultExtension, SHOW_RESULT_TOOL } from "../ui/showResult.js";
+import { createPromptCacheExtension } from "./promptCacheKey.js";
 import { FileLedger } from "../ui/ledger.js";
 import { createInstantEngines, type InstantEngines } from "../instant/engines.js";
 import type { CardSpec } from "../contracts/cards.js";
@@ -43,11 +44,14 @@ export { createSessionSettings, loadAgentResources, PI_OS_SETTINGS_OVERRIDES } f
  * which closes every cached Codex WebSocket of that id (openai-codex-responses.js
  * closeOpenAICodexWebSocketSessions), so a lane id shared by two threads would let one
  * reader's close cut the other's stream, and one-shot invocations dispose their session
- * anyway. The same id is also sent as session/affinity headers and prompt_cache_key to
- * Auto's other providers, whose server-side use of it cannot be verified offline.
- * Client-side, the cached-context delta only applies to a byte-identical prefix
- * (getCachedWebSocketInputDelta), so no conversation could have been merged; the cost of
- * not sharing is one WebSocket handshake per thread.
+ * anyway. The id also goes out as the session-id / x-client-request-id headers.
+ *
+ * The request BODY's prompt_cache_key is a different matter: a random per-thread key
+ * spreads requests that share the same static prefix (instructions + tool schemas, ~4K
+ * tokens) across cache machines. The pi-os-prompt-cache extension (promptCacheKey.ts)
+ * replaces only that body field with a hash of the prefix per prompt variant, through pi's
+ * before_provider_request hook, which runs after the key is set and leaves headers,
+ * WebSocket cache and cleanup on the per-thread id.
  */
 
 /** Model + reasoning effort chosen in the settings page (modelSettings.ts). */
@@ -81,6 +85,11 @@ export interface AgentServices {
   /** pi agent dir / cwd overrides (tests use a fixture agent dir). */
   agentDir?: string;
   cwd?: string;
+  /**
+   * Host platform for per-host model defaults (default process.platform): macOS defaults to Auto;
+   * elsewhere Auto is opt-in and pi resolves its own default model. Tests inject it.
+   */
+  platform?: NodeJS.Platform;
 }
 
 export interface AgentRunOptions {
@@ -93,7 +102,10 @@ export interface AgentRunOptions {
   /** Per-invocation host capabilities. Mac tools remain isolated even when input is enabled. */
   readOnly?: boolean;
   resourceSelection?: ResourceSelection;
-  /** Stored settings selection; undefined/null/unresolvable means Auto (`pi-os/auto`). */
+  /**
+   * Stored settings selection. undefined/null/unresolvable means Auto (`pi-os/auto`) on macOS and
+   * pi's own default model (settings defaultProvider/defaultModel) elsewhere.
+   */
   modelSelection?: ModelSelectionOption | null;
   /** Host advertises launcher.searchFiles + launcher.listApps (macOS): find_files/list_apps/open_item. */
   launcher?: boolean;
@@ -283,12 +295,15 @@ export interface SessionExtensionOptions {
   /** The thread's ledger, shared by find_files and show_result. */
   ledger?: FileLedger;
   onCard?: (spec: CardSpec, complete: boolean) => void;
+  /** The user's own words in this thread, read lazily by open_item (only user-named sites open directly). */
+  userRequests?: () => readonly string[];
 }
 
 /**
  * Every pi-os extension of a session, in load order: computer use, instant/launcher tools,
- * show_result, pi_os_escalate (only allowed/active on Auto), then the codemode policy before
- * pi's codemode. The isolated allowlist (sessionToolAllowlist) decides what is exposed.
+ * show_result, pi_os_escalate (only allowed/active on Auto), the stable prompt-cache key hook
+ * (no tools), then the codemode policy before pi's codemode. The isolated allowlist
+ * (sessionToolAllowlist) decides what is exposed.
  */
 export function sessionExtensions(options: SessionExtensionOptions) {
   const platform = options.platform ?? process.platform;
@@ -303,27 +318,39 @@ export function sessionExtensions(options: SessionExtensionOptions) {
     createLauncherToolsExtension({
       engines, readOnly: options.readOnly, contextId: options.contextId,
       ...(options.launcher ? { host: options.hostClient, ledger: ledgerAdapter(ledger) } : {}),
+      ...(options.userRequests ? { userRequests: options.userRequests } : {}),
     }),
     createShowResultExtension({ ledger, onCard: (spec, complete) => options.onCard?.(spec, complete) }),
     createEscalateExtension(),
+    createPromptCacheExtension(),
     ...advertiseScriptCallableOnly(codemodeExtensionFactories()),
   ];
   return { extensions, computerUse, ledger };
 }
 
-/** Selection a session starts with: a resolvable manual model, otherwise Auto at the routing bias. */
+/**
+ * Selection a session starts with. A resolvable manual model always wins and an explicitly stored
+ * Auto is Auto everywhere. Otherwise (nothing stored, or a stored model that is no longer
+ * registered) macOS starts on Auto at the routing bias, while other hosts (Windows) pass no model,
+ * so pi resolves defaultProvider/defaultModel/defaultThinkingLevel from its settings as before Auto
+ * existed, and every first prompt keeps its screenshot.
+ */
 export function resolveSessionModel(
   runtime: Pick<ModelRuntime, "getModel">,
   stored: ModelSelectionOption | null | undefined,
   bias: RoutingSettings["bias"],
+  platform: NodeJS.Platform = process.platform,
 ): { auto: boolean; model?: Model<any>; thinkingLevel?: string; fallbackReason?: string } {
+  const autoByDefault = platform === "darwin";
   if (stored && !isAutoSelection(stored) && stored.provider && stored.modelId) {
     const model = runtime.getModel(stored.provider, stored.modelId);
     if (model) return { auto: false, model, ...(stored.thinkingLevel ? { thinkingLevel: stored.thinkingLevel } : {}) };
+    const fallbackReason = `configured model ${stored.provider}/${stored.modelId} is not registered`;
+    if (!autoByDefault) return { auto: false, fallbackReason };
     const auto = runtime.getModel(AUTO_PROVIDER, AUTO_MODEL_ID);
-    return { auto: Boolean(auto), ...(auto ? { model: auto, thinkingLevel: thinkingLevelForBias(bias) } : {}),
-      fallbackReason: `configured model ${stored.provider}/${stored.modelId} is not registered` };
+    return { auto: Boolean(auto), ...(auto ? { model: auto, thinkingLevel: thinkingLevelForBias(bias) } : {}), fallbackReason };
   }
+  if (!stored && !autoByDefault) return { auto: false };
   const auto = runtime.getModel(AUTO_PROVIDER, AUTO_MODEL_ID);
   // Explicit level: pi's global default (xhigh) would clamp to "high" and silently mean quality bias.
   const level = isAutoSelection(stored) && stored?.thinkingLevel ? stored.thinkingLevel : thinkingLevelForBias(bias);
@@ -372,12 +399,15 @@ export async function createLiveSession(options: AgentRunOptions): Promise<LiveA
   const isolated = effectiveResourceMode(process.platform, readOnly, options.resourceSelection) === "isolated";
   // Hooks created here outlive a prepared session's build: they reach the CURRENT observer through `live`.
   let live: LiveAgentSession | undefined;
+  // The user's raw requests (promptFirst/promptFollowup add them); a prepared session reads them at execute time.
+  const userRequests: string[] = [];
   const { extensions, computerUse: extension, ledger } = sessionExtensions({
     contextId, hostClient, capturesDir, readOnly, launcher: options.launcher === true,
     ...(snapshot.screenshot?.imageId ? { initialScreenshotId: snapshot.screenshot.imageId } : {}),
     ...(browser ? { browser } : {}),
     ...(services.engines ? { engines: services.engines } : {}),
     onCard: (spec, complete) => live?.emitCard(spec, complete),
+    userRequests: () => userRequests,
   });
   const loader = await loadAgentResources(extensions, cwd, agentDir, isolated);
 
@@ -395,9 +425,11 @@ export async function createLiveSession(options: AgentRunOptions): Promise<LiveA
   } catch (error) { release(); throw error; }
   if (signal?.aborted) { release(); throw abortError(signal); }
 
-  // Settings-page selection (if any) -> concrete model for THIS invocation; none (or a lost one) -> Auto.
-  const resolved = resolveSessionModel(modelRuntime, options.modelSelection, routing().bias);
-  if (resolved.fallbackReason) log(`[agent] ${resolved.fallbackReason}; using Auto`);
+  // Settings-page selection (if any) -> concrete model for THIS invocation; none (or a lost one) -> Auto
+  // on macOS, pi's own default elsewhere.
+  const platform = services.platform ?? process.platform;
+  const resolved = resolveSessionModel(modelRuntime, options.modelSelection, routing().bias, platform);
+  if (resolved.fallbackReason) log(`[agent] ${resolved.fallbackReason}; ${platform === "darwin" ? "using Auto" : "using pi's automatic default"}`);
 
   const sessionOptions: CreateAgentSessionOptions = {
     cwd,
@@ -460,6 +492,7 @@ export async function createLiveSession(options: AgentRunOptions): Promise<LiveA
     ...(snapshot.screenshot?.imageId ? { initialScreenshotId: snapshot.screenshot.imageId } : {}),
     ledger,
     setupKey: sessionSetupKey(options),
+    addUserRequest: (text: string) => { if (userRequests.length < 64) userRequests.push(text.slice(0, 4_000)); },
   });
   return live;
 }
@@ -516,7 +549,9 @@ export function spokenInputNote(input: InvokeInput | undefined): string[] {
   return [
     "## Input",
     `The request was spoken and transcribed by speech recognition${input.locale ? ` (${input.locale})` : ""}. Words may be misheard,`
-      + " especially names, numbers and homophones: act on the most plausible desktop intent, and ask only when the action or target stays unclear.",
+      + " especially names, numbers and homophones: for ordinary actions act on the most plausible desktop intent."
+      + " The general rules still apply: before sending, publishing, paying or other consequential actions, ask when the action,"
+      + " target or content (including names, numbers and amounts) is unclear or rests on a guess about what was said.",
     "",
   ];
 }
@@ -542,12 +577,15 @@ export async function promptFirst(live: LiveAgentSession, options: AgentRunOptio
   ].join("\n");
 
   if (signal?.aborted) throw abortError(signal);
+  // The raw request only (never the context summary, window title or document path above).
+  live.controls.addUserRequest?.(prompt);
   const image = attach && snapshot.screenshot?.filePath
     ? await loadScreenshotImage(snapshot.screenshot.filePath, capturesDir) : undefined;
   return live.prompt(userMessage, signal, image);
 }
 
 export function promptFollowup(live: LiveAgentSession, prompt: string, signal?: AbortSignal, input?: InvokeInput): Promise<AgentRunResult> {
+  live.controls.addUserRequest?.(prompt);
   return live.prompt([
     "## Follow-up on the same pinned target",
     "Keep the thread's original target; never retarget. Earlier screenshots and browser references are historical.",

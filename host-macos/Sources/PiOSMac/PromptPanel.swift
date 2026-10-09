@@ -68,8 +68,15 @@ final class ListeningIndicator: NSView {
         setAccessibilityElement(true); setAccessibilityRole(.image); setAccessibilityLabel("Listening")
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    /// The disc keeps the white glyph above 3:1 everywhere: full accent while transcribing, under
+    /// Contrast / Increase Contrast and with Reduce Motion; otherwise the level only nudges 85–100%.
+    static func fillAlpha(level: Float, finishing: Bool, highContrast: Bool, reduceMotion: Bool) -> CGFloat {
+        if finishing || highContrast || reduceMotion { return 1 }
+        return 0.85 + 0.15 * CGFloat(min(1, max(0, level)))
+    }
     override func draw(_ dirtyRect: NSRect) {
-        let alpha: CGFloat = finishing ? 0.45 : PanelStyle.reduceMotion ? 1 : 0.62 + 0.38 * CGFloat(min(1, max(0, level)))
+        let contrast = PanelStyle.preferences.preset == .contrast || PanelStyle.increaseContrast
+        let alpha = Self.fillAlpha(level: level, finishing: finishing, highContrast: contrast, reduceMotion: PanelStyle.reduceMotion)
         PanelStyle.accent.withAlphaComponent(alpha).setFill()
         NSBezierPath(ovalIn: bounds.insetBy(dx: 1, dy: 1)).fill()
         guard let image = PanelStyle.symbol(finishing ? "ellipsis" : "waveform", size: 15, weight: .semibold) else { return }
@@ -101,9 +108,12 @@ final class ListeningIndicator: NSView {
     public var onCancel: (() -> Void)?
     public var onPermissions: (() -> Void)?
     public var onVoiceSettings: (() -> Void)?
+    public var onSettings: (() -> Void)?
     public var onReaderDismiss: (() -> Void)?
     public var onDismissWork: (() -> Void)?
     public var presentsOnScreen = PromptPanel.defaultPresentsOnScreen
+    /// Every accessibility notification the panel (and its card) posts; tests inject a recorder.
+    public var announce: AccessibilityAnnouncer = Accessibility.system { didSet { cardView.announce = announce } }
     public var isVisible: Bool { panel.isVisible }
     public var hasLastAnswer: Bool { lastAnswer != nil }
     var displayedAnswer: String { originalAnswer }
@@ -112,6 +122,12 @@ final class ListeningIndicator: NSView {
     var nativeGlassVisible: Bool { bar.usesGlass }
     var composerHasFocus: Bool { panel.firstResponder === input || panel.firstResponder === followup }
     var displayedPreview: InstantPreview? { instantPreview }
+    /// The inline preview label as laid out (bar coordinates) and the attributed text it shows.
+    var displayedPreviewFrame: NSRect? { previewLabel.isHidden ? nil : previewLabel.frame }
+    var displayedPreviewText: NSAttributedString? { previewLabel.isHidden ? nil : previewLabel.attributedStringValue }
+    var composerFirstLineFrame: NSRect { firstLineFrame(input, in: inputScroll) }
+    var failureMessageFrame: NSRect { failureMessage.frame }
+    var failureMessageNeededHeight: CGFloat { failureMessageHeight(width: failureMessage.frame.width) }
     var displayedCard: CardSpec? { cardSource == nil ? nil : cardView.spec }
     var cardActionsEnabled: Bool { cardView.isInteractive }
     var cardHasFocus: Bool { panel.firstResponder === cardView }
@@ -179,6 +195,8 @@ final class ListeningIndicator: NSView {
     private var latestResult: (SavedAnswer, FailurePresentation?)?
     private var retryStatus: String?
     private var streamStatus: String?
+    /// "Auto · gpt-6-luna" under a completed agent answer (which model Auto chose); nil otherwise.
+    private var answerRoute: String?
     private var renderedCache: (text: String, scale: CGFloat, width: CGFloat, rendered: NSAttributedString, height: CGFloat)?
     private var copyReset: Task<Void, Never>?
     private var measurementStart: UInt64?
@@ -186,6 +204,8 @@ final class ListeningIndicator: NSView {
     private var programmaticEdit = false
     private var listeningState = ListeningState.off
     private var instantPreview: InstantPreview?
+    private var voiceHintShown = false
+    static let idlePlaceholder = "Ask about this window…"
     private var cardSource: CardSource?
     private var streaming = false
     private enum CardSource { case instant, agent }
@@ -252,8 +272,13 @@ final class ListeningIndicator: NSView {
         staticProgress.image = PanelStyle.symbol("hourglass", size: 16); staticProgress.contentTintColor = PanelStyle.secondaryInk
         confirmIcon.imageScaling = .scaleProportionallyDown; confirmIcon.setAccessibilityElement(false)
         previewLabel.alignment = .right; previewLabel.setAccessibilityLabel("Quick result")
+        // One line, truncated by the attributed paragraph style; never word-wrapped into a clipped frame.
+        previewLabel.usesSingleLineMode = true; previewLabel.maximumNumberOfLines = 1
+        previewLabel.cell?.wraps = false; previewLabel.cell?.truncatesLastVisibleLine = true
         failureMessage.isSelectable = true; failureMessage.maximumNumberOfLines = 6
         failureMessage.lineBreakMode = .byWordWrapping
+        // Only if the 320 pt cap is ever reached: an ellipsis, never a silently missing line.
+        (failureMessage.cell as? NSTextFieldCell)?.truncatesLastVisibleLine = true
         for button in [ask, sendFollowup, close, stop, hideWork, copyButton] { button.rounded = true }
         ask.symbolSize = 17; sendFollowup.symbolSize = 17
         ask.toolTip = "Ask (Return) · Ask pi (Option-Return)"; ask.setAccessibilityLabel("Ask")
@@ -319,8 +344,12 @@ final class ListeningIndicator: NSView {
         if let screen { workArea = Rect(screen.visibleFrame) }
         layoutCurrent() // UI relocation only; never re-pin a native target.
     }
+    /// Escape, ⌘W and the reader's close button. A streaming reader continues in the background
+    /// (stopping stays explicit: its stop button or the menu); everything else cancels or closes.
     private func escape() {
-        if appearancePopover.isShown { appearancePopover.performClose(nil) } else { onCancel?() }
+        if appearancePopover.isShown { appearancePopover.performClose(nil) }
+        else if mode == .reader && streaming { onDismissWork?() }
+        else { onCancel?() }
     }
     @objc private func showContext() { showAppearance() }
     @objc public func showAppearance() {
@@ -360,8 +389,8 @@ final class ListeningIndicator: NSView {
         progress.stopAnimation(nil); self.mode = mode
         panel.acceptsKeys = mode == .prompt || mode == .reader
         panel.setAccessibilityLabel(mode == .reader ? "pi-os answer" : mode == .prompt ? "pi-os question" : "pi-os task")
-        close.setAccessibilityLabel(mode == .reader ? (streaming ? "Stop task" : "Close conversation") : "Dismiss")
-        close.toolTip = streaming ? "Stop task (Escape)" : "Close conversation (Escape)"
+        close.setAccessibilityLabel(mode == .reader ? (streaming ? "Hide task" : "Close conversation") : "Dismiss")
+        close.toolTip = streaming ? "Continue in the background (Escape)" : "Close conversation (Escape)"
         copyButton.image = PanelStyle.symbol("doc.on.doc"); copyButton.setAccessibilityLabel(presentedFailure == nil ? "Copy answer" : "Copy details")
         applyAppearance(); layoutCurrent()
     }
@@ -378,12 +407,14 @@ final class ListeningIndicator: NSView {
         followupEnabled = false; followup.string = ""; followup.undoManager?.removeAllActions()
         input.string = ""; input.typingAttributes = composerAttributes; input.undoManager?.removeAllActions()
         question = ""; retryStatus = nil; streamStatus = nil; presentedFailure = nil
-        listeningState = .off; instantPreview = nil; streaming = false; placeholder.stringValue = "Ask about this window…"
+        listeningState = .off; instantPreview = nil; streaming = false; placeholder.stringValue = Self.idlePlaceholder
+        voiceHintShown = false; placeholder.toolTip = nil
         clearCard()
         reset(.prompt); reveal(); panel.makeFirstResponder(input)
     }
     public func setDraft(_ text: String) { input.string = text; textDidChange(Notification(name: NSText.didChangeNotification)) }
     public func textDidChange(_ notification: Notification) {
+        if voiceHintShown, !input.string.isEmpty { voiceHintShown = false; placeholder.stringValue = Self.idlePlaceholder; placeholder.toolTip = nil }
         if (notification.object as AnyObject?) === input, !programmaticEdit, mode == .prompt { onEdit?(input.string) }
         if mode == .prompt || mode == .reader { layoutCurrent() }
     }
@@ -399,32 +430,123 @@ final class ListeningIndicator: NSView {
             lowerInset: PanelStyle.preferences.lowerInset).cg, display: false)
         root.frame = NSRect(origin: .zero, size: panel.frame.size)
     }
-    /// The inline preview, when one is shown in the bar. Contrast uses label ink throughout; a
-    /// warning keeps its text readable and carries its colour only in the symbol.
-    private var inlinePreview: (text: NSAttributedString, font: NSFont)? {
+    /// The inline preview as laid out in the bar: exactly one line, never wrapped. `full` is the
+    /// complete text for the tooltip and VoiceOver when `text` had to be shortened.
+    struct InlinePreview { let text: NSAttributedString; let font: NSFont; let full: String }
+    /// A computed value is shown as "= 51", or as is when it already carries its relation ("≈ 1.55 miles").
+    static func valueText(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespaces)
+        return ["≈", "~", "="].contains(where: trimmed.hasPrefix) ? trimmed : "= " + trimmed
+    }
+    /// "≈ 1.27 × 10³⁰" for an integer (or decimal) too long for the bar; nil when `value` is not a
+    /// plain number with grouping separators (then the bar says "Return for result").
+    static func compactValue(_ value: String) -> String? {
+        var text = value.trimmingCharacters(in: .whitespaces)
+        var sign = ""
+        if let first = text.first, first == "-" || first == "−" { sign = "−"; text.removeFirst() }
+        let grouping: Set<Character> = [",", ".", "'", " ", "\u{00A0}", "\u{202F}"]
+        guard let first = text.first, first.isASCII, first.isNumber,
+              text.allSatisfy({ ($0.isASCII && $0.isNumber) || grouping.contains($0) }) else { return nil }
+        // The decimal separator is "," or ".": the later kind when both appear, or a single one
+        // that cannot be grouping ("1234567.891"). Repeated marks of one kind are grouping.
+        var integer = Substring(text)
+        let marks = text.filter { $0 == "," || $0 == "." }
+        if let last = marks.last, let at = text.lastIndex(of: last) {
+            let before = text[..<at].filter(\.isNumber), after = text[text.index(after: at)...]
+            let decimal = Set(marks).count > 1 || (marks.count == 1 && !(before.count <= 3 && after.count == 3))
+            if decimal { integer = text[..<at] }
+        }
+        let groups = integer.split(whereSeparator: grouping.contains).map(String.init)
+        guard let head = groups.first, groups.count == 1 || (head.count <= 3 && groups.dropFirst().allSatisfy { $0.count == 3 }) else { return nil }
+        let digits = String(groups.joined().drop { $0 == "0" })
+        guard digits.count >= 7 else { return nil }
+        // Three significant digits, rounded half up on the fourth.
+        var leading = digits.prefix(4).compactMap(\.wholeNumberValue)
+        while leading.count < 4 { leading.append(0) }
+        var mantissa = leading[0] * 100 + leading[1] * 10 + leading[2] + (leading[3] >= 5 ? 1 : 0)
+        var exponent = digits.count - 1
+        if mantissa >= 1000 { mantissa /= 10; exponent += 1 }
+        let raised = Array("⁰¹²³⁴⁵⁶⁷⁸⁹")
+        let superscript = String(String(exponent).compactMap { $0.wholeNumberValue.map { raised[$0] } })
+        return "≈ \(sign)\(mantissa / 100).\(String(format: "%02d", mantissa % 100)) × 10" + superscript
+    }
+    /// Room for the preview: half the editor, or more when the draft is short (hints such as
+    /// "Return to confirm: Sleep display" keep their key words), always leaving 40 pt to type in.
+    private func previewRoom(editorWidth: CGFloat) -> CGFloat {
+        let font = editorFont
+        let draft = input.string.split(separator: "\n", omittingEmptySubsequences: false)
+            .map { (String($0) as NSString).size(withAttributes: [.font: font]).width }.max() ?? 0
+        let half = editorWidth * 0.5
+        let room = draft < half ? editorWidth - max(draft + 24, editorWidth * 0.35) : half
+        return max(0, min(room, editorWidth - 40))
+    }
+    /// The inline preview, when one is shown in the bar, for at most `room` points (label padding
+    /// included). Contrast uses label ink throughout; a warning keeps its text readable and carries
+    /// its colour only in the symbol. Values shrink before they ever lose a digit.
+    private func inlinePreview(room: CGFloat) -> InlinePreview? {
         guard mode == .prompt, let instantPreview else { return nil }
         let size: CGFloat = PanelStyle.preferences.largerText ? 19 : 15
         let contrast = PanelStyle.preferences.preset == .contrast || PanelStyle.increaseContrast
+        func line(_ text: NSAttributedString, _ mode: NSLineBreakMode) -> NSAttributedString {
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.lineBreakMode = mode; paragraph.alignment = .right
+            let result = NSMutableAttributedString(attributedString: text)
+            result.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: result.length))
+            return result
+        }
+        /// Hints shrink one step before they truncate (in the middle, keeping both ends).
+        func hint(_ candidates: [String], full: String) -> InlinePreview {
+            let ink = contrast ? NSColor.labelColor : PanelStyle.secondaryInk
+            func make(_ text: String, _ points: CGFloat) -> (NSAttributedString, NSFont) {
+                let font = NSFont.systemFont(ofSize: points, weight: .medium)
+                return (NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: ink]), font)
+            }
+            for text in candidates {
+                for points in [size - 2, size - 4] {
+                    let (string, font) = make(text, points)
+                    if ceil(string.size().width) + 18 <= room { return InlinePreview(text: line(string, .byTruncatingMiddle), font: font, full: full) }
+                }
+            }
+            let (string, font) = make(candidates.last ?? full, size - 2)
+            return InlinePreview(text: line(string, .byTruncatingMiddle), font: font, full: full)
+        }
         switch instantPreview {
         case .value(let value):
-            let font = NSFont.monospacedDigitSystemFont(ofSize: size, weight: .semibold)
-            return (NSAttributedString(string: "= " + value, attributes: [.font: font, .foregroundColor: contrast ? NSColor.labelColor : PanelStyle.accent]), font)
-        case .hint(let text):
-            let font = NSFont.systemFont(ofSize: size - 2, weight: .medium)
-            return (NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: contrast ? NSColor.labelColor : PanelStyle.secondaryInk]), font)
-        case .warning(let text):
-            let font = NSFont.systemFont(ofSize: size - 2, weight: .medium)
-            let result = NSMutableAttributedString()
-            if let symbol = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Warning")?
-                .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: size - 3, weight: .semibold)
-                    .applying(NSImage.SymbolConfiguration(paletteColors: [contrast ? .labelColor : .systemOrange]))) {
-                let attachment = NSTextAttachment(); attachment.image = symbol
-                attachment.bounds = NSRect(x: 0, y: font.descender + 1, width: symbol.size.width, height: symbol.size.height)
-                result.append(NSAttributedString(attachment: attachment)); result.append(NSAttributedString(string: " "))
+            let full = Self.valueText(value)
+            let color = contrast ? NSColor.labelColor : PanelStyle.accent
+            for candidate in [full] + (Self.compactValue(value).map { [$0] } ?? []) {
+                for points in [size, size - 2, size - 4] {
+                    let font = NSFont.monospacedDigitSystemFont(ofSize: points, weight: .semibold)
+                    let string = NSAttributedString(string: candidate, attributes: [.font: font, .foregroundColor: color])
+                    if ceil(string.size().width) + 18 <= room { return InlinePreview(text: line(string, .byTruncatingTail), font: font, full: full) }
+                }
             }
-            result.append(NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: contrast ? NSColor.labelColor : PanelStyle.secondaryInk]))
-            result.addAttribute(.font, value: font, range: NSRange(location: result.length - (text as NSString).length, length: (text as NSString).length))
-            return (result, font)
+            return hint(["Return for result"], full: full)
+        case .hint(let text):
+            // "Return to confirm: Sleep display" keeps its action when space is short: "↩ Sleep display".
+            let short = text.hasPrefix(InstantPreview.confirmPrefix) ? ["↩ " + text.dropFirst(InstantPreview.confirmPrefix.count)] : []
+            return hint([text] + short, full: text)
+        case .warning(let text):
+            func make(_ points: CGFloat) -> (NSAttributedString, NSFont) {
+                let font = NSFont.systemFont(ofSize: points, weight: .medium)
+                let result = NSMutableAttributedString()
+                if let symbol = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Warning")?
+                    .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: points - 1, weight: .semibold)
+                        .applying(NSImage.SymbolConfiguration(paletteColors: [contrast ? .labelColor : .systemOrange]))) {
+                    let attachment = NSTextAttachment(); attachment.image = symbol
+                    attachment.bounds = NSRect(x: 0, y: font.descender + 1, width: symbol.size.width, height: symbol.size.height)
+                    result.append(NSAttributedString(attachment: attachment)); result.append(NSAttributedString(string: " "))
+                }
+                result.append(NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: contrast ? NSColor.labelColor : PanelStyle.secondaryInk]))
+                result.addAttribute(.font, value: font, range: NSRange(location: result.length - (text as NSString).length, length: (text as NSString).length))
+                return (line(result, .byTruncatingTail), font)
+            }
+            for points in [size - 2, size - 4] {
+                let (string, font) = make(points)
+                if ceil(string.size().width) + 18 <= room { return InlinePreview(text: string, font: font, full: text) }
+            }
+            let (string, font) = make(size - 4)
+            return InlinePreview(text: string, font: font, full: text)
         case .list: return nil
         }
     }
@@ -450,10 +572,11 @@ final class ListeningIndicator: NSView {
         switch mode {
         case .prompt:
             var trailing: CGFloat = 0
-            if let preview = inlinePreview {
-                let measured = preview.text.size().width
+            let room = previewRoom(editorWidth: editorWidth)
+            let preview = inlinePreview(room: room)
+            if let preview {
                 // Label cells add a little padding; keep the whole preview visible when it fits.
-                trailing = min(ceil(measured) + 18, max(0, editorWidth * 0.5))
+                trailing = min(ceil(preview.text.size().width) + 18, room)
             }
             let composerWidth = max(40, editorWidth - trailing)
             let barHeight = max(baseBarHeight, editorHeight(input, width: composerWidth) + 22)
@@ -469,7 +592,8 @@ final class ListeningIndicator: NSView {
                 frame(width: width, height: barHeight); bar.frame = root.bounds
             }
             bar.radius = 25
-            layoutComposer(input, scroll: inputScroll, placeholder: placeholder, send: ask, width: composerWidth, trailing: trailing)
+            layoutComposer(input, scroll: inputScroll, placeholder: placeholder, send: ask, width: composerWidth, trailing: trailing,
+                           preview: preview)
         case .reader:
             let hasComposer = presentedFailure == nil && followupEnabled
             let barHeight = hasComposer ? max(baseBarHeight, editorHeight(followup, width: editorWidth) + 22) : baseBarHeight
@@ -490,8 +614,10 @@ final class ListeningIndicator: NSView {
             let top: CGFloat = question.isEmpty ? 49 : 78
             let requested: CGFloat
             if let failure = presentedFailure {
-                let measured = AnswerRenderer.measuredHeight(NSAttributedString(string: failure.message, attributes: [.font: NSFont.systemFont(ofSize: 13 * scale)]), width: max(1, width - 76))
-                requested = max(176, min(320, measured + 132))
+                // Measured with the field's own cell: a layout-manager height is a point short per
+                // line at Larger text, which used to clip the last line (the remedy).
+                failureMessage.font = .systemFont(ofSize: 13 * scale); failureMessage.stringValue = failure.message
+                requested = max(176, min(320, failureMessageHeight(width: max(1, width - 76)) + Self.failureChrome))
             } else { requested = max(152, min(500, top + bodyHeight + 40)) }
             frame(width: width, height: requested + barHeight + 12)
             let readHeight = max(0, root.bounds.height - barHeight - 12)
@@ -502,8 +628,16 @@ final class ListeningIndicator: NSView {
             else {
                 layoutIdentity()
                 barStatus.stringValue = presentedFailure != nil ? "Request needs attention"
-                    : streaming ? (streamStatus ?? "Answering…") + " · Escape stops" : "Saved answer · conversation closed"
-                show(barStatus, NSRect(x: 63, y: (barHeight - 18) / 2, width: width - 82, height: 18))
+                    : streaming ? (streamStatus ?? "Answering…") + " · Escape hides" : "Saved answer · conversation closed"
+                // While streaming, the bar keeps the working capsule's controls: – continues in the
+                // background, ■ stops the task.
+                let controls: CGFloat = streaming && presentedFailure == nil ? 72 : 0
+                show(barStatus, NSRect(x: 63, y: (barHeight - 18) / 2, width: width - 82 - controls, height: 18))
+                if controls > 0 {
+                    let w = bar.bounds.width
+                    show(hideWork, NSRect(x: w - 72, y: (barHeight - 34) / 2, width: 34, height: 34))
+                    show(stop, NSRect(x: w - 39, y: (barHeight - 34) / 2, width: 34, height: 34))
+                }
             }
         case .pill:
             frame(width: isTrusted ? 370 : 300, height: baseBarHeight); bar.frame = root.bounds; bar.radius = 25
@@ -537,7 +671,7 @@ final class ListeningIndicator: NSView {
         if isTrusted { show(trusted, NSRect(x: 58, y: (bar.bounds.height - 16) / 2, width: 66, height: 16)) }
     }
     private func layoutComposer(_ editor: PromptEditor, scroll: NSScrollView, placeholder: NSTextField, send: PanelButton,
-                                width: CGFloat, trailing: CGFloat = 0) {
+                                width: CGFloat, trailing: CGFloat = 0, preview: InlinePreview? = nil) {
         layoutIdentity()
         let h = bar.bounds.height, w = bar.bounds.width, x: CGFloat = isTrusted ? 128 : 62
         let editorH = min(editorHeight(editor, width: width), max(1, h - 22))
@@ -554,12 +688,30 @@ final class ListeningIndicator: NSView {
             send.isEnabled = !editor.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (mode == .prompt || followupEnabled)
             show(send, slot)
         }
-        if editor === input, trailing > 0, let preview = inlinePreview {
+        if editor === input, trailing > 0, let preview {
             previewLabel.font = preview.font; previewLabel.attributedStringValue = preview.text
-            previewLabel.toolTip = preview.text.string; previewLabel.setAccessibilityValue(preview.text.string)
+            previewLabel.toolTip = preview.full; previewLabel.setAccessibilityValue(preview.full)
             let lineHeight = ceil(preview.font.ascender - preview.font.descender + preview.font.leading) + 2
-            show(previewLabel, NSRect(x: x + width + 4, y: slot.midY - lineHeight / 2, width: trailing - 6, height: lineHeight))
+            // On the draft's first line (not the send slot), at standard and Larger text alike.
+            let mid = firstLineFrame(editor, in: scroll).midY
+            show(previewLabel, NSRect(x: x + width + 4, y: (mid - lineHeight / 2).rounded(), width: trailing - 6, height: lineHeight))
         }
+    }
+    /// Failure reader space outside its message: 92 pt above it, 47 pt for the action row below.
+    static let failureChrome: CGFloat = 139
+    private func failureMessageHeight(width: CGFloat) -> CGFloat {
+        ceil(failureMessage.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: width, height: .greatestFiniteMagnitude)).height ?? 0)
+    }
+    /// The editor's first line in bar coordinates (also when empty: one line of the editor font).
+    private func firstLineFrame(_ editor: NSTextView, in scroll: NSScrollView) -> NSRect {
+        let font = editor.font ?? editorFont
+        var line = NSRect(x: 0, y: 0, width: scroll.frame.width, height: NSLayoutManager().defaultLineHeight(for: font))
+        if let manager = editor.layoutManager, let container = editor.textContainer, manager.numberOfGlyphs > 0 {
+            manager.ensureLayout(for: container)
+            line = manager.lineFragmentRect(forGlyphAt: 0, effectiveRange: nil)
+        }
+        let y = scroll.frame.minY + editor.textContainerInset.height + line.minY - scroll.contentView.bounds.origin.y
+        return NSRect(x: scroll.frame.minX, y: y, width: scroll.frame.width, height: line.height)
     }
     private func layoutReader(rendered: NSAttributedString, bodyHeight: CGFloat, top: CGFloat) {
         let w = reading.bounds.width, h = reading.bounds.height
@@ -574,7 +726,7 @@ final class ListeningIndicator: NSView {
             failureMessage.toolTip = originalAnswer
             show(failureIcon, NSRect(x: 21, y: 62, width: 23, height: 24))
             show(failureTitle, NSRect(x: 54, y: 59, width: w - 76, height: 25))
-            show(failureMessage, NSRect(x: 54, y: 92, width: w - 76, height: max(0, h - 139)))
+            show(failureMessage, NSRect(x: 54, y: 92, width: w - 76, height: max(0, h - Self.failureChrome)))
             if let title = failure.actionTitle {
                 permissions.title = title; permissions.setAccessibilityLabel(title)
                 let buttonWidth = ceil((title as NSString).size(withAttributes: [.font: permissions.font!]).width) + 40
@@ -594,7 +746,7 @@ final class ListeningIndicator: NSView {
                 result.setFrameSize(NSSize(width: answerScroll.contentSize.width, height: max(bodyHeight, answerScroll.contentSize.height)))
             }
             let idle = cardSource == .instant ? (followupEnabled ? "Quick answer · Ask a follow-up" : "Quick answer")
-                : (followupEnabled ? "Ready for a follow-up · Same pinned window" : "Saved answer · Conversation closed")
+                : (answerRoute.map { $0 + " · " } ?? "") + (followupEnabled ? "Ready for a follow-up · Same pinned window" : "Saved answer · Conversation closed")
             // While streaming, the bar carries the status; the reader footer stays quiet.
             responseStatus.stringValue = retryStatus ?? (streaming ? "" : idle)
             show(responseStatus, NSRect(x: 22, y: h - 25, width: w - 44, height: 17))
@@ -638,7 +790,7 @@ final class ListeningIndicator: NSView {
     }
     public func updateActivity(_ text: String) {
         if mode == .reader && streaming {
-            streamStatus = text; layoutCurrent(); return
+            streamStatus = text; stop.isEnabled = !text.hasPrefix("Cancelling"); layoutCurrent(); return
         }
         guard mode == .pill else { return }
         activity.stringValue = text; activity.toolTip = text; stop.isEnabled = !text.hasPrefix("Cancelling")
@@ -656,12 +808,14 @@ final class ListeningIndicator: NSView {
 
     /// Running record with partial text: the working capsule becomes the reader (no composer
     /// until completion). Later revisions only replace the text; scroll and focus are kept.
+    /// The streaming reader never takes keyboard focus from the user's app (a click still does);
+    /// completion takes it, as before streaming existed.
     public func streamAnswer(_ text: String, status: String?, present: Bool = true) {
         if mode == .reader && streaming && cardSource == nil {
             originalAnswer = text; streamStatus = status ?? "Answering…"; layoutCurrent(); return
         }
         followupEnabled = false; streaming = true; streamStatus = status ?? "Answering…"
-        presentAnswer(text, failure: nil, save: false, present: present)
+        presentAnswer(text, failure: nil, save: false, present: present, takeKey: false)
     }
     /// Running record with a card: one CardView, updated in place; buttons stay inert until complete.
     public func streamCard(_ spec: CardSpec, complete: Bool, fallbackText: String, status: String?, present: Bool = true) {
@@ -670,15 +824,16 @@ final class ListeningIndicator: NSView {
             cardView.update(spec: spec, complete: complete); layoutCurrent(); return
         }
         followupEnabled = false; streaming = true; streamStatus = status ?? "Answering…"
-        presentAnswer(fallbackText, failure: nil, save: false, present: present, card: spec, cardSource: .agent, cardComplete: complete)
+        presentAnswer(fallbackText, failure: nil, save: false, present: present, card: spec, cardSource: .agent, cardComplete: complete,
+                      takeKey: false)
     }
     /// The completed agent answer (optionally a card); a streamed reader keeps its scroll position.
     /// `cardActions` is false when the thread closed with the answer (its context and file tokens are gone).
-    public func presentAgentAnswer(_ text: String, card: CardSpec?, cardActions: Bool = true, present: Bool = true) {
+    public func presentAgentAnswer(_ text: String, card: CardSpec?, cardActions: Bool = true, present: Bool = true, route: String? = nil) {
         let wasStreaming = mode == .reader && streaming
         streaming = false; streamStatus = nil
         presentAnswer(text, failure: nil, save: true, present: present, card: card, cardSource: card == nil ? nil : .agent,
-                      cardActions: cardActions, preserveScroll: wasStreaming)
+                      cardActions: cardActions, preserveScroll: wasStreaming, route: route)
     }
     var isStreaming: Bool { streaming }
 
@@ -690,7 +845,8 @@ final class ListeningIndicator: NSView {
         listeningState = state
         listeningIndicator.finishing = state == .finishing
         listeningIndicator.setAccessibilityLabel(state == .finishing ? "Transcribing" : "Listening")
-        placeholder.stringValue = state == .listening ? "Listening…" : "Ask about this window…"
+        placeholder.stringValue = state == .listening ? "Listening…" : Self.idlePlaceholder
+        voiceHintShown = false; placeholder.toolTip = nil
         if state == .off, let storage = input.textStorage, storage.length > 0 {
             // The transcript becomes ordinary editable text; typing continues in label ink.
             programmaticEdit = true
@@ -698,10 +854,7 @@ final class ListeningIndicator: NSView {
             programmaticEdit = false
         }
         input.typingAttributes = composerAttributes
-        if state == .listening {
-            NSAccessibility.post(element: input, notification: .announcementRequested,
-                userInfo: [.announcement: "Listening", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
-        }
+        if state == .listening { Accessibility.announce("Listening", on: input, priority: .medium, using: announce) }
         layoutCurrent()
     }
     public func setVoiceTranscript(finalized: String, volatile: String) {
@@ -734,12 +887,34 @@ final class ListeningIndicator: NSView {
             cardSource = .instant; cardView.actionsEnabled = true; cardView.update(spec: card, complete: true)
         } else if cardSource != nil { clearCard() }
         layoutCurrent()
-        if let preview, case .value(let value) = preview {
-            NSAccessibility.post(element: previewLabel, notification: .announcementRequested,
-                userInfo: [.announcement: "Equals " + value, .priority: NSAccessibilityPriorityLevel.low.rawValue])
+        announcePreview()
+    }
+    /// VoiceOver hears every preview, since Return acts on it (focus stays in the composer). Never
+    /// while dictating: speech could reach the microphone, and partials change every 150 ms.
+    private func announcePreview() {
+        guard let preview = instantPreview, listeningState == .off else { return }
+        switch preview {
+        case .value(let value):
+            let text = Self.valueText(value)
+            let rest = text.dropFirst().trimmingCharacters(in: .whitespaces)
+            Accessibility.announce((text.hasPrefix("=") ? "Equals " : "Approximately ") + rest, on: previewLabel, using: announce)
+        case .hint(let text): Accessibility.announce(text, on: previewLabel, using: announce)
+        case .warning(let text): Accessibility.announce(text, on: previewLabel, priority: .medium, using: announce)
+        case .list(let card):
+            let opens = cardView.defaultItemTitle.map { ". Return opens " + $0 } ?? ""
+            Accessibility.announce((card.summary ?? "Results") + opens, on: cardView, using: announce)
         }
     }
     public func performPreview(_ command: CardCommand) -> Bool { previewCardVisible && cardView.perform(command) }
+    public func showVoiceOffHint(_ text: String) -> Bool {
+        guard mode == .prompt, input.string.isEmpty, listeningState == .off else { return false }
+        voiceHintShown = true
+        placeholder.stringValue = text; placeholder.toolTip = text
+        layoutCurrent()
+        Accessibility.announce(text, on: input, using: announce)
+        return true
+    }
+    var placeholderText: String { placeholder.stringValue }
     public func presentInstant(_ result: InstantResult) {
         question = result.question; followupEnabled = true
         instantPreview = nil; listeningState = .off; streaming = false; streamStatus = nil
@@ -752,14 +927,12 @@ final class ListeningIndicator: NSView {
         reset(.confirmation)
         if presentsOnScreen { panel.orderFrontRegardless() }
         panel.resignKey()
-        NSAccessibility.post(element: activity, notification: .announcementRequested,
-            userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+        Accessibility.announce(text, on: activity, priority: .medium, using: announce)
     }
     public func presentActionNotice(_ text: String) {
         guard mode == .reader, presentedFailure == nil else { return }
         retryStatus = text; responseStatus.toolTip = text; layoutCurrent()
-        NSAccessibility.post(element: responseStatus, notification: .announcementRequested,
-            userInfo: [.announcement: text, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+        Accessibility.announce(text, on: responseStatus, priority: .medium, using: announce)
     }
     private func clearCard() {
         cardSource = nil
@@ -782,6 +955,7 @@ final class ListeningIndicator: NSView {
     private func failureAction() {
         switch presentedFailure?.action {
         case .voiceSettings?: onVoiceSettings?()
+        case .settings?: onSettings?()
         case .permissions?: onPermissions?()
         default: break
         }
@@ -789,8 +963,9 @@ final class ListeningIndicator: NSView {
 
     private func presentAnswer(_ text: String, failure: FailurePresentation?, save: Bool, present: Bool = true, preserveRetry: Bool = false,
                                card: CardSpec? = nil, cardSource: CardSource? = nil, cardComplete: Bool = true,
-                               cardActions: Bool = true, focusCard: Bool = false, preserveScroll: Bool = false) {
-        originalAnswer = text; presentedFailure = failure
+                               cardActions: Bool = true, focusCard: Bool = false, preserveScroll: Bool = false, takeKey: Bool = true,
+                               route: String? = nil) {
+        originalAnswer = text; presentedFailure = failure; answerRoute = route
         if !preserveRetry { retryStatus = nil; responseStatus.toolTip = nil }
         if failure == nil, let card, let cardSource {
             self.cardSource = cardSource; cardView.actionsEnabled = cardActions
@@ -807,7 +982,7 @@ final class ListeningIndicator: NSView {
         if let origin { answerScroll.contentView.scroll(to: origin); answerScroll.reflectScrolledClipView(answerScroll.contentView) }
         else { result.setSelectedRange(NSRange(location: 0, length: 0)); result.scrollToBeginningOfDocument(nil) }
         guard present else { panel.orderOut(nil); return }
-        reveal()
+        reveal(takeKey: takeKey)
         let responder: NSResponder?
         if failure != nil { responder = nil }
         else if showingCard && focusCard && cardView.acceptsFirstResponder { responder = cardView }
@@ -816,7 +991,12 @@ final class ListeningIndicator: NSView {
         panel.makeFirstResponder(responder)
         // No open/close or keyboard-triggered animations in this frequent-use surface.
     }
-    public func dismissWorking() { guard mode == .pill else { return }; appearancePopover.close(); progress.stopAnimation(nil); panel.orderOut(nil) }
+    /// "Continue in the background" from the working capsule or a streaming reader. Keeps the
+    /// streaming bookkeeping, so the completed answer is still saved for Show Last Answer.
+    public func dismissWorking() {
+        guard mode == .pill || (mode == .reader && streaming) else { return }
+        appearancePopover.close(); progress.stopAnimation(nil); panel.orderOut(nil)
+    }
     /// Native input is about to start: get out of the target's way (working capsule or a streaming reader).
     public func suspendForInput() -> Bool {
         guard isVisible, mode == .pill || (mode == .reader && streaming) else { return false }
@@ -838,12 +1018,17 @@ final class ListeningIndicator: NSView {
         // Recalled cards are read-only: their thread or 10-minute file tokens may be gone.
         presentAnswer(saved.text, failure: nil, save: false, card: saved.card, cardSource: saved.cardSource, cardActions: false)
     }
-    public func reveal() {
+    /// Explicit user paths (hotkey, menu, prompt, completion, recall) take keyboard focus; a
+    /// streaming reader is only ordered front.
+    public func reveal(takeKey: Bool = true) {
+        lastRevealTookKey = takeKey && panel.acceptsKeys
         guard presentsOnScreen else { return }
         panel.recalculateKeyViewLoop(); panel.orderFrontRegardless()
-        if panel.acceptsKeys { panel.makeKey() }
+        if takeKey && panel.acceptsKeys { panel.makeKey() }
         if mode == .pill { updateProgress() }
     }
+    /// Test seam: whether the last reveal asked for keyboard focus (set even offscreen).
+    private(set) var lastRevealTookKey = false
     public func hide() {
         appearancePopover.close(); copyReset?.cancel(); copyReset = nil; progress.stopAnimation(nil)
         changingState = true; panel.orderOut(nil); mode = .hidden; changingState = false
@@ -855,8 +1040,7 @@ final class ListeningIndicator: NSView {
         guard mode == .reader else { return }
         NSPasteboard.general.clearContents(); NSPasteboard.general.setString(originalAnswer, forType: .string)
         copyButton.image = PanelStyle.symbol("checkmark"); copyButton.setAccessibilityLabel("Copied")
-        NSAccessibility.post(element: copyButton, notification: .announcementRequested,
-            userInfo: [.announcement: "Answer copied", .priority: NSAccessibilityPriorityLevel.medium.rawValue])
+        Accessibility.announce("Answer copied", on: copyButton, priority: .medium, using: announce)
         copyReset?.cancel()
         copyReset = Task { [weak self] in
             do { try await Task.sleep(nanoseconds: 1_600_000_000) } catch { return }

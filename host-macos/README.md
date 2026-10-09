@@ -104,7 +104,11 @@ while listening drops the audio and keeps the text; pressing the hotkey while th
 is open still closes it. The microphone opens at key-down so no syllable is clipped, which
 means the orange menu-bar indicator can flash on a quick tap. Audio and transcripts stay in
 the signed host process and are never recorded, sent to Node as audio, or logged. With voice
-off, or on macOS 14–25, the hotkey behaves exactly as before.
+off, or on macOS 14–25, the hotkey behaves exactly as before, except that while voice is
+off (and could run) a real hold shows “Voice is off — turn it on in Settings → Voice” in the
+empty bar, at most three times and never again once voice was turned on. The status menu
+has **Turn On Hold to Talk…** (or **Voice…**) next to Settings. A spoken “never mind”,
+“cancel”, “stop” or “vergiss es” as the whole utterance ends the take without an agent run.
 
 Voice needs **Microphone** and **Speech Recognition**. pi-os asks for them only from the
 **Request Access…** buttons in Settings → Voice; the hotkey never shows a permission prompt.
@@ -116,8 +120,15 @@ waits for a cold start; an explicit `PI_OS_NODE_WARM_TTL_SECONDS` still wins.
 **Instant commands.** Math, units, currencies, number bases, time zones, date math, opening
 apps/links, web searches, file search and volume/display sleep are parsed by Node's instant
 engine (no model) and **performed by this host** after `LauncherPolicy` (`LauncherService`).
-While you type (or speak) the bar previews the result after 150 ms of quiet: `= 51`, “Open
-github.com”, or a file/app list above the bar. Previews never act.
+While you type, the bar previews on every keystroke (at most one request per 33 ms, the
+last text always sent; Node holds file search back until typing has been quiet for 150 ms):
+`= 51`, “Open github.com”, or a file/app list above the bar. Spoken partials preview after
+150 ms of quiet. Previews never act and stay on one line: a long number shrinks, then shows
+as `≈ 1.27 × 10³⁰` (Return still gives the exact value), and hints keep their key words
+(“↩ Sleep display”). VoiceOver hears each preview (“Equals 51”, “3 files… Return opens …”)
+and every ↑/↓ selection change, but nothing while you dictate. Typed requests send the Mac's
+formatting locale (language + effective Region, e.g. `en-DE` for English with Region
+Germany), so `2,5 * 4` and `1.000 + 1` follow your Region's decimal comma.
 
 | Key in the bar | Effect |
 |---|---|
@@ -133,25 +144,50 @@ fresh agent turn that starts with “Earlier quick answer: question → answer�
 use host-minted tokens bound to the take's context; they are revoked when the context is
 discarded and expire after 10 minutes. Nothing deletes, trashes or moves files. Executables,
 scripts and installers are revealed, never opened. Launcher actions are logged by kind and
-outcome only in `logs/launcher-actions.jsonl`. Instant commands work with no capturable
-window (Node warm-up and the window capture are separate; only agent questions wait for the
-capture). Currency conversions download the ECB daily reference rates on first use only.
+outcome only in `logs/launcher-actions.jsonl`. Archives (zip, xip, tar, gz, rar, 7z…) are
+revealed, not opened: Archive Utility can move an expanded archive to the Trash. Instant
+commands work with no capturable window (Node warm-up and the window capture are separate;
+only agent questions wait for the capture). Currency conversions download the ECB daily
+reference rates on first use only; a final question whose answer is only a notice (rates
+still downloading, an unknown currency) goes to the agent, as on `/invoke`. A Return that
+is still resolving after 120 ms (typically a cold Node start) shows the “…” disc in the send slot.
 
 **Auto model.** Settings lists **Auto (recommended)** first. It is the `pi-os/auto` catalog
 entry: Node picks a fast adequate model and effort per request. Its levels appear as
-**Prefer speed / Balanced / Prefer quality**. Any explicit model choice still works.
+**Prefer speed / Balanced / Prefer quality**; its Model row just says “Chosen per request”.
+Any explicit model choice still works. The reader footer names the model Auto chose
+(“Auto · gpt-6-luna · …”). To verify routing locally: `grep '\[perf\] stage=agent.response'
+~/Library/Application\ Support/pi-os/logs/harness.log` and inspect
+`~/Library/Application Support/pi-os/routing-stats.json` (model ids, counts and durations only).
+
+**Codemode.** In full agent sessions (not Auto's light lane) the agent may run short scripts
+in pi's QuickJS sandbox. A script can call only read-only tools — window/tab context
+(`desktop_get_context`, `desktop_refresh_context`, `browser_snapshot`) and the instant
+calculator, currency, time, file search and app list — never input, capture, `open_item` or
+another script; it has a 15 s deadline (30 s at most) and bounded output. This is defense in
+depth, not a filesystem sandbox: trusted global extensions and coding tools are not confined
+by it.
 
 **Streaming and cards.** Agent answers stream into the reader over one long-lived SSE
 request (`GET /invocations/{id}/events`, ≤ 30 renders/s); if streaming is unavailable the
-host falls back to today's status polling. Agent cards render natively and may only bind
-copy/open/reveal/ask actions; recalled cards, and cards whose conversation closed, are read-only. Copy Answer always copies the
-agent's original text. Nothing streams over a window the agent is acting in.
+host falls back to today's status polling. The streaming reader never takes keyboard focus
+from the app you are typing in (click it to scroll or select); its bar keeps the working
+capsule's controls: **–** continues in the background, **■** stops the task, and Escape (or
+the close button) hides it while the task keeps running. The completed answer takes focus as
+before. Agent cards render natively and may only bind copy/open/reveal/ask actions;
+recalled cards, and cards whose conversation closed, are read-only. Copy Answer always
+copies the agent's original text. Nothing streams over a window the agent is acting in.
 
 **Local classifier (Laya).** Settings → Classifier can turn on the optional local Laya
 classifier. It is advisory only (it may ask Auto for a stronger model or a screenshot,
 never choose or perform an action), runs on the CPU, needs about 5 GB of memory and ~18 s
-to load, and is off by default. Its Python and model folder come from `PI_OS_LAYA_PYTHON`
-and `PI_OS_LAYA_MODEL_DIR`.
+to load, and is off by default. Choose its **Python** (a venv's `bin/python` with laya 0.3.5
+and CPU torch; hidden `.venv` folders are shown and the venv path is kept) and **Model
+folder** (the one containing `rl_agent_config.json`) on that page; both are stored in Node's
+`classifier.json`, and the switch is enabled once Laya can start with them. Problems are
+explained in plain sentences. `PI_OS_LAYA_PYTHON` / `PI_OS_LAYA_MODEL_DIR` remain a fallback,
+but they only reach an app started from Terminal or `run-dev.sh`. Bundled builds ship the
+helper script (`Resources/sidecars/laya/laya_intent_sidecar.py`), never a model.
 
 ## Text input
 
@@ -390,8 +426,9 @@ swift run --package-path host-macos pi-os-ui-preview answer --dark
 swift run --package-path host-macos pi-os-ui-preview settings --light
 swift run --package-path host-macos pi-os-ui-preview listening --dark   # scripted FakeVoiceInput, no microphone
 # Also: draft, working, short, long, error, failed, instant-calc, instant-files, instant-answer,
-# instant-list, card, streaming, confirmation, voice-denied, auto-settings, voice-settings,
-# classifier-settings. Settings use a mock catalog and a scripted voice service (no TCC).
+# instant-list, card, streaming, confirmation, voice-denied, voice-unavailable, speech-denied,
+# asset-missing, big-1/2/3, instant-unit, hint-web, confirm-hint, voice-hint, auto-settings,
+# voice-settings, classifier-settings. Settings use a mock catalog and a scripted voice service (no TCC).
 ```
 
 **Offscreen snapshots** render every new state into PNGs without ever showing a window,
@@ -400,7 +437,7 @@ contact sheet per variant):
 
 ```sh
 swift build --package-path host-macos && \
-  host-macos/.build/debug/pi-os-ui-preview --snapshot /tmp/pi-os-shots [--states listening,card]
+  host-macos/.build/debug/pi-os-ui-preview --snapshot /tmp/pi-os-shots [--states listening,card] [--larger]
 ```
 
 Native glass/vibrancy exists only in the window server, so snapshots paint an

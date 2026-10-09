@@ -13,6 +13,10 @@ test("host actions: closed vocabulary, http(s) only, host tokens only", () => {
   assert.deepEqual(parseHostAction({ type: "openURL", url: "https://example.com/a?b=1", extra: true }), { type: "openURL", url: "https://example.com/a?b=1" });
   assert.equal(parseHostAction({ type: "openURL", url: "file:///etc/passwd" }), null);
   assert.equal(parseHostAction({ type: "openURL", url: "javascript:alert(1)" }), null);
+  // Values WHATWG would silently repair (and Swift's URL(string:) may reject) never bind.
+  for (const url of ["https://example.com/a b", "https:\\example.com\\x", "https://example.com/\tx", "https://exa\u200bmple.com/", " https://example.com/"]) {
+    assert.equal(parseHostAction({ type: "openURL", url }), null, JSON.stringify(url));
+  }
   assert.equal(parseHostAction({ type: "deleteFile", token: "tok_12345678" }), null);
   assert.equal(parseHostAction({ type: "moveToTrash", token: "tok_12345678" }), null);
   assert.equal(parseHostAction({ type: "system", op: "power.restart" }), null);

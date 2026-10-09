@@ -78,6 +78,40 @@ final class StreamFlowTests: XCTestCase {
         XCTAssertEqual(bad.responseText, "Plain")
     }
 
+    /// An older harness could cut text inside a surrogate pair; one bad field must never fail a
+    /// completed answer (that would show "Something interrupted your request").
+    func testLoneSurrogateEscapesNeverFailARecord() throws {
+        let raw = Data(#"{"state":"completed","responseText":"xx\ud83d… [truncated]"}"#.utf8)
+        XCTAssertThrowsError(try JSONDecoder().decode(HarnessClient.Status.self, from: raw), "JSONDecoder alone rejects it")
+        let completed = try HarnessClient.decodeRecord(raw)
+        XCTAssertEqual(completed.responseText, "xx\u{FFFD}… [truncated]")
+        let running = try HarnessClient.decodeRecord(Data(#"{"state":"running","partialText":"xx\uD83D…"}"#.utf8))
+        XCTAssertEqual(running.partialText, "xx\u{FFFD}…", "Streamed text is kept, not dropped")
+        let lowFirst = try HarnessClient.decodeRecord(Data(#"{"state":"failed","failureMessage":"a\ude00b\ud83d"}"#.utf8))
+        XCTAssertEqual(lowFirst.failureMessage, "a\u{FFFD}b\u{FFFD}")
+        let pair = Data(#"{"state":"completed","responseText":"ok 😀 é \n"}"#.utf8)
+        XCTAssertEqual(HarnessClient.wellFormedJSON(pair), pair, "A valid pair and other escapes are untouched")
+        XCTAssertEqual(try HarnessClient.decodeRecord(pair).responseText, "ok 😀 é \n")
+        let escapedBackslash = Data(#"{"state":"completed","responseText":"a\\ud83d"}"#.utf8)
+        XCTAssertEqual(HarnessClient.wellFormedJSON(escapedBackslash), escapedBackslash, "\\\\u is text, not an escape")
+        XCTAssertEqual(try HarnessClient.decodeRecord(escapedBackslash).responseText, #"a\ud83d"#)
+        let trailing = Data(#"{"state":"completed","responseText":"tail\ud83d"}"#.utf8)
+        XCTAssertEqual(try HarnessClient.decodeRecord(trailing).responseText, "tail\u{FFFD}")
+    }
+
+    @MainActor func testStreamedAndPolledRecordsSurviveALoneSurrogate() async throws {
+        let server = try CannedServer([sseHeader + record(#""state":"running","revision":1,"partialText":"Hi \ud83d""#)
+            + record(#""state":"completed","revision":2,"responseText":"Hi \ud83d… [truncated]""#)])
+        var states: [HarnessClient.Status] = []
+        for try await state in try client(server).events("inv-1") { states.append(state) }
+        XCTAssertEqual(states.map(\.partialText), ["Hi \u{FFFD}", nil])
+        XCTAssertEqual(states.last?.state, "completed")
+        let body = #"{"invocationId":"inv-1","state":"completed","responseText":"Done \ud83d"}"#
+        let polled = try CannedServer(["HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n" + body])
+        let status = try await client(polled).status("inv-1")
+        XCTAssertEqual(status.responseText, "Done \u{FFFD}")
+    }
+
     @MainActor func testRunningPresentationKeepsAgentCardsToTheModelSubset() throws {
         let file = ScriptedHarness.fixtures.deletingLastPathComponent().appendingPathComponent("cards/rich-answer.json")
         let card = try JSONDecoder().decode(CardSpec.self, from: Data(contentsOf: file))

@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import type { AppIndexResult, AppRecord } from "../src/contracts/launcher.js";
 import { AppIndexCache, AppMatcher, FileFrecencyStore } from "../src/instant/apps.js";
+import { assertOwnerOnly } from "./ownerOnly.js";
 
 const app = (bundleId: string, name: string, aliases: string[] = [], running = false): AppRecord =>
   ({ bundleId, name, aliases, path: `/Applications/${name}.app`, running });
@@ -124,7 +125,7 @@ test("FileFrecencyStore keeps bundle ids only, decays with age and persists owne
   await new Promise((resolve) => setTimeout(resolve, 50));
   const saved = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
   assert.deepEqual(Object.keys(saved), ["com.figma.Desktop"]);
-  assert.equal(statSync(file).mode & 0o777, 0o600);
+  assertOwnerOnly(file, 0o600);
   const reloaded = new FileFrecencyStore(file);
   await reloaded.load();
   assert.ok(reloaded.score("com.figma.Desktop", 0) > 0);

@@ -76,6 +76,25 @@ const SITE_ALIASES: Readonly<Record<string, string>> = {
   twitter: "x", x: "x", "apple maps": "maps", maps: "maps", karten: "maps", duckduckgo: "duckduckgo",
 };
 
+/**
+ * Hosts a spoken site name stands for ("youtube" → www.youtube.com), from the home and search
+ * tables. The agent's open_item opens a URL without a click only for sites the user named.
+ */
+export const SITE_NAME_HOSTS: Readonly<Record<string, readonly string[]>> = (() => {
+  const out: Record<string, Set<string>> = {};
+  const add = (name: string, url: string): void => {
+    (out[name] ??= new Set()).add(new URL(url.replace("%s", "q")).hostname);
+  };
+  for (const [name, url] of Object.entries(SITE_HOME)) add(name, url);
+  for (const [alias, key] of Object.entries(SITE_ALIASES)) {
+    for (const variant of [key, `${key}-de`]) {
+      const site = SITE_SEARCH[variant];
+      if (site) add(alias, site.template);
+    }
+  }
+  return Object.fromEntries(Object.entries(out).map(([name, hosts]) => [name, [...hosts]]));
+})();
+
 const WEB_RULES: readonly (readonly [RegExp, string | null])[] = [
   // [pattern whose LAST group is the query (and optional site group "site"), fixed site or null = default engine]
   [/^(?:search (?:the )?(?:web|internet|net|online) for|search online for|web search(?: for)?|look up online|look online for|such(?:e)? (?:mal )?im (?:internet|web|netz) nach|im (?:internet|web|netz) nach|websuche(?: nach)?|internetsuche(?: nach)?) (.+)$/d, null],
@@ -87,6 +106,11 @@ const WEB_RULES: readonly (readonly [RegExp, string | null])[] = [
   [/^look up (.+) on wikipedia$/d, "wikipedia"],
   [/^look up (.+) online$/d, null],
 ];
+
+/** True when the utterance starts like a web search ("google …", "search the web for …"); read-only by definition. */
+export function isWebSearchPhrase(lower: string): boolean {
+  return WEB_RULES.some(([pattern]) => pattern.test(lower));
+}
 
 /** Encodes like a form field (spaces as "+"), the way search engines expect. */
 export function expandTemplate(template: string, query: string): string {

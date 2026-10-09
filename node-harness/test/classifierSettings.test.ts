@@ -78,8 +78,39 @@ test("Laya launch resolution: settings first, then PI_OS_LAYA_* env, absolute pa
   assert.equal(reason({ kind: "laya", python: "/missing/python" }), "python_not_found");
   assert.equal(reason({ kind: "laya", python: PYTHON }), "model_dir_not_configured");
   assert.equal(reason({ kind: "laya", python: PYTHON, modelDir: "/no/model" }), "model_dir_not_found");
-  assert.equal(reason({ kind: "laya", python: PYTHON, modelDir: MODEL_DIR, script: "/no/sidecar.py" }), "script_not_found");
+  assert.equal(reason({ kind: "laya", python: PYTHON, modelDir: MODEL_DIR }, { PI_OS_LAYA_SCRIPT: "/no/sidecar.py" }), "script_not_found");
   assert.equal(reason({ kind: "laya", python: PYTHON, modelDir: MODEL_DIR, calibration: "/no/cal.json" }), "calibration_not_found");
+});
+
+test("the sidecar script is never a setting: a POSTed or stored `script` is dropped, the shipped copy runs", () => {
+  const parsed = parseClassifierSettings({ kind: "laya", script: "/x.py", python: PYTHON, modelDir: MODEL_DIR });
+  assert.deepEqual(parsed, { ok: true, settings: { kind: "laya", python: PYTHON, modelDir: MODEL_DIR, shadowLog: false } });
+  const present = new Set([PYTHON, join(MODEL_DIR, "rl_agent_config.json"), defaultSidecarScript(), "/x.py"]);
+  const resolved = resolveLayaLaunch({ kind: "laya", script: "/x.py", python: PYTHON, modelDir: MODEL_DIR } as never, {}, (path) => present.has(path));
+  assert.deepEqual(resolved.ok && resolved.launch.script, defaultSidecarScript());
+  // Only an interpreter named python/python3(.x) launches; any other executable is "not found".
+  const reason = (python: string) => {
+    const result = resolveLayaLaunch({ kind: "laya", python, modelDir: MODEL_DIR }, {}, () => true);
+    return result.ok ? "ok" : result.reason;
+  };
+  assert.equal(reason("/opt/venv/bin/python3.12"), "ok");
+  assert.equal(reason("/opt/venv/bin/python3"), "ok");
+  assert.equal(reason("/opt/venv/bin/python"), "ok");
+  assert.equal(reason("/tmp/payload.sh"), "python_not_found");
+  assert.equal(reason("/bin/sh"), "python_not_found");
+});
+
+test("Laya launch falls back to <supportDir>/laya/venv and <supportDir>/laya/model when they exist", () => {
+  const support = temp("pi-os-laya-support-");
+  const python = join(support, "laya", "venv", "bin", "python");
+  const model = join(support, "laya", "model");
+  const present = new Set([python, join(model, "rl_agent_config.json"), defaultSidecarScript()]);
+  const resolved = resolveLayaLaunch({ kind: "laya" }, {}, (path) => present.has(path), support);
+  assert.deepEqual(resolved.ok && [resolved.launch.python, resolved.launch.modelDir], [python, model]);
+  // Explicit settings and env still win; without the support-dir copies nothing is configured.
+  assert.deepEqual(resolveLayaLaunch({ kind: "laya" }, {}, () => false, support), { ok: false, reason: "python_not_configured" });
+  const fromSettings = resolveLayaLaunch({ kind: "laya", python: PYTHON, modelDir: MODEL_DIR }, {}, () => true, support);
+  assert.deepEqual(fromSettings.ok && fromSettings.launch.python, PYTHON);
 });
 
 test("factory: off and unusable configurations stay inert and never spawn anything", async () => {
@@ -131,6 +162,7 @@ test("factory kind pi + opt-in shadow log records labels and latency, never the 
     supportDir: support, modelRuntime: async () => fakeRuntime(), log: () => {},
   });
   assert.deepEqual(managed.status(), { kind: "pi", state: "configured", name: "pi:typesafe/jev-latest", shadowLog: true });
+  assert.equal(managed.local, false, "a catalog classifier may be remote: the dispatcher sends it finals only");
   const hints = await managed.classify("reply to SENTINEL4711 about the lease", new AbortController().signal);
   assert.deepEqual([hints?.source, hints?.intent, hints?.intentP], ["pi-classifier", "other", 0.66]);
   managed.shadow?.record({ classifier: "heuristic", latencyMs: 0.2, hints: null, reference: { intent: "write", tier: "quick" } });

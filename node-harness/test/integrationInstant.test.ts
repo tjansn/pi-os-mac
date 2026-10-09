@@ -169,6 +169,48 @@ test("POST /instant: the final wins over late partials of its take; requests wit
   } finally { await f.close(); }
 });
 
+test("POST /instant: ordinary text edits are never refused (typing and final)", async () => {
+  const f = await start({ instant: { fx: noRates() } });
+  try {
+    for (const text of ["delete the comma", "lösch das"]) {
+      for (const phase of ["typing", "final"]) {
+        const result = await (await f.post("/instant", { text, phase, seq: 1, takeId: `take-edit-${phase}`, inputMode: "voice" })).json() as any;
+        assert.equal(result.decision, "fallthrough", `${text} (${phase})`);
+      }
+    }
+  } finally { await f.close(); }
+});
+
+test("POST /instant: a final file search slower than 250 ms still lists (default budgets)", async () => {
+  const host = fakeHost({ searchFiles: async () => { await delay(350); return files; } });
+  const f = await start({ host, instant: { fx: noRates() } });
+  try {
+    const result = await (await f.post("/instant", { text: "find invoice pdfs", phase: "final", seq: 1, takeId: "take-slow" })).json() as any;
+    assert.equal(result.decision, "list");
+  } finally { await f.close(); }
+});
+
+test("POST /instant typing: per-keystroke requests; only the query that survives 150 ms of quiet reaches the host", async () => {
+  const searched: string[] = [];
+  const host = fakeHost({ searchFiles: async (request) => { searched.push(request.nameGroups.flat().join(" ")); return files; } });
+  const f = await start({ host, instant: { fx: noRates() } });
+  try {
+    const pending: Promise<any>[] = [];
+    for (const [seq, text] of [[1, "find invoice"], [2, "find invoice pd"], [3, "find invoice pdfs"]] as const) {
+      pending.push(f.post("/instant", { text, phase: "typing", seq, takeId: "take-typing" }).then((response) => response.json()));
+      await delay(20);
+    }
+    const results = await Promise.all(pending);
+    assert.deepEqual(results.slice(0, 2).map((r) => r.reason), ["timeout", "timeout"]);
+    assert.equal(results[2].decision, "list");
+    assert.equal(searched.length, 1, "superseded keystrokes never reach the host search queue");
+    const started = performance.now();
+    const calc = await (await f.post("/instant", { text: "15% of 340", phase: "typing", seq: 4, takeId: "take-typing-2" })).json() as any;
+    assert.equal(calc.decision, "answer");
+    assert.ok(calc.elapsedMs < 50 && performance.now() - started < 500);
+  } finally { await f.close(); }
+});
+
 test("Windows-shaped /invoke: pure-answer intents complete with responseText + card and never start the agent", async () => {
   const s = sessions();
   const f = await start({ instant: { fx: noRates() }, createSession: s.createSession as never });
@@ -200,15 +242,25 @@ test("Windows-shaped /invoke: pure-answer intents complete with responseText + c
     assert.equal(fx.card, undefined);
     assert.equal(s.created.length, 2);
 
-    // Refusals stay with the agent (same deletion prohibition, native host checks): the deletion
-    // grammar also matches ordinary edits, which Windows must keep handling as before.
+    // App and file intents can never answer on /invoke, so it never calls the launcher read routes
+    // (the Windows host has none).
+    const before = f.host.calls.length;
+    for (const [id, prompt] of [["win-app", "open figma"], ["win-file", "find invoice pdfs"]]) {
+      await f.post("/invoke", { invocationId: id, contextId: "ctx-pinned", prompt });
+      assert.equal((await f.terminal(id!)).responseText, "agent answer", prompt);
+    }
+    assert.ok(!f.host.calls.slice(before).some(call => call === "listApps" || call === "searchFiles"), f.host.calls.slice(before).join(","));
+    assert.equal(s.created.length, 4);
+
+    // Refusals stay with the agent (same deletion prohibition, native host checks), so Windows
+    // keeps its previous behaviour for every request the grammar refuses.
     for (const [id, prompt] of [["win-trash", "empty the trash"], ["win-message", "delete this message"], ["win-typed", "delete everything I typed"]]) {
       await f.post("/invoke", { invocationId: id, contextId: "ctx-pinned", prompt });
       const record = await f.terminal(id!);
       assert.equal(record.responseText, "agent answer", prompt);
       assert.equal(record.card, undefined, prompt);
     }
-    assert.equal(s.created.length, 5);
+    assert.equal(s.created.length, 7);
 
     // A retained thread answered instantly has no session: follow-ups are refused, never resurrected.
     await f.post("/invoke", { invocationId: "mac-calc", contextId: "ctx-pinned", prompt: "15% of 80", retainSession: true });

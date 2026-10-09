@@ -7,7 +7,7 @@ import PiOSMac
 // the installed .app.
 //
 //   pi-os-ui-preview [mode] [--light|--dark] [--preset NAME]     interactive fixture window
-//   pi-os-ui-preview --snapshot DIR [--states a,b]               OFFSCREEN: PNGs only, never a window
+//   pi-os-ui-preview --snapshot DIR [--states a,b] [--larger]    OFFSCREEN: PNGs only, never a window
 let answer = """
 ## A quieter way to work
 
@@ -70,6 +70,25 @@ func previewSnapshot(_ frame: NSRect, _ h: CGFloat) -> Snapshot {
     case "instant-refuse":
         panel.setDraft("delete my downloads")
         panel.setInstantPreview(.warning("Deleting files is blocked"))
+    case "big-1":
+        panel.setDraft("2^100")
+        panel.setInstantPreview(.value("1,267,650,600,228,229,401,496,703,205,376"))
+    case "big-2":
+        panel.setDraft("2^64")
+        panel.setInstantPreview(.value("18,446,744,073,709,551,616"))
+    case "big-3":
+        panel.setDraft("123456789*987654321")
+        panel.setInstantPreview(.value("121,932,631,112,635,269"))
+    case "instant-unit":
+        panel.setDraft("2,5 km in Meilen")
+        panel.setInstantPreview(.value("≈ 1,5534 miles"))
+    case "hint-web":
+        panel.setDraft("search best pizza near me")
+        panel.setInstantPreview(.hint("Search the web for “best pizza near me”"))
+    case "confirm-hint":
+        panel.setDraft("turn the display off")
+        panel.setInstantPreview(InstantPreview.confirm("Sleep display"))
+    case "voice-hint": _ = panel.showVoiceOffHint(VoiceOffHint.text)
     case "instant-files":
         panel.setDraft("find invoice")
         if let card = fixtureInstant("list-files")?.card { panel.setInstantPreview(.list(card)) }
@@ -92,6 +111,8 @@ func previewSnapshot(_ frame: NSRect, _ h: CGFloat) -> Snapshot {
     case "confirmation": panel.presentConfirmation("Opened Figma")
     case "voice-denied": panel.showFailure(VoiceError.microphone(.notDetermined))
     case "voice-unavailable": panel.showFailure(VoiceError.unavailable())
+    case "speech-denied": panel.showFailure(VoiceError.speech(.denied))
+    case "asset-missing": panel.showFailure(VoiceError.assetMissing(.germanDE))
     default: return false
     }
     return true
@@ -101,18 +122,20 @@ func previewSnapshot(_ frame: NSRect, _ h: CGFloat) -> Snapshot {
 
 @MainActor enum Snapshots {
     static let panelStates = ["listening", "transcribing", "instant-calc", "instant-hint", "instant-refuse", "instant-files",
-                              "instant-answer", "instant-list", "card", "streaming", "confirmation", "voice-denied", "prompt", "answer"]
+                              "instant-answer", "instant-list", "card", "streaming", "confirmation", "voice-denied", "prompt", "answer",
+                              "big-1", "big-2", "big-3", "instant-unit", "hint-web", "confirm-hint", "voice-hint",
+                              "voice-unavailable", "speech-denied", "asset-missing"]
     static let settingsStates = ["auto-settings", "voice-settings", "classifier-settings"]
     static let presets = ["system", "frost", "contrast", "graphite"]
 
-    static func run(directory: URL, only: Set<String>?) async {
+    static func run(directory: URL, only: Set<String>?, larger: Bool = false) async {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let defaults = UserDefaults.standard
         var written = 0
         for preset in presets {
             for dark in [false, true] {
                 NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
-                defaults.setVolatileDomain(["appearancePreset": preset], forName: UserDefaults.argumentDomain)
+                defaults.setVolatileDomain(["appearancePreset": preset, "appearanceLargerText": larger], forName: UserDefaults.argumentDomain)
                 NotificationCenter.default.post(name: Notification.Name("PiOSAppearanceChanged"), object: nil)
                 var sheet: [(String, NSBitmapImageRep)] = []
                 for state in panelStates where only?.contains(state) ?? true {
@@ -123,7 +146,7 @@ func previewSnapshot(_ frame: NSRect, _ h: CGFloat) -> Snapshot {
                     _ = apply(state, to: panel)
                     let image = render(panel: panel, dark: dark)
                     sheet.append((state, image))
-                    written += write(image, directory.appendingPathComponent("\(state)-\(preset)-\(dark ? "dark" : "light").png"))
+                    written += write(image, directory.appendingPathComponent("\(state)-\(preset)-\(dark ? "dark" : "light")\(larger ? "-large" : "").png"))
                     panel.hide()
                 }
                 if preset == "system" || only != nil {
@@ -137,7 +160,7 @@ func previewSnapshot(_ frame: NSRect, _ h: CGFloat) -> Snapshot {
                     }
                 }
                 if !sheet.isEmpty {
-                    written += write(contactSheet(sheet, dark: dark), directory.appendingPathComponent("sheet-\(preset)-\(dark ? "dark" : "light").png"))
+                    written += write(contactSheet(sheet, dark: dark), directory.appendingPathComponent("sheet-\(preset)-\(dark ? "dark" : "light")\(larger ? "-large" : "").png"))
                 }
             }
         }
@@ -270,7 +293,7 @@ func previewSnapshot(_ frame: NSRect, _ h: CGFloat) -> Snapshot {
         if let index = args.firstIndex(of: "--snapshot"), args.indices.contains(index + 1) {
             let only = args.firstIndex(of: "--states").flatMap { args.indices.contains($0 + 1) ? Set(args[$0 + 1].split(separator: ",").map(String.init)) : nil }
             Task { @MainActor in
-                await Snapshots.run(directory: URL(fileURLWithPath: args[index + 1], isDirectory: true), only: only)
+                await Snapshots.run(directory: URL(fileURLWithPath: args[index + 1], isDirectory: true), only: only, larger: args.contains("--larger"))
                 NSApp.terminate(nil)
             }
             return

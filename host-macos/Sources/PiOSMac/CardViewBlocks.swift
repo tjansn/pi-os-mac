@@ -513,6 +513,8 @@ final class CardItemListView: CardElementView {
     private var header: CGFloat = 0
     private var titleText = "", countText = ""
     override func build() { setAccessibilityElement(true); setAccessibilityRole(.list) }
+    /// The selected row, so VoiceOver can report the list's selection like a native list.
+    override func accessibilitySelectedChildren() -> [Any]? { rows.filter(\.isSelected) }
     func setRows(_ rows: [CardItemRowView]) {
         rows.forEach { $0.inList = true }
         if subviews != rows { subviews = rows }

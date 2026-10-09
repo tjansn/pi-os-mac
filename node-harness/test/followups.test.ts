@@ -342,3 +342,14 @@ test("light lanes leave codemode inactive unless hinted; standard and above get 
   assert.deepEqual(spokenInputNote({ mode: "text" }), []);
   assert.match(spokenInputNote({ mode: "voice", locale: "de-DE", confidence: 0.4, engine: "x" }).join("\n"), /^## Input\n.*\(de-DE\)/);
 });
+
+test("the spoken-input note keeps the confirm-before-consequential rule: content, names and amounts included", () => {
+  const note = spokenInputNote({ mode: "voice", locale: "en-US" }).join("\n");
+  assert.match(note, /content/);
+  assert.match(note, /consequential/);
+  assert.match(note, /sending|paying/);
+  assert.match(note, /names, numbers and amounts/);
+  assert.doesNotMatch(note, /ask only when the action or target/);
+  // No mandatory read-back: ordinary actions still act on the most plausible intent.
+  assert.match(note, /for ordinary actions act on the most plausible desktop intent/);
+});

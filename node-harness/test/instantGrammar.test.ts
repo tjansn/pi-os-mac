@@ -286,6 +286,64 @@ test("raycast §23.1 additions and spoken-URL / unit edge cases", async () => {
   await check("where is budget.xlsx", files({ terms: ["budget.xlsx"] }));
 });
 
+/** Ordinary text editing and in-app edits: never a file-deletion refusal (AGENTS.md: preserve ordinary text editing). */
+const TEXT_EDITS = [
+  "delete it", "delete this", "delete that", "please delete that", "erase the last sentence", "delete the comma", "remove the semicolon",
+  "remove the quotes", "delete the period at the end", "delete everything I typed", "delete what I just typed",
+  "delete everything after the comma", "delete the title", "delete the heading", "delete the signature", "delete the greeting",
+  "delete the intro", "remove the exclamation mark", "delete the rest", "delete all of it", "delete the image from the document",
+  "lösch das", "lösche es", "lösche alles", "lösche alles was ich getippt habe", "entferne die Fettformatierung",
+  "entferne den Fettdruck", "entferne das Komma", "lösche die Überschrift", "lösche den Titel", "lösche die Anrede",
+  "lösch den Punkt am Ende", "entferne die Anführungszeichen",
+  // in-app content, not files
+  "delete the draft", "delete my last message", "delete the note", "lösche den Termin", "lösche die Nachricht", "lösche die Folie",
+];
+
+/** File deletion, trash, uninstalling and shell deletion commands stay refused. */
+const FILE_DELETIONS = [
+  "erase report.pdf", "rm report.pdf", "trash report.pdf", "delete ~/Downloads/report.pdf", "delete the zip files", "delete my documents",
+  "lösche alle Dateien", "lösche das Programm", "remove Zoom from my mac", "erase the disk", "wipe my hard drive",
+  "empty the trash", "can you empty the trash", "could you empty the trash", "kannst du den papierkorb leeren", "please empty the trash",
+  "how about you empty the trash", "find old screenshots and move them to the trash", "trash the old pdfs", "trash it", "del report.pdf",
+  "shred secrets.txt", "rm -rf ~/Downloads", "rm -rf ~", "find old screenshots and delete them", "i want to uninstall slack",
+  // a bare object that is exactly an installed app: uninstalling moves it to the Trash
+  "delete Slack", "lösche Slack", "slack löschen",
+];
+
+test("deletion grammar: text editing and in-app edits are never refused; bare pronouns go to the agent as deictic", async () => {
+  for (const input of TEXT_EDITS) {
+    const response = await check(input, {});
+    assert.equal(response.decision, "fallthrough", input);
+    const typing = await dispatcher.dispatch({ text: input, phase: "typing", seq: 1 });
+    assert.notEqual(typing.decision, "refuse", `${input} (typing)`);
+  }
+  for (const input of ["delete it", "please delete that", "delete everything I typed", "delete all of it", "lösch das", "lösche alles was ich getippt habe"]) {
+    await check(input, { parsed: { kind: "fallthrough", reason: "deictic" }, response: { decision: "fallthrough", reason: "deictic" } });
+  }
+  // A deictic file object is still a deletion: the deletion rule runs before the bare-edit route.
+  await check("delete this file", refuse);
+  // Unknown in-app objects are not apps: no refusal.
+  await check("delete figma file comments", through("no_match"));
+});
+
+test("deletion grammar: files, trash, uninstalling and shell commands stay refused", async () => {
+  for (const input of FILE_DELETIONS) await check(input, { response: { decision: "refuse", code: "file_deletion_blocked" } });
+});
+
+test("deletion grammar: questions, how-tos, searches and unrelated words are answered, not refused", async () => {
+  for (const input of [
+    "how do I empty the trash", "wie leere ich den Papierkorb", "what happens when I empty the trash", "why can't I empty the trash",
+    "how to empty trash on mac", "del taco opening hours", "del mar weather", "trash talk examples", "trash day", "trash can sizes",
+    "remind me to empty the bin", "rm williams boots", "erase una vez", "shred guitar lessons", "del toro movies",
+  ]) await check(input, through("no_match"));
+  await check("google how to empty the trash", openUrl("https://www.google.com/search?q=how+to+empty+the+trash", "web"));
+  await check("search the web for how to empty the trash", openUrl("https://duckduckgo.com/?q=how+to+empty+the+trash", "web"));
+  for (const input of ["find files to delete", "show me large files I could delete", "search for empty trash shortcut"]) {
+    const response = await check(input, {});
+    assert.ok(response.decision === "list" || response.decision === "fallthrough", `${input}: ${response.decision}`);
+  }
+});
+
 /** laya §12 (49 EN/DE utterances). Agent tasks (g*) and the c5 word problem must fall through. */
 const LAYA_49: [string, string, Expect][] = [
   ["c1", "what's 15 percent of 240", calc("36")],

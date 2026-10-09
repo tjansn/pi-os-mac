@@ -12,10 +12,18 @@ public enum VoiceLanguage: String, CaseIterable, Codable, Sendable {
     public static let defaultValue: VoiceLanguage = .englishUS
     public var identifier: String { rawValue }
     public var locale: Locale { Locale(identifier: rawValue) }
+    /// The endonym, for the Settings language picker only.
     public var displayName: String {
         switch self {
         case .englishUS: return "English (US)"
         case .germanDE: return "Deutsch (Deutschland)"
+        }
+    }
+    /// The name inside English UI sentences ("The German (Germany) speech model is not installed.").
+    public var englishName: String {
+        switch self {
+        case .englishUS: return "English (US)"
+        case .germanDE: return "German (Germany)"
         }
     }
     /// Lenient parse for stored preferences and system locales: "de", "de_DE", "DE-at" → `.germanDE`.
@@ -91,8 +99,8 @@ public enum VoiceError {
     }
     public static func assetMissing(_ language: VoiceLanguage, downloading: Bool = false) -> DomainError {
         DomainError(VoiceErrorCode.voiceAssetMissing.rawValue, downloading
-            ? "The \(language.displayName) speech model is still downloading. Try again when Settings shows it as ready."
-            : "The \(language.displayName) speech model is not installed. Download it in pi-os Settings → Voice.")
+            ? "The \(language.englishName) speech model is still downloading. Try again when Settings shows it as ready."
+            : "The \(language.englishName) speech model is not installed. Download it in pi-os Settings → Voice.")
     }
 }
 
@@ -114,7 +122,7 @@ public enum VoiceReadiness: Equatable {
         case .installed: return .ready
         case .notInstalled: return .unavailable(VoiceError.assetMissing(language))
         case .downloading: return .unavailable(VoiceError.assetMissing(language, downloading: true))
-        case .unsupported: return .unavailable(VoiceError.unavailable("This Mac cannot transcribe \(language.displayName) on device."))
+        case .unsupported: return .unavailable(VoiceError.unavailable("This Mac cannot transcribe \(language.englishName) on device."))
         }
     }
 }
@@ -171,6 +179,24 @@ public struct VoiceTranscript: Equatable, Sendable {
             return left + right
         }
         return left + " " + right
+    }
+}
+
+/// What one take does on an audio-engine configuration change: a Bluetooth headset switching to
+/// its hands-free profile as its microphone opens, or a headset connecting mid-take. The first
+/// change restarts capture on the new format; a second one ends the take. Pure, so it is testable
+/// without audio hardware.
+public struct CaptureRestartPolicy: Equatable, Sendable {
+    public enum Decision: Equatable, Sendable { case ignore, restart, halt }
+    public static let maximumRestarts = 1
+    public static let failureMessage = "The audio input kept changing while listening. A Bluetooth headset may be switching modes; try the built-in microphone, or hold the hotkey again."
+    public private(set) var restarts = 0
+    public init() {}
+    public mutating func onConfigurationChange(ending: Bool) -> Decision {
+        if ending { return .ignore }
+        guard restarts < Self.maximumRestarts else { return .halt }
+        restarts += 1
+        return .restart
     }
 }
 

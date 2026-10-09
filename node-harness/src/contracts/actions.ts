@@ -71,8 +71,15 @@ function boundedString(value: unknown, max: number): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= max;
 }
 
+/**
+ * Characters WHATWG URL parsing silently repairs (whitespace, backslashes, controls, invisible
+ * format characters) but the Swift host's URL(string:) may reject: such a binding would pass
+ * here and fail the whole card there, so both sides refuse it up front.
+ */
+const URL_UNSAFE = /[\s\\\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028\u2029\u2060\ufeff]/u;
+
 export function isHttpUrl(value: unknown): value is string {
-  if (!boundedString(value, 2_048)) return false;
+  if (!boundedString(value, 2_048) || URL_UNSAFE.test(value)) return false;
   try {
     const url = new URL(value);
     return (url.protocol === "https:" || url.protocol === "http:") && url.hostname.length > 0;

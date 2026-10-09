@@ -65,7 +65,10 @@ dotnet run
 
 Missing tokens now fail closed. Only for an isolated, intentionally unauthenticated
 dev setup may you set `PI_OS_INSECURE_DEV=1` in both processes instead. Never use
-that switch in an installed build; Mac supervised mode forbids it.
+that switch in an installed build; Mac supervised mode forbids it. In either mode the
+Node harness refuses browser requests (`Origin` / `Sec-Fetch-Site` → 403) and request
+bodies that are not `application/json` (415), so manual `curl` calls need
+`-H 'Content-Type: application/json'`.
 
 ## Tests
 
@@ -133,7 +136,7 @@ values.
 | `PI_OS_FX_RATES` | Set to `0`, `false` or `off` to stop the on-demand ECB reference-rate download for currency answers. On by default: the first currency question downloads `eurofxref-daily.xml` once (conditional GET, cached in `cache/fx-ecb.json`, one retry per minute after a failure). Nothing is fetched at startup. |
 | `PI_OS_WEB_SEARCH` | Default web-search URL for "search the web for …" with exactly one `%s` (http/https only), for example `https://www.google.com/search?q=%s`. Default DuckDuckGo. |
 | `PI_OS_LAYA` | Set to `0` to keep the optional local Laya classifier from ever starting, whatever `classifier.json` says (the test guard does this). |
-| `PI_OS_LAYA_PYTHON`, `PI_OS_LAYA_MODEL_DIR`, `PI_OS_LAYA_SCRIPT` | Absolute paths used when Laya is enabled in Settings but `classifier.json` names none: the venv interpreter (laya 0.3.5 + CPU torch), the checkpoint directory, and an override for the bundled `sidecars/laya/laya_intent_sidecar.py`. |
+| `PI_OS_LAYA_PYTHON`, `PI_OS_LAYA_MODEL_DIR`, `PI_OS_LAYA_SCRIPT` | Absolute paths used when Laya is enabled in Settings but `classifier.json` names none: the venv interpreter (laya 0.3.5 + CPU torch; named `python`, `python3` or `python3.x`) and the checkpoint directory (then `laya/venv/bin/python` and `laya/model` in the support directory, when present). `PI_OS_LAYA_SCRIPT` overrides the bundled `sidecars/laya/laya_intent_sidecar.py` for development; the script is never a Settings field. Environment variables reach only an app started from Terminal or `run-dev.sh`. |
 
 Environment variables apply only to processes started after the variables are
 set. Remove a PowerShell override with, for example:
@@ -151,9 +154,9 @@ are read on the next request.
 
 | File | Contents |
 |------|----------|
-| `settings.json` | Key-scoped JSON shared by several stores: `model` (the Settings model choice; absent means Auto, `pi-os/auto`) and `routing` (Auto's `bias`, `maxAutoTier`, `tierOverrides`, `allowLocalModels`). Each write is an atomic read-modify-write of one key: unknown keys survive, and an unreadable file is copied to `settings.json.corrupt` before it is replaced. |
+| `settings.json` | Key-scoped JSON shared by several stores: `model` (the Settings model choice; absent means Auto, `pi-os/auto`, on macOS and pi's own default model on Windows) and `routing` (Auto's `bias`, `maxAutoTier`, `tierOverrides`, `allowLocalModels`). Each write is an atomic read-modify-write of one key: unknown keys survive, and an unreadable file is copied to `settings.json.corrupt` before it is replaced. |
 | `resources.json` | Isolated or trusted pi resources (explicit acknowledgement required). |
-| `classifier.json` | Optional advisory classifier: `off` (default), `laya` (local, CPU-only sidecar, started lazily on first use) or `pi` (a pi catalog classifier, which sends utterances to that provider). |
+| `classifier.json` | Optional advisory classifier: `off` (default), `laya` (local, CPU-only sidecar, started lazily on first use) or `pi` (a pi catalog classifier, which sends final utterances, never partials or previews, to that provider). |
 | `routing-stats.json` | Auto's measured time to first token and tokens/s per `provider/model@level`, plus temporary provider health blocks. Ids and numbers only. |
 | `cache/fx-ecb.json` | The cached ECB reference rates. |
 | `logs/classifier-shadow.jsonl` | Only with the classifier's shadow log on: labels, probabilities and latency, never text (pauses at 5 MiB). |

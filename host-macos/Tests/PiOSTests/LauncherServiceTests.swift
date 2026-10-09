@@ -149,6 +149,97 @@ final class LauncherServiceTests: XCTestCase {
         XCTAssertEqual(finished.value, true)
     }
 
+    /// Rapid previews must not keep the serial Spotlight queue busy ahead of the final search.
+    func testANewerSearchSkipsTheOlderSubstringFallback() async throws {
+        let queries = Box<[String]>([]), release = DispatchSemaphore(value: 0), entered = Box(false)
+        let one = [SpotlightHit(path: "/Users/fixture/Documents/x.pdf", name: "x.pdf", modified: LauncherFixtures.date(1))]
+        let search = FileSearch(tokens: FileTokenStore(), home: LauncherFixtures.home) { query, _, _ in
+            queries.value.append(query)
+            if queries.value.count == 1 { entered.value = true; release.wait() } // A's primary is slow
+            return one // one usable hit: a fallback would normally run
+        }
+        let a = Task { try await search.search(FileSearchRequest(nameGroups: [["alpha"]])) }
+        for _ in 0..<200 where !entered.value { try await Task.sleep(nanoseconds: 2_000_000) }
+        let b = Task { try await search.search(FileSearchRequest(nameGroups: [["beta"]])) }
+        for _ in 0..<200 where search.startedSearches < 2 { try await Task.sleep(nanoseconds: 2_000_000) }
+        let started = Date()
+        release.signal()
+        let (first, second) = try await (a.value, b.value)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1.0)
+        XCTAssertEqual(first.items.count, 1, "A keeps its word-prefix hits")
+        XCTAssertEqual(second.items.count, 1)
+        let fallbackA = try SpotlightQuery.substringFallback([["alpha"]])
+        let fallbackB = try SpotlightQuery.substringFallback([["beta"]])
+        XCTAssertFalse(queries.value.contains(try XCTUnwrap(fallbackA)), "A's fallback is skipped once B waits")
+        XCTAssertEqual(queries.value, [try SpotlightQuery.names([["alpha"]]), try SpotlightQuery.names([["beta"]]), try XCTUnwrap(fallbackB)],
+                       "B, the latest, still gets its fallback")
+    }
+
+    func testASingleFewHitSearchStillRunsItsFallbackWithinTheBudget() async throws {
+        let calls = Box(0)
+        let search = FileSearch(tokens: FileTokenStore(), home: LauncherFixtures.home) { _, _, _ in
+            calls.value += 1; Thread.sleep(forTimeInterval: 0.05)
+            return [SpotlightHit(path: "/Users/fixture/Documents/x-\(calls.value).pdf", modified: LauncherFixtures.date(Double(calls.value)))]
+        }
+        let started = Date()
+        let result = try await search.search(FileSearchRequest(nameGroups: [["report"]]))
+        XCTAssertEqual(calls.value, 2, "Primary, then the substring fallback")
+        XCTAssertEqual(result.items.count, 2, "Combined hits")
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1.5)
+    }
+
+    func testAnAbandonedSearchSkipsItsFallback() async throws {
+        let calls = Box(0), release = DispatchSemaphore(value: 0)
+        let search = FileSearch(tokens: FileTokenStore(), home: LauncherFixtures.home) { _, _, _ in
+            calls.value += 1
+            if calls.value == 1 { release.wait() }
+            return []
+        }
+        let caller = Task { try await search.search(FileSearchRequest(nameGroups: [["gone"]])) }
+        for _ in 0..<200 where calls.value == 0 { try await Task.sleep(nanoseconds: 2_000_000) }
+        caller.cancel() // what a closed connection does to the route's handler task
+        do { _ = try await caller.value; XCTFail("expected cancellation") } catch { XCTAssertTrue(error is CancellationError, "\(error)") }
+        release.signal()
+        _ = try? await search.search(FileSearchRequest(nameGroups: [["next"]])) // runs after the abandoned work on the same queue
+        XCTAssertEqual(calls.value, 3, "Abandoned primary (no fallback), then the next search's primary and fallback")
+    }
+
+    /// Node aborting a superseded search closes its connection; the host cancels that work.
+    func testLauncherReadsAreCancelledWhenTheClientDisconnects() async throws {
+        let request = { (path: String) in HTTPRequest(method: "POST", path: path, headers: [:], body: Data()) }
+        XCTAssertTrue(LoopbackServer.launcherReads(request("/tools/launcher.searchFiles")))
+        XCTAssertTrue(LoopbackServer.launcherReads(request("/tools/launcher.listApps")))
+        XCTAssertFalse(LoopbackServer.launcherReads(request("/tools/launcher.open")), "Effects are never cancelled by a disconnect")
+        XCTAssertFalse(LoopbackServer.launcherReads(request("/tools/desktop.act")))
+        let started = Box<[String]>([]), cancelled = Box<[String]>([])
+        let port = UInt16.random(in: 49_200...59_000)
+        let server = try LoopbackServer(port: port, cancelsOnDisconnect: LoopbackServer.launcherReads) { request in
+            started.value.append(request.path)
+            do { try await Task.sleep(nanoseconds: 2_000_000_000) } catch { cancelled.value.append(request.path) }
+            return .json(["ok": true])
+        }
+        let ready = expectation(description: "listening")
+        server.start { ready.fulfill() }
+        await fulfillment(of: [ready], timeout: 3)
+        defer { server.stop() }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.connectionProxyDictionary = [:]
+        let session = URLSession(configuration: configuration)
+        for path in ["/tools/launcher.searchFiles", "/tools/launcher.open"] {
+            var urlRequest = URLRequest(url: URL(string: "http://127.0.0.1:\(port)" + path)!)
+            urlRequest.httpMethod = "POST"; urlRequest.httpBody = Data(#"{"arguments":{}}"#.utf8)
+            let task = session.dataTask(with: urlRequest)
+            task.resume()
+            for _ in 0..<300 where !started.value.contains(path) { try await Task.sleep(nanoseconds: 5_000_000) }
+            XCTAssertTrue(started.value.contains(path), path)
+            task.cancel()
+        }
+        for _ in 0..<300 where cancelled.value.isEmpty { try await Task.sleep(nanoseconds: 5_000_000) }
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(cancelled.value, ["/tools/launcher.searchFiles"], "Only the read route's work is cancelled")
+        session.invalidateAndCancel()
+    }
+
     func testAppRecordsDedupeAndExcludeNestedAndSelf() {
         let seeds = LauncherFixtures.apps + [
             AppSeed(bundleId: "com.figma.desktop", path: "/Users/fixture/Applications/Figma.app", name: "Figma copy"),

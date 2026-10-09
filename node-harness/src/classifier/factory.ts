@@ -74,7 +74,7 @@ export function createClassifier(settings: ClassifierSettings, deps: ClassifierF
     } else {
       // Explicit kill switch (e.g. test environments): the real engine never starts.
       if (env.PI_OS_LAYA === "0") return inert("laya", "unavailable", "disabled_by_env");
-      const resolved = resolveLayaLaunch(settings, env, deps.exists);
+      const resolved = resolveLayaLaunch(settings, env, deps.exists, supportDir);
       if (!resolved.ok) {
         log(`[classifier] laya unavailable: ${resolved.reason}`);
         return inert("laya", "unavailable", resolved.reason);
@@ -103,6 +103,7 @@ export function createClassifier(settings: ClassifierSettings, deps: ClassifierF
     return {
       kind: "laya",
       name: base.name,
+      local: true,
       sidecar,
       ...(shadow ? { shadow } : {}),
       classify: (text, signal) => classifier.classify(text, signal),
@@ -132,6 +133,8 @@ export function createClassifier(settings: ClassifierSettings, deps: ClassifierF
     return {
       kind: "pi",
       name: base.name,
+      // A pi catalog model may be remote (Workers AI): finals only, never partials.
+      local: false,
       ...(shadow ? { shadow } : {}),
       classify: (text, signal) => classifier.classify(text, signal),
       status: () => ({ kind: "pi", state: "configured", name: base.name, shadowLog: shadow !== undefined }),

@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { supportDirectory } from "../platformPaths.js";
 
@@ -7,8 +7,12 @@ import { supportDirectory } from "../platformPaths.js";
  * Optional intent classifier configuration (`classifier.json` in the pi-os
  * support directory; GET/POST /settings/classifier). Default: off.
  *
- * - kind "laya": local CPU sidecar. python/modelDir come from the file or from
- *   PI_OS_LAYA_PYTHON / PI_OS_LAYA_MODEL_DIR (no personal paths in code).
+ * - kind "laya": local CPU sidecar. python/modelDir come from the file (the
+ *   Settings pickers), else PI_OS_LAYA_PYTHON / PI_OS_LAYA_MODEL_DIR, else a
+ *   `laya/venv` + `laya/model` in the support directory (no personal paths in
+ *   code). The sidecar script is never a setting: it is the copy shipped with
+ *   pi-os (or PI_OS_LAYA_SCRIPT for development), so a settings write can never
+ *   choose code to run; the interpreter must be named python/python3(.x).
  * - kind "pi": a pi catalog classifier (provider + model), e.g.
  *   cloudflare-workers-ai + typesafe/jev. Sends utterances to that provider.
  *
@@ -22,8 +26,6 @@ export interface ClassifierSettings {
   kind: ClassifierKind;
   /** Laya: absolute interpreter path of a venv with laya 0.3.5 + torch (CPU). */
   python?: string;
-  /** Laya: absolute sidecar script path; defaults to the copy shipped next to node-harness. */
-  script?: string;
   /** Laya: absolute checkpoint directory (the multilingual checkpoint). */
   modelDir?: string;
   /** Laya: expected sha256 of model.safetensors, checked before loading. */
@@ -45,7 +47,7 @@ export const DEFAULT_LAYA_THREADS = 4;
 
 const MAX_FILE_BYTES = 16_384;
 const MAX_PATH_CHARS = 1_024;
-const PATH_KEYS = ["python", "script", "modelDir", "calibration"] as const;
+const PATH_KEYS = ["python", "modelDir", "calibration"] as const;
 const NAME_KEYS = ["provider", "model"] as const;
 
 export type ParsedClassifierSettings = { ok: true; settings: ClassifierSettings } | { ok: false; error: string };
@@ -54,7 +56,10 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 const CONTROL = /[\u0000-\u001f\u007f]/u;
 
-/** Strict validation for POST bodies and the stored file. Unknown keys are ignored. */
+/**
+ * Strict validation for POST bodies and the stored file. Unknown keys are ignored; so is a
+ * legacy `script` (older files and hosts that echo every stored field may still carry it).
+ */
 export function parseClassifierSettings(value: unknown): ParsedClassifierSettings {
   if (!isRecord(value)) return { ok: false, error: "classifier settings must be a JSON object" };
   if (!CLASSIFIER_KINDS.includes(value.kind as ClassifierKind)) {
@@ -169,24 +174,34 @@ export type LayaLaunchReason =
   | "model_dir_not_configured" | "model_dir_not_found"
   | "script_not_found" | "calibration_not_found";
 
+/** A Python interpreter by name (venvs ship python, python3 and python3.x). */
+const PYTHON_NAME = /^python(?:3(?:\.\d{1,2})?)?$/u;
+
 export type LayaLaunchResolution = { ok: true; launch: LayaLaunch } | { ok: false; reason: LayaLaunchReason };
 
 const absolute = (value: string | undefined): string | undefined =>
   value && isAbsolute(value) && !CONTROL.test(value) ? value : undefined;
 
-/** Settings first, then PI_OS_LAYA_PYTHON / PI_OS_LAYA_MODEL_DIR / PI_OS_LAYA_SCRIPT. Absolute paths only. */
+/**
+ * Settings first, then PI_OS_LAYA_PYTHON / PI_OS_LAYA_MODEL_DIR, then `<supportDir>/laya/venv/bin/python`
+ * and `<supportDir>/laya/model` when those exist. The script is PI_OS_LAYA_SCRIPT or the shipped copy,
+ * never a setting. Absolute paths only; only existsSync-style checks, nothing is spawned.
+ */
 export function resolveLayaLaunch(
   settings: ClassifierSettings,
   env: NodeJS.ProcessEnv = process.env,
   exists: (path: string) => boolean = existsSync,
+  supportDir?: string,
 ): LayaLaunchResolution {
-  const python = absolute(settings.python ?? env.PI_OS_LAYA_PYTHON);
+  const local = (path: string, marker = path): string | undefined =>
+    (supportDir && exists(join(supportDir, marker)) ? join(supportDir, path) : undefined);
+  const python = absolute(settings.python ?? env.PI_OS_LAYA_PYTHON) ?? local(join("laya", "venv", "bin", "python"));
   if (!python) return { ok: false, reason: "python_not_configured" };
-  if (!exists(python)) return { ok: false, reason: "python_not_found" };
-  const modelDir = absolute(settings.modelDir ?? env.PI_OS_LAYA_MODEL_DIR);
+  if (!PYTHON_NAME.test(basename(python)) || !exists(python)) return { ok: false, reason: "python_not_found" };
+  const modelDir = absolute(settings.modelDir ?? env.PI_OS_LAYA_MODEL_DIR) ?? local(join("laya", "model"), join("laya", "model", "rl_agent_config.json"));
   if (!modelDir) return { ok: false, reason: "model_dir_not_configured" };
   if (!exists(join(modelDir, "rl_agent_config.json"))) return { ok: false, reason: "model_dir_not_found" };
-  const script = absolute(settings.script ?? env.PI_OS_LAYA_SCRIPT) ?? defaultSidecarScript();
+  const script = absolute(env.PI_OS_LAYA_SCRIPT) ?? defaultSidecarScript();
   if (!exists(script)) return { ok: false, reason: "script_not_found" };
   if (settings.calibration && !exists(settings.calibration)) return { ok: false, reason: "calibration_not_found" };
   return {

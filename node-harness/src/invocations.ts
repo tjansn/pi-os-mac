@@ -75,6 +75,25 @@ export interface InvocationRecord {
 const MAX_RECORDS = 200;
 const MAX_RESPONSE_CHARS = 8_000;
 const MAX_PARTIAL_CHARS = 8_000;
+
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
+/** Replaces lone UTF-16 surrogates with U+FFFD (String.prototype.toWellFormed, which ES2023 lib typings lack). */
+export function wellFormed(text: string): string {
+  return text.replace(LONE_SURROGATE, "\uFFFD");
+}
+
+/**
+ * At most `max` UTF-16 units (plus `suffix` when cut), never ending inside a surrogate pair and
+ * always well-formed: hosts decode records strictly, and a lone surrogate (a split emoji) would
+ * fail the whole record in Swift's JSONDecoder.
+ */
+export function clip(text: string, max: number, suffix = ""): string {
+  if (text.length <= max) return wellFormed(text);
+  const code = text.charCodeAt(max - 1);
+  const end = code >= 0xd800 && code <= 0xdbff ? max - 1 : max;
+  return wellFormed(text.slice(0, end)) + suffix;
+}
 const MAX_ROUTE_REASONS = 16;
 
 type Listener = () => void;
@@ -87,7 +106,7 @@ export class InvocationStore {
     const record: InvocationRecord = {
       invocationId,
       contextId,
-      prompt,
+      prompt: wellFormed(prompt),
       invokedAt,
       state: "queued",
       steps: [],
@@ -130,7 +149,7 @@ export class InvocationStore {
 
   addStep(id: string, tool: string, ok: boolean, detail?: string): void {
     this.mutate(id, (r) => {
-      r.steps.push({ tool, at: new Date().toISOString(), ok, ...(detail !== undefined ? { detail } : {}) });
+      r.steps.push({ tool, at: new Date().toISOString(), ok, ...(detail !== undefined ? { detail: wellFormed(detail) } : {}) });
     });
   }
 
@@ -138,7 +157,7 @@ export class InvocationStore {
     const record = this.records.get(id);
     if (!record || record.state === "queued" || record.state === "running") return false;
     this.mutate(id, (r) => {
-      r.prompt = prompt; r.state = "queued";
+      r.prompt = wellFormed(prompt); r.state = "queued";
       delete r.startedAt; delete r.finishedAt; delete r.activity; delete r.partialText;
       delete r.responseText; delete r.failureMessage; delete r.card; delete r.cardComplete;
       delete r.route; delete r.timings; delete r.input;
@@ -146,32 +165,30 @@ export class InvocationStore {
     return true;
   }
 
-  /** Publish/clear the live activity line (result-surfacing pill). */
+  /** Publish/clear the live activity line (result-surfacing pill). An unchanged value is no new revision. */
   setActivity(id: string, activity: string | undefined): void {
+    const next = activity === undefined ? undefined : clip(activity, 80);
+    if (this.records.get(id)?.activity === next) return;
     this.mutate(id, (r) => {
-      if (activity === undefined) {
-        delete r.activity;
-      } else {
-        r.activity = activity.slice(0, 80);
-      }
+      if (next === undefined) delete r.activity;
+      else r.activity = next;
     });
   }
 
   /** Streaming answer text (already accumulated by the caller); capped like responseText. */
   setPartialText(id: string, text: string | undefined): void {
+    const next = text ? clip(text, MAX_PARTIAL_CHARS, "…") : undefined;
+    if (this.records.get(id)?.partialText === next) return;
     this.mutate(id, (r) => {
-      if (!text) delete r.partialText;
-      else r.partialText = text.length > MAX_PARTIAL_CHARS ? `${text.slice(0, MAX_PARTIAL_CHARS)}…` : text;
+      if (next === undefined) delete r.partialText;
+      else r.partialText = next;
     });
   }
 
   /** Persist the final answer, capped so records stay small. */
   setResponse(id: string, text: string): void {
     this.mutate(id, (r) => {
-      const trimmed = text.trim();
-      r.responseText = trimmed.length > MAX_RESPONSE_CHARS
-        ? `${trimmed.slice(0, MAX_RESPONSE_CHARS)}… [truncated]`
-        : trimmed;
+      r.responseText = clip(text.trim(), MAX_RESPONSE_CHARS, "… [truncated]");
     });
   }
 
@@ -231,7 +248,7 @@ export class InvocationStore {
       delete r.activity;
       delete r.partialText;
       if (failureMessage !== undefined && state !== "completed") {
-        r.failureMessage = failureMessage.slice(0, 2_000);
+        r.failureMessage = clip(failureMessage, 2_000);
       }
     });
   }

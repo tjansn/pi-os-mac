@@ -237,6 +237,39 @@ final class CardViewTests: XCTestCase {
         XCTAssertFalse(rich.perform(.primary))
     }
 
+    @MainActor func testKeyboardSelectionIsAnnouncedLikeANativeList() throws {
+        _ = NSApplication.shared
+        var posted: [(element: Any, notification: NSAccessibility.Notification, text: String?)] = []
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 436, height: 300), styleMask: [.borderless], backing: .buffered, defer: true)
+        let view = CardView(style: CardStyle())
+        view.announce = { element, notification, info in posted.append((element, notification, info?[.announcement] as? String)) }
+        window.contentView = view
+        view.update(spec: try card("file-list"), complete: true)
+        XCTAssertTrue(posted.isEmpty, "A programmatic selection (update) is silent")
+        XCTAssertEqual(view.defaultItemTitle, "Invoice-2026-03.pdf")
+        XCTAssertTrue(view.perform(.next))
+        XCTAssertTrue(posted.contains { $0.notification == .selectedChildrenChanged && $0.element is CardItemListView })
+        let spoken = try XCTUnwrap(posted.last { $0.notification == .announcementRequested }?.text)
+        XCTAssertTrue(spoken.hasPrefix(try XCTUnwrap(view.elementView(forKey: "n3")?.accessibilityLabel())), spoken)
+        XCTAssertTrue(spoken.hasSuffix(", 2 of 3"), spoken)
+        XCTAssertFalse(posted.contains { $0.notification == .focusedUIElementChanged }, "Not focused (composer preview): no focus move")
+        XCTAssertTrue(view.perform(.next))
+        let count = posted.count
+        XCTAssertTrue(view.perform(.next), "Clamped at the last row")
+        XCTAssertEqual(posted.count, count, "No announcement when the selection did not move")
+        // The reader's focused list: the VoiceOver cursor follows the selection.
+        posted = []
+        XCTAssertTrue(window.makeFirstResponder(view))
+        let focusAnnouncement = try XCTUnwrap(posted.last { $0.notification == .announcementRequested }?.text)
+        XCTAssertTrue(focusAnnouncement.contains("of 3"), focusAnnouncement)
+        XCTAssertTrue(view.perform(.previous))
+        XCTAssertTrue(posted.contains { $0.notification == .focusedUIElementChanged })
+        XCTAssertTrue((view.accessibilityFocusedUIElement as AnyObject?) === view.elementView(forKey: "n3"))
+        let list = try XCTUnwrap(view.elementView(forKey: "n3")?.superview as? CardItemListView)
+        XCTAssertEqual(list.accessibilitySelectedChildren()?.count, 1)
+        XCTAssertTrue((list.accessibilitySelectedChildren()?.first as AnyObject?) === view.elementView(forKey: "n3"))
+    }
+
     @MainActor func testBindingsStayDisabledUntilCompleteAndWhenActionsAreOff() throws {
         let spec = try card("file-list")
         let view = rendered(spec, complete: false)

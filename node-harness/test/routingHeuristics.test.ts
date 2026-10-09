@@ -161,6 +161,17 @@ test("time expressions and 'here is' are not screen deixis; strong screen words 
   }
 });
 
+test("a definite on-screen noun ('the page', 'die Mail') asks for the screenshot; general questions do not", () => {
+  for (const text of ["summarize the page", "reply to the email", "what does the error say", "explain the chart", "read the article to me",
+    "fasse die seite zusammen", "antworte auf die mail", "was sagt die fehlermeldung", "erklär mir die tabelle"]) {
+    assert.ok(classifyUtterance(text).needsScreen >= 0.5, text);
+  }
+  for (const text of ["what's the capital of france", "what's the weather tomorrow", "write an email to my boss", "who won the game last night",
+    "how do I make pasta", "wie wird das wetter morgen", "schreib eine mail an meinen chef"]) {
+    assert.ok(classifyUtterance(text).needsScreen < 0.5, text);
+  }
+});
+
 test("German object pronoun 'das' is deixis like English 'this'; the article 'das' is not", () => {
   for (const text of ["fass das zusammen", "übersetz das ins Englische", "kannst du das mal kurz übersetzen", "was bedeutet das?", "erklär mir das bitte", "summarize this"]) {
     assert.ok(classifyUtterance(text).needsScreen >= 0.5, text);

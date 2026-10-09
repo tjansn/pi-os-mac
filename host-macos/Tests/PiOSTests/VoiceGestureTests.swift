@@ -103,6 +103,35 @@ final class VoiceGestureTests: XCTestCase {
         XCTAssertEqual(g.release(), [])
     }
 
+    func testVoiceOffHintComesOnlyFromARealHold() {
+        let clock = Clock(); var g = gesture(clock)
+        XCTAssertEqual(g.press(surface: .idle, voice: .disabled, voiceOffHint: true), [.beginTake, .showComposer], "the composer at once, as today")
+        XCTAssertFalse(g.isMicrophoneOpen, "never the microphone")
+        XCTAssertEqual(g.deadline, 1_000.25)
+        clock.now += 0.25
+        XCTAssertEqual(g.tick(), [.voiceOffHint])
+        XCTAssertEqual(g.phase, .held); XCTAssertNil(g.deadline)
+        XCTAssertEqual(g.tick(), []); XCTAssertEqual(g.release(), [])
+        // A tap is exactly today's tap: no hint, even from a late release.
+        _ = g.press(surface: .idle, voice: .disabled, voiceOffHint: true)
+        clock.now += 0.1
+        XCTAssertEqual(g.release(), [])
+        _ = g.press(surface: .idle, voice: .disabled, voiceOffHint: true)
+        clock.now += 0.6
+        XCTAssertEqual(g.release(), [], "a missed timer never turns into a late hint")
+        // Typing or an interruption during the hold: no hint.
+        _ = g.press(surface: .idle, voice: .disabled, voiceOffHint: true)
+        XCTAssertEqual(g.typed(), [])
+        clock.now += 1; XCTAssertEqual(g.tick(), []); XCTAssertEqual(g.release(), [])
+        _ = g.press(surface: .idle, voice: .disabled, voiceOffHint: true)
+        XCTAssertEqual(g.interrupt(), [])
+        clock.now += 1; XCTAssertEqual(g.tick(), []); XCTAssertEqual(g.release(), [])
+        // The flag only applies to voice that is switched off.
+        XCTAssertEqual(g.press(surface: .idle, voice: .ready, voiceOffHint: true), [.beginTake, .startMic])
+        _ = g.interrupt(); _ = g.release()
+        XCTAssertEqual(g.press(surface: .composer, voice: .disabled, voiceOffHint: true), [.cancel])
+    }
+
     func testUnavailableVoiceFailsOnlyWhenHeld() {
         let clock = Clock(); var g = gesture(clock)
         XCTAssertEqual(g.press(surface: .idle, voice: .unavailable(denied)), [.beginTake])
@@ -186,7 +215,7 @@ final class VoiceGestureTests: XCTestCase {
     /// never open with the key up, listening before finalize, at most one resolution per take).
     func testExhaustiveSequencesKeepTheMicrophoneBalancedAndResolveEachTakeOnce() {
         enum Event: CaseIterable {
-            case pressReady, pressDisabled, pressUnavailable, pressComposer, pressWorking
+            case pressReady, pressDisabled, pressHint, pressUnavailable, pressComposer, pressWorking
             case release, tickLater, typed, interrupt, wait
         }
         let events = Event.allCases, maximumLength = 6
@@ -195,18 +224,19 @@ final class VoiceGestureTests: XCTestCase {
         func run(_ sequence: [Event]) {
             let clock = Clock(); var g = gesture(clock)
             var keyDown = false, mic = false, takeOpen = false, resolved = false, listening = false, interrupted = false
-            var readiness = VoiceReadiness.ready
+            var readiness = VoiceReadiness.ready, hintAllowed = false, hinted = false
             func check(_ condition: Bool, _ rule: String) {
                 if !condition, violation == nil { violation = "\(rule): \(sequence)" }
             }
             for event in sequence {
                 let outputs: [TalkOutput]
                 switch event {
-                case .pressReady, .pressDisabled, .pressUnavailable, .pressComposer, .pressWorking:
+                case .pressReady, .pressDisabled, .pressHint, .pressUnavailable, .pressComposer, .pressWorking:
                     let surface: TalkSurface = event == .pressComposer ? .composer : event == .pressWorking ? .working : .idle
-                    let voice: VoiceReadiness = event == .pressDisabled ? .disabled : event == .pressUnavailable ? .unavailable(denied) : .ready
-                    outputs = g.press(surface: surface, voice: voice)
-                    if keyDown { check(outputs.isEmpty, "repeated press") } else { readiness = voice }
+                    let voice: VoiceReadiness = event == .pressDisabled || event == .pressHint ? .disabled
+                        : event == .pressUnavailable ? .unavailable(denied) : .ready
+                    outputs = g.press(surface: surface, voice: voice, voiceOffHint: event == .pressHint)
+                    if keyDown { check(outputs.isEmpty, "repeated press") } else { readiness = voice; hintAllowed = event == .pressHint; hinted = false }
                     keyDown = true
                 case .release: outputs = g.release(); keyDown = false
                 case .tickLater: clock.now += 0.3; outputs = g.tick()
@@ -238,6 +268,9 @@ final class VoiceGestureTests: XCTestCase {
                         check(!resolved && !interrupted, "one resolution per take"); resolved = true
                     case .cancel, .reveal:
                         check(outputs.count == 1, "toggles stand alone")
+                    case .voiceOffHint:
+                        check(hintAllowed && readiness == .disabled && !mic && keyDown, "the hint only for a held, switched-off take")
+                        check(resolved && !hinted, "after the composer, at most once"); hinted = true
                     }
                 }
                 check(g.isMicrophoneOpen == mic, "isMicrophoneOpen mirrors the outputs")

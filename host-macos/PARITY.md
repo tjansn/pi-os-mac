@@ -28,7 +28,7 @@ security feature was disabled. See [BROWSER_INTEGRATION.md](BROWSER_INTEGRATION.
 | Auto model | Settings lists *Auto (recommended)* first with bias labels | Appears in the existing model list (same `GET /models` / `POST /settings/model`) |
 | Result cards | Native `CardView` in the reader | `responseText` (plain-text fallback) |
 | Streaming | SSE with polling fallback | Unchanged polling |
-| Local classifier (Laya) | Settings switch (advisory, off by default) | Node-side only |
+| Local classifier (Laya) | Settings switch plus Python / model folder pickers (advisory, off by default); bundled builds ship the helper script | Node-side only |
 
 Wire changes are additive (`takeId`, `input`, `/instant`, `/invocations/prepare`, SSE events,
 record fields); Windows never sends them and its polling contract is unchanged.

@@ -157,7 +157,7 @@ export async function convertCurrencyWith(
   const conversion = fx.convert(amount, from, to);
   if (!conversion) {
     if (!fx.snapshot()) {
-      if (!fx.isEnabled) return { ok: false, error: "rates_disabled", message: "Currency rates are turned off in Settings." };
+      if (!fx.isEnabled) return { ok: false, error: "rates_disabled", message: "Currency rate downloads are turned off (PI_OS_FX_RATES=0)." };
       return outcome === "failed" || fx.recentlyFailed()
         ? { ok: false, error: "rates_unavailable", message: "ECB reference rates could not be downloaded." }
         : { ok: false, error: "rates_unavailable", message: "Downloading ECB reference rates. Try again in a moment." };

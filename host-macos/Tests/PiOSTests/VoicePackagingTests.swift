@@ -52,6 +52,19 @@ final class VoicePackagingTests: XCTestCase {
         XCTAssertFalse(bundle.contains("PiOS.entitlements"))
     }
 
+    /// Node's defaultSidecarScript() resolves <Resources>/node-harness/dist/classifier/ → ../../../sidecars/laya/:
+    /// without this copy a bundled build reports script_not_found even with valid Laya paths.
+    func testBundleShipsTheLayaHelperScriptOnly() throws {
+        let bundle = try script("bundle-runtime.sh")
+        XCTAssertTrue(bundle.contains(#"mkdir -p "$RES/sidecars/laya" && cp "$ROOT/sidecars/laya/laya_intent_sidecar.py" "$RES/sidecars/laya/""#))
+        XCTAssertFalse(bundle.contains("finetune"), "Training code and models are never bundled")
+        let dist = URL(fileURLWithPath: "/App.app/Contents/Resources/node-harness/dist/classifier/settings.js")
+        XCTAssertEqual(URL(string: "../../../sidecars/laya/laya_intent_sidecar.py", relativeTo: dist)?.standardizedFileURL.path,
+                       "/App.app/Contents/Resources/sidecars/laya/laya_intent_sidecar.py")
+        let repo = host.deletingLastPathComponent()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: repo.appendingPathComponent("sidecars/laya/laya_intent_sidecar.py").path))
+    }
+
     func testRefreshInstallStillGatesOnTheDesignatedRequirement() throws {
         let refresh = try script("refresh-install.sh")
         XCTAssertTrue(refresh.contains(#"REQUIREMENT="$(codesign -d -r- "$DEST" 2>&1 | grep 'designated =>' | head -1 || true)""#))

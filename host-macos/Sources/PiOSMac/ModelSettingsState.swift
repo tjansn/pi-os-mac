@@ -30,6 +30,8 @@ struct ModelSettingsState {
             return lhs.name < rhs.name
         }
     }
+    /// Auto is already named in the Provider pop-up; its Model row just says what Auto does.
+    static let autoModelTitle = "Chosen per request"
     func title(_ model: HarnessClient.Model) -> String { Self.isAuto(model) ? Self.autoTitle : "\(model.name) · \(model.id)" }
     /// Auto's levels are the routing bias (low/medium/high = speed/balanced/quality).
     func efforts(_ model: HarnessClient.Model) -> [Option] {

@@ -88,7 +88,12 @@ pays the ~18 s load again, during which pi-os routes on heuristics alone.
 - Socket kill-switch: any non-`AF_UNIX` connect, `sendto`/`sendmsg`, `bind` (no listeners either)
   or name lookup ends the process with exit code 97; the supervisor then keeps Laya off.
   HF/transformers offline variables are forced and proxy/token variables removed. It patches
-  Python's socket API (defense in depth), not native code.
+  Python's `socket` API and the C-level `_socket` module (new sockets made through it get a
+  guarded subclass; its lookups are denied). That is defense in depth: native code that opens
+  sockets by itself is outside its reach.
+- The sidecar script is never a setting: node-harness runs the copy shipped with pi-os (or
+  `PI_OS_LAYA_SCRIPT`, for development from Terminal), and the interpreter must be named
+  `python`, `python3` or `python3.x`, so a settings write cannot choose code to run.
 - The checkpoint is **staged**: configs and tokenizer are copied into a pi-os-owned directory,
   weights are symlinked. laya 0.3.5 rewrites `tokenizer_config.json` in place; staging keeps
   your model directory untouched. Optional sha256 check of the weights before loading.
@@ -129,16 +134,23 @@ Fake engine for tests and manual checks (no torch, no model; keep stdin open unt
 
 1. Use a Python environment with `laya==0.3.5` and a CPU build of `torch` (for example the
    reviewed venv next to your local Laya checkout). pi-os never installs packages.
-2. Point pi-os at it, either in Settings (Local classifier) or in `classifier.json` in the pi-os
-   support directory (`~/Library/Application Support/pi-os/` on macOS):
+2. Point pi-os at it. In the Mac app: Settings → Classifier, choose the environment's Python
+   interpreter (`.venv/bin/python`) and the Laya model folder (the one holding
+   `rl_agent_config.json`), then turn the switch on. The page names what is still missing
+   (`status.layaLaunch` from `GET /settings/classifier`) before the switch does anything.
+   The same fields live in `classifier.json` in the pi-os support directory
+   (`~/Library/Application Support/pi-os/` on macOS):
 
    ```json
    { "kind": "laya", "python": "/abs/path/.venv/bin/python", "modelDir": "/abs/path/laya/multilingual",
      "sha256": "<64 hex chars, optional>", "threads": 4, "shadowLog": false }
    ```
 
-   or leave `python`/`modelDir` out and set `PI_OS_LAYA_PYTHON` and `PI_OS_LAYA_MODEL_DIR`
-   (absolute paths). `PI_OS_LAYA_SCRIPT` overrides the sidecar location. `PI_OS_LAYA=0`
+   Fallbacks for missing `python`/`modelDir`, in order: `PI_OS_LAYA_PYTHON` and
+   `PI_OS_LAYA_MODEL_DIR` (absolute paths; environment variables only reach an app started
+   from Terminal or `run-dev.sh`, never one started from Finder, the hotkey or a login item),
+   then `laya/venv/bin/python` and `laya/model` inside the support directory when they exist.
+   `PI_OS_LAYA_SCRIPT` overrides the sidecar location for development. `PI_OS_LAYA=0`
    disables the real engine whatever the settings say.
 3. Optional: `"calibration": "/abs/path/runs/v1/calibration.json"` from a fine-tune run.
 4. The installed app is a snapshot: re-publish (refresh-install) so the bundled
@@ -150,7 +162,16 @@ support directory: labels, probabilities and latency only, never the utterance. 
 ## Laya, Clef and Jev
 
 All three answer the same typed-question contract, so pi-os reaches the cloud ones through pi's
-catalog with classifier kind `"pi"` (`provider` + `model` in `classifier.json`), no extra code.
+catalog with classifier kind `"pi"` (`provider` + `model` in `classifier.json`), no extra code:
+
+```json
+{ "kind": "pi", "provider": "cloudflare-workers-ai", "model": "typesafe/jev", "shadowLog": false }
+```
+
+A classifier of kind `"pi"` sends text to its provider, so pi-os consults it for the **final**
+utterance only (the released hotkey, a typed Return): voice partials and typed previews,
+including takes the user then cancels, never leave the Mac. Laya, being local, also sees
+partials.
 
 | | Laya (this sidecar) | Jev (TypeSafe) | Clef / Clef-flash (Cloudflare) |
 |---|---|---|---|
@@ -163,6 +184,14 @@ catalog with classifier kind `"pi"` (`provider` + `model` in `classifier.json`),
 
 Whichever is chosen, hints stay advisory. Whether `@cf/cloudflare/clef-flash` works unchanged
 through pi's Workers AI classifier transport is unverified (no live calls were made).
+
+**Recommendation.** ("clev" in the original request was read as Cloudflare Clef / Clef-flash;
+that reading is still unconfirmed.) Clef is not better than Laya for pi-os's local hot path:
+it is cloud-only (Workers AI; CUDA-tested weights, no GGUF/MLX build), is not in pi 1.0.0's
+catalog and has no credentials configured here. Keep Laya as the opt-in local classifier, and
+plug Clef in later through kind `"pi"` once the next pi release ships it. The full verdicts
+(pi-durable, Clef, macbrow/jev ideas) and the deferred scope are in
+[VOICE_MAGIC.md](../../VOICE_MAGIC.md).
 
 ## Fine-tuning (manual, never run by pi-os)
 

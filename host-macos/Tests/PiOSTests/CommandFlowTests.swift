@@ -97,6 +97,12 @@ import XCTest
     func setVoiceLevel(_ level: Float) {}
     func setComposerText(_ text: String) { composerText = text }
     func setInstantPreview(_ preview: InstantPreview?) { previews.append(preview) }
+    var composerEmpty = true
+    var voiceHints: [String] = []
+    func showVoiceOffHint(_ text: String) -> Bool {
+        guard showsComposer, composerEmpty else { return false }
+        voiceHints.append(text); return true
+    }
     func performPreview(_ command: CardCommand) -> Bool { previewCommands.append(command); return previewHandles }
     func presentInstant(_ result: InstantResult) { instant.append(result); showsComposer = false }
     func presentConfirmation(_ text: String) { confirmations.append(text); showsComposer = false }
@@ -155,6 +161,45 @@ import XCTest
         press(); controller.hotkeyReleased()
         XCTAssertEqual(host.cancels, 1)
         XCTAssertEqual(host.begun, 1)
+    }
+
+    func testVoiceOffHoldHintsHowToTurnVoiceOnAtMostThreeTimes() {
+        let defaults = UserDefaults(suiteName: "dev.pi-os.voice-hint-test." + UUID().uuidString)!
+        var eligible = true
+        let hint = VoiceOffHint(defaults: defaults) { eligible }
+        controller.voiceOffHint = hint
+        controller.readiness = .disabled
+        // A tap is exactly today's tap.
+        press(); scheduler.advance(0.1); controller.hotkeyReleased()
+        XCTAssertTrue(surface.voiceHints.isEmpty); escape()
+        // Typing during the hold: no hint.
+        press(); controller.composerEdited("w"); scheduler.advance(1); controller.hotkeyReleased()
+        XCTAssertTrue(surface.voiceHints.isEmpty); escape()
+        for round in 1...4 {
+            hold(2); controller.hotkeyReleased()
+            XCTAssertEqual(surface.voiceHints.count, min(round, VoiceOffHint.limit), "round \(round)")
+            escape()
+        }
+        XCTAssertEqual(hint.shown, 3)
+        XCTAssertTrue(voice.calls.isEmpty, "Never the microphone"); XCTAssertTrue(surface.failures.isEmpty, "Never a failure")
+        XCTAssertEqual(host.begun, 6)
+        // Text already in the composer: not shown and not counted.
+        let fresh = VoiceOffHint(defaults: UserDefaults(suiteName: "dev.pi-os.voice-hint-test." + UUID().uuidString)!) { eligible }
+        controller.voiceOffHint = fresh; surface.voiceHints = []
+        surface.composerEmpty = false
+        hold(2); controller.hotkeyReleased(); escape()
+        XCTAssertTrue(surface.voiceHints.isEmpty); XCTAssertEqual(fresh.shown, 0)
+        surface.composerEmpty = true
+        // Engine unavailable (macOS 14–25) or voice ever enabled: today's behaviour exactly.
+        eligible = false
+        hold(2); controller.hotkeyReleased(); escape()
+        XCTAssertTrue(surface.voiceHints.isEmpty)
+        eligible = true; fresh.retire()
+        hold(2); controller.hotkeyReleased(); escape()
+        XCTAssertTrue(surface.voiceHints.isEmpty); XCTAssertEqual(fresh.shown, VoiceOffHint.limit)
+        XCTAssertEqual(Application.voiceMenu(enabled: false, engineAvailable: true).title, "Turn On Hold to Talk…")
+        XCTAssertEqual(Application.voiceMenu(enabled: true, engineAvailable: true).title, "Voice…")
+        XCTAssertFalse(Application.voiceMenu(enabled: false, engineAvailable: false).isEnabled)
     }
 
     func testPressWhileWorkingRevealsInsteadOfStartingATake() {
@@ -291,6 +336,68 @@ import XCTest
         XCTAssertEqual(surface.instant.last?.copyText, "51", "Copy Answer copies the value")
     }
 
+    func testASpokenNeverMindEndsTheTakeSilently() async throws {
+        voice.script = [.final("Never mind.")]
+        hold(); controller.hotkeyReleased(); await settle()
+        XCTAssertTrue(host.agent.isEmpty, "No agent run for a spoken cancel")
+        XCTAssertTrue(harness.requests.filter { $0.phase == .final }.isEmpty)
+        XCTAssertEqual(host.finished, 1); XCTAssertNil(controller.take)
+        XCTAssertTrue(CommandController.isSpokenCancel("vergiss es")); XCTAssertTrue(CommandController.isSpokenCancel("Cancel!"))
+        XCTAssertFalse(CommandController.isSpokenCancel("stop the timer")); XCTAssertFalse(CommandController.isSpokenCancel("cancel my 3pm meeting"))
+        // Typed "cancel" is ordinary text for the instant engine and the agent.
+        surface.showsComposer = false // finishInstant hid the bar
+        harness.respond = { try ScriptedHarness.fixture("fallthrough-no-match", seq: $0.seq) }
+        await typeAndReturn("cancel")
+        XCTAssertEqual(host.agent.map(\.prompt), ["cancel"])
+    }
+
+    func testASlowReturnShowsThePendingDiscInsteadOfAFrozenBar() async throws {
+        let (gate, open) = AsyncStream<Void>.makeStream()
+        host.preparation = TakePreparation(warm: Task { for await _ in gate { break } }, capture: Task {})
+        harness.respond = { try ScriptedHarness.fixture("answer-calc", seq: $0.seq) }
+        controller.readiness = .disabled
+        press(); controller.hotkeyReleased()
+        controller.composerSubmitted("15% of 340", intent: .plain)
+        await settle()
+        XCTAssertNotEqual(surface.listening.last, .finishing, "A fast answer never flashes the disc")
+        scheduler.advance(0.12)
+        XCTAssertEqual(surface.listening.last, .finishing, "Still resolving (cold Node): the bar shows it is working")
+        open.yield(); open.finish()
+        await settle()
+        XCTAssertEqual(surface.listening.last, .off)
+        XCTAssertEqual(surface.instant.last?.copyText, "51")
+    }
+
+    func testPreviewListActionsConfirmOrFailInTheBar() async throws {
+        controller.readiness = .disabled
+        press(); controller.hotkeyReleased()
+        harness.respond = { try ScriptedHarness.fixture("list-files", seq: $0.seq) }
+        controller.composerEdited("find invoice"); await settle()
+        host.performResult = .success("Copied path")
+        controller.cardAction(.copyPath(token: "tok_3fa8c2d1e9b0"), fromAgent: false); await settle()
+        XCTAssertEqual(surface.confirmations, ["Copied path"], "⌘⇧C on a previewed list is confirmed in the bar")
+        XCTAssertTrue(surface.notices.isEmpty)
+        escape()
+        press(); controller.hotkeyReleased()
+        controller.composerEdited("find invoice"); await settle()
+        host.performResult = .failure(DomainError("token_expired", "That result expired. Search again."))
+        controller.cardAction(.openFile(token: "tok_3fa8c2d1e9b0"), fromAgent: false); await settle()
+        XCTAssertEqual(surface.failures, ["token_expired"], "…and a failure is shown, not swallowed")
+        XCTAssertTrue(Application.canType(control: true, browserPinned: false))
+        XCTAssertFalse(Application.canType(control: true, browserPinned: true), "⌘Return copies over a pinned Brave tab")
+        XCTAssertFalse(Application.canType(control: false, browserPinned: false))
+    }
+
+    func testANoticeOnlyFinalAnswerGoesToTheAgent() async throws {
+        let notice = #"{"seq":0,"elapsedMs":1,"source":"grammar","decision":"answer","intent":"currency","title":"Downloading ECB reference rates. Try again in a moment.","card":{"format":"pi-os-ui/1","root":"r","elements":{"r":{"type":"Answer","props":{"summary":"100 USD in EUR"},"children":["n"]},"n":{"type":"Notice","props":{"tone":"info","text":"Downloading ECB reference rates. Try again in a moment."}}}}}"#
+        harness.respond = { try ScriptedHarness.response(notice, seq: $0.seq) }
+        await typeAndReturn("100 usd in eur")
+        XCTAssertEqual(host.agent.map(\.prompt), ["100 usd in eur"], "Mirrors /invoke: a notice is not an answer")
+        XCTAssertTrue(surface.instant.isEmpty)
+        // As a typing preview it is still a useful hint.
+        guard case .hint? = InstantPreview.make(try ScriptedHarness.response(notice, seq: 1), inputMode: "text") else { return XCTFail() }
+    }
+
     func testFallthroughGoesToTheAgentWithTypedInput() async throws {
         harness.respond = { try ScriptedHarness.fixture("fallthrough-deictic", seq: $0.seq) }
         await typeAndReturn("summarize this")
@@ -341,6 +448,70 @@ import XCTest
         controller.composerEdited("15% of 340")
         scheduler.advance(0.2); await settle()
         XCTAssertEqual(surface.previews.count, 1)
+    }
+
+    // MARK: Typing previews (leading edge + 33 ms throttle; voice partials keep the 150 ms debounce)
+
+    private func calc(_ value: String) -> (InstantRequest) throws -> InstantResponse {
+        { request in
+            var object = try JSONSerialization.jsonObject(with: Data(contentsOf: ScriptedHarness.fixtures.appendingPathComponent("answer-calc.json"))) as! [String: Any]
+            object["title"] = value; object["seq"] = request.seq
+            return try JSONDecoder().decode(InstantResponse.self, from: JSONSerialization.data(withJSONObject: object))
+        }
+    }
+
+    func testTheFirstKeystrokePreviewsWithoutWaiting() async throws {
+        controller.readiness = .disabled
+        press(); controller.hotkeyReleased()
+        harness.respond = { try ScriptedHarness.fixture("answer-calc", seq: $0.seq) }
+        controller.composerEdited("15% of 34")
+        await settle()
+        XCTAssertEqual(harness.requests.count, 1, "Leading edge: no debounce before the first request")
+        XCTAssertEqual(harness.requests.first?.phase, .typing); XCTAssertEqual(harness.requests.first?.text, "15% of 34")
+        XCTAssertEqual(surface.previews.last, .value("51"))
+    }
+
+    func testFastTypingIsThrottledAndTheLastTextAlwaysGoesOut() async throws {
+        controller.readiness = .disabled
+        press(); controller.hotkeyReleased()
+        harness.respond = { try ScriptedHarness.fixture("answer-calc", seq: $0.seq) }
+        let edits = (1...10).map { "12" + String(repeating: "3", count: $0) }
+        for (index, text) in edits.enumerated() {
+            controller.composerEdited(text)
+            if index < edits.count - 1 { scheduler.advance(0.010) }
+        }
+        scheduler.advance(0.2); await settle()
+        XCTAssertLessThanOrEqual(harness.requests.count, 5, "≤ ceil(100 ms / 33 ms) + 1 requests for 10 edits")
+        XCTAssertGreaterThanOrEqual(harness.requests.count, 3, "…but it keeps previewing while typing")
+        XCTAssertEqual(harness.requests.last?.text, edits.last, "The final text is always sent")
+        XCTAssertTrue(harness.requests.allSatisfy { $0.phase == .typing && $0.inputMode == "text" })
+        let count = harness.requests.count
+        scheduler.advance(1); await settle()
+        XCTAssertEqual(harness.requests.count, count, "Quiet: nothing more is sent")
+    }
+
+    func testAnEditUpdatesTheValueWithinOneThrottleInterval() async throws {
+        controller.readiness = .disabled
+        press(); controller.hotkeyReleased()
+        harness.respond = calc("5.1")
+        controller.composerEdited("15% of 34"); await settle()
+        XCTAssertEqual(surface.previews.last, .value("5.1"))
+        harness.respond = calc("51")
+        controller.composerEdited("15% of 340"); await settle()
+        XCTAssertEqual(surface.previews.last, .value("5.1"), "Inside the window the edit waits…")
+        scheduler.advance(0.033); await settle()
+        XCTAssertEqual(surface.previews.last, .value("51"), "…for at most one throttle interval")
+        // A fallthrough right after a value holds it for one interval instead of blinking.
+        harness.respond = { try ScriptedHarness.fixture("fallthrough-no-match", seq: $0.seq) }
+        scheduler.advance(0.1)
+        controller.composerEdited("15% of 340 a"); await settle()
+        XCTAssertEqual(surface.previews.last, .value("51"))
+        scheduler.advance(0.033); await settle()
+        XCTAssertEqual(surface.previews.last, .some(nil), "No stale value outlives one interval")
+        harness.respond = calc("52")
+        scheduler.advance(0.1)
+        controller.composerEdited("15% of 346"); await settle()
+        XCTAssertEqual(surface.previews.last, .value("52"))
     }
 
     func testReturnOnAFreshTypedListOpensTheSelectionWithoutAnotherRequest() async throws {
@@ -471,10 +642,13 @@ import XCTest
         // Language English with Region Germany is "en-US-u-rg-dezzzz" in BCP 47: rejected by Node,
         // which would fail every typed /invoke with invalid_arguments.
         XCTAssertFalse(harnessAccepts(Locale(identifier: "en_US@rg=dezzzz").identifier(.bcp47)))
-        XCTAssertEqual(CommandController.wireLocale(Locale(identifier: "en_US@rg=dezzzz")), "en-US")
-        XCTAssertEqual(CommandController.wireLocale(Locale(identifier: "de_DE@calendar=gregorian;rg=atzzzz")), "de-DE")
+        // The formatting locale: the effective region (rg) wins, so Node uses a decimal comma.
+        XCTAssertEqual(CommandController.wireLocale(Locale(identifier: "en_US@rg=dezzzz")), "en-DE")
+        XCTAssertEqual(CommandController.wireLocale(Locale(identifier: "de_DE@calendar=gregorian;rg=atzzzz")), "de-AT")
         XCTAssertEqual(CommandController.wireLocale(Locale(identifier: "sr-Latn_RS")), "sr-Latn-RS")
         XCTAssertEqual(CommandController.wireLocale(Locale(identifier: "es_419")), "es-419")
+        XCTAssertEqual(CommandController.wireLocale(Locale(identifier: "en_US")), "en-US")
+        XCTAssertEqual(CommandController.wireLocale(Locale(identifier: "de")), "de")
         XCTAssertTrue(harnessAccepts(CommandController.wireLocale()), "This Mac's own locale")
         harness.respond = { try ScriptedHarness.fixture("fallthrough-deictic", seq: $0.seq) }
         await typeAndReturn("summarize this")

@@ -97,6 +97,11 @@ export interface ClassifierHints {
 
 export interface IntentClassifier {
   readonly name: string;
+  /**
+   * False for classifiers that send text off this machine (kind "pi", e.g. a cloud model). Those
+   * are consulted only for a final utterance, never for typing/voice partials. Default: local.
+   */
+  readonly local?: boolean;
   /** Never throws; resolves null when unavailable, timed out or aborted. */
   classify(text: string, signal: AbortSignal): Promise<ClassifierHints | null>;
 }

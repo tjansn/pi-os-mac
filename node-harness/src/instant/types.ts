@@ -35,6 +35,8 @@ export type DateQuery =
 /** Grammar output: what the utterance asks for, before any engine runs. */
 export type Parsed =
   | { kind: "refuse" }
+  /** "delete Slack": refused when the bare object is exactly an installed app, else a plain miss. */
+  | { kind: "delete_target"; target: string }
   | { kind: "fallthrough"; reason: "deictic" | "compound" | "unknown_place" }
   | { kind: "calc"; expression: string; display: string; units: boolean }
   | { kind: "unit"; expression: string; display: string }

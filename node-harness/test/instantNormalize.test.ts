@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  canonicalMath, cleanUtterance, detectLang, fixDecimalSeparators, normalize, normalizeSpokenUrl,
+  canonicalMath, cleanUtterance, decimalConvention, detectLang, fixDecimalSeparators, normalize, normalizeSpokenUrl,
 } from "../src/instant/normalize.js";
 import { applyDigitScales, deWordsToDigits, deWordToNumber, enWordsToDigits } from "../src/instant/numberWords.js";
 
@@ -75,6 +75,20 @@ test("decimal separators by language", () => {
   assert.equal(fixDecimalSeparators("1,000,000.5", "en"), "1000000.5");
   assert.equal(normalize("1,5 mal 2", "de").numeric, "1.5 mal 2");
   assert.equal(normalize("1.000 * 3", "de").numeric, "1000 * 3");
+});
+
+test("decimal separators follow the format locale's region (en-DE from an rg override parses 2,5)", () => {
+  assert.equal(decimalConvention("en", "en-DE"), "comma");
+  assert.equal(decimalConvention("en", "en-US"), "point");
+  assert.equal(decimalConvention("en", "de-CH"), "point");
+  assert.equal(decimalConvention("de", "en-US"), "comma");
+  assert.equal(decimalConvention("en", undefined), "point");
+  assert.equal(decimalConvention("en", "not a locale"), "point");
+  assert.equal(normalize("2,5 * 4", "en-DE").numeric, "2.5 * 4");
+  assert.equal(normalize("1.000 + 1", "en-DE").numeric, "1000 + 1");
+  assert.equal(normalize("1,250 * 4", "en-US").numeric, "1250 * 4");
+  assert.equal(fixDecimalSeparators("1,5 mal 2", "comma"), "1.5 mal 2");
+  assert.equal(fixDecimalSeparators("1,000 * 3", "point"), "1000 * 3");
 });
 
 test("cleanUtterance strips wake word, politeness and trailing punctuation but keeps factorials", () => {

@@ -62,7 +62,8 @@ test("full Mac desktop control still excludes built-ins and global extension byp
       assert.deepEqual(session.getAllTools().map(t => t.name).sort(), [...names].sort());
       assert.deepEqual(session.agent.state.tools.map(t => t.name).sort(), [...names].sort());
       assert.ok(!session.getAllTools().some(t => ["bash", "read", "edit", "write", "fixture_global_tool"].includes(t.name)));
-      assert.equal(loader.getExtensions().extensions.length, 6);
+      // computer use, launcher/instant, show_result, escalate, prompt-cache key, codemode policy + codemode.
+      assert.equal(loader.getExtensions().extensions.length, 7);
     } finally { session.dispose(); }
   }
 });

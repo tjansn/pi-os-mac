@@ -125,7 +125,7 @@ public enum VoiceAvailability {
     @MainActor public static func installAssets(_ language: VoiceLanguage, progress: ((Double) -> Void)? = nil) async throws {
         guard #available(macOS 26, *), SpeechTranscriber.isAvailable else { throw VoiceError.unavailable() }
         guard let locale = await SpeechTranscriber.supportedLocale(equivalentTo: language.locale) else {
-            throw VoiceError.unavailable("This Mac cannot transcribe \(language.displayName) on device.")
+            throw VoiceError.unavailable("This Mac cannot transcribe \(language.englishName) on device.")
         }
         do {
             let reserved = await AssetInventory.reservedLocales
@@ -406,7 +406,8 @@ final class MicrophoneCapture: @unchecked Sendable {
     private let maximumSeconds: Double
     private let queue = DispatchQueue(label: "dev.pi-os.voice.capture", qos: .userInitiated)
     // Confined to `queue`. Created by `start()` only, so a capture that never starts never touches audio.
-    private lazy var engine = AVAudioEngine()
+    private var engine: AVAudioEngine?
+    private var restartPolicy = CaptureRestartPolicy()
     private var running = false
     private var tapInstalled = false
     private var observer: NSObjectProtocol?
@@ -450,24 +451,47 @@ final class MicrophoneCapture: @unchecked Sendable {
             // A take discarded before this block ran (a very quick tap) never opens the microphone.
             guard !isEnding else { return }
             do {
-                let input = engine.inputNode
-                let format = input.outputFormat(forBus: 0)
-                guard format.sampleRate > 0, format.channelCount > 0 else {
-                    throw VoiceError.unavailable("No microphone input is available.")
-                }
-                try installTap(on: input, format: format)
-                tapInstalled = true
-                engine.prepare()
-                try engine.start()
-                running = true
-                observer = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine,
-                                                                  queue: nil) { [weak self] _ in
-                    self?.queue.async { self?.halt(VoiceError.unavailable("The audio input changed while listening. Hold the hotkey again.")) }
-                }
+                try startEngine()
+                // The take's cap runs from its first start; a restart never extends it.
                 queue.asyncAfter(deadline: .now() + maximumSeconds) { [weak self] in self?.stopEngine(); self?.endInput(discard: false) }
             } catch {
                 halt(error)
             }
+        }
+    }
+
+    /// Queue-confined. Always a new engine: after a Bluetooth headset switches to its hands-free
+    /// profile, a reused engine can keep reporting the stale 48 kHz input format.
+    private func startEngine() throws {
+        let engine = AVAudioEngine()
+        self.engine = engine
+        let input = engine.inputNode
+        let format = input.outputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0 else {
+            throw VoiceError.unavailable("No microphone input is available.")
+        }
+        // Observed before start(), so a change between start() and registration is not missed.
+        observer = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine,
+                                                          queue: nil) { [weak self] _ in
+            self?.queue.async { self?.configurationChanged() }
+        }
+        try installTap(on: input, format: format)
+        tapInstalled = true
+        engine.prepare()
+        try engine.start()
+        running = true
+    }
+
+    /// AirPods and other Bluetooth headsets switch profile when their microphone opens (and a
+    /// headset can connect mid-take): restart once on the new format; a second change ends the take.
+    private func configurationChanged() {
+        switch restartPolicy.onConfigurationChange(ending: isEnding) {
+        case .ignore: return
+        case .halt: halt(VoiceError.unavailable(CaptureRestartPolicy.failureMessage))
+        case .restart:
+            stopEngine()
+            lock.lock(); flushConverterLocked(); lock.unlock()
+            do { try startEngine() } catch { halt(error) }
         }
     }
 
@@ -492,8 +516,8 @@ final class MicrophoneCapture: @unchecked Sendable {
     /// Queue-confined. Touches the input node only if this take installed a tap.
     private func stopEngine() {
         if let observer { NotificationCenter.default.removeObserver(observer); self.observer = nil }
-        if tapInstalled { engine.inputNode.removeTap(onBus: 0); tapInstalled = false }
-        if running { engine.stop(); running = false }
+        if tapInstalled { engine?.inputNode.removeTap(onBus: 0); tapInstalled = false }
+        if running { engine?.stop(); running = false }
     }
 
     private func installTap(on input: AVAudioInputNode, format: AVAudioFormat) throws {
@@ -539,6 +563,8 @@ final class MicrophoneCapture: @unchecked Sendable {
             return
         }
         if converter?.inputFormat != buffer.format {
+            // A new device format (an engine restart): keep the old resampler's tail first.
+            flushConverterLocked()
             converter = AVAudioConverter(from: buffer.format, to: target)
             converter?.primeMethod = .none
         }
@@ -566,16 +592,21 @@ final class MicrophoneCapture: @unchecked Sendable {
 
     private func finishLocked(flush: Bool) {
         guard !finished else { return }
+        if flush { flushConverterLocked() }
         finished = true
-        if flush, let converter, let target = analyzerFormat,
-           let output = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: 1024) {
-            var error: NSError?
-            let status = converter.convert(to: output, error: &error) { _, inputStatus in
-                inputStatus.pointee = .endOfStream; return nil
-            }
-            if status != .error, output.frameLength > 0 { continuation.yield(AnalyzerInput(buffer: output)) }
-        }
         continuation.finish()
+    }
+
+    /// Ends the current resampler (its buffered tail is yielded); the next buffer creates a new one.
+    private func flushConverterLocked() {
+        defer { converter = nil }
+        guard !finished, let converter, let target = analyzerFormat,
+              let output = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: 1024) else { return }
+        var error: NSError?
+        let status = converter.convert(to: output, error: &error) { _, inputStatus in
+            inputStatus.pointee = .endOfStream; return nil
+        }
+        if status != .error, output.frameLength > 0 { continuation.yield(AnalyzerInput(buffer: output)) }
     }
 
     private static func rms(_ buffer: AVAudioPCMBuffer) -> Float? {

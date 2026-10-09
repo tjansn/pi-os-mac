@@ -3,6 +3,52 @@
 2026-09-15. Target machine: Apple Silicon, macOS 26.5.2, Xcode 26.6 / Swift 6.3.3,
 Node 24.15.0. Deployment target is macOS 14; that OS has not been exercised here.
 
+## 2026-10-02 final-review fixes (Mac side, d-swift), built and tested offline, NOT installed
+
+- **File search latest-wins.** `FileSearch` counts searches: a running search skips its
+  substring fallback once a newer one is waiting or its caller is gone. The loopback server
+  cancels a launcher read (`launcher.searchFiles` / `listApps`, never an effect) when its client
+  disconnects, so a search Node aborted never starts and never delays the final one. A
+  superseded search whose caller still waits keeps its primary query (the agent's
+  `find_files` calls may run in parallel).
+- **Records survive a lone surrogate.** Status and SSE records pass through a byte-level
+  sanitizer (unpaired `\uD800`–`\uDFFF` escapes → `\uFFFD`) before decoding, so a truncated
+  emoji can no longer turn a completed answer into “Something interrupted your request”.
+- **Laya can be enabled from the app.** Settings → Classifier has Python and Model folder
+  pickers (venv path kept, hidden folders shown), posts them with every other stored field,
+  reads `status.layaLaunch`, disables the switch while Laya cannot start, and explains every
+  reason in a plain sentence. `bundle-runtime.sh` ships `sidecars/laya/laya_intent_sidecar.py`.
+- **Typing previews** go out on the leading edge, then at most every 33 ms with the last text
+  always sent (Node holds file search back for 150 ms of quiet); voice partials keep the 150 ms
+  debounce. A value is held one interval across a fallthrough so the bar does not blink.
+- **Streaming reader** never takes keyboard focus; its bar has “–” (continue in background)
+  and “■” (stop); Escape/close hide it while the task runs; completion takes focus as before.
+- **Inline preview** is one line, values shrink then compact (`≈ 1.27 × 10³⁰`), no `= ≈`,
+  hints keep their key words, the label sits on the draft's first line. **Failure readers**
+  measure with the field's own cell (no clipped remedy at Larger text).
+- **VoiceOver** hears hints, warnings, lists (“… Return opens …”) and every ↑/↓ selection
+  (“2 of 3”); the reader's VoiceOver cursor follows the selection; nothing while listening.
+- **Locale and language names.** Typed requests send the formatting locale (`en-DE` for
+  English with Region Germany); English sentences say “German (Germany)”.
+- **Bluetooth headsets.** An `AVAudioEngineConfigurationChange` restarts capture once on a new
+  engine (the old resampler's tail is kept, the 120 s cap is not extended); a second change ends
+  the take with a message that suggests the built-in microphone. Unverified on hardware.
+- **Smaller fixes.** First-run hint on a voice-off hold (≤ 3×) and a “Turn On Hold to Talk…”
+  menu item; spoken “never mind / vergiss es” ends a take; Notice-only final answers go to the
+  agent (as `/invoke` does); archives are revealed, not opened (Archive Utility can trash them);
+  preview-list actions confirm or fail in the bar; ⌘Return copies over a pinned Brave tab;
+  a slow Return shows the “…” disc; `no_authenticated_model:` failures say “Choose a model”
+  with Open Settings…; the footer names Auto's model; Settings buttons fit, Auto's Model row
+  is “Chosen per request”, Voice/Classifier pages have one Done; listening disc ≥ 85 % accent.
+
+Verified offline (no microphone, speech model, provider, GPU or window): `npm run check`,
+`npm run build`, guarded `npm test` 355/355, clean `swift build` 0 warnings,
+`PI_OFFLINE=1 PI_OS_AGENT=0 swift test` 268/268, `npm run test:macos` 1/1 (now also aborts a
+search and checks live searches still complete). Offscreen snapshots of the changed states at
+standard and Larger text were rendered with `pi-os-ui-preview --snapshot` and inspected. The
+installed app is stale relative to this branch until it is re-published with the stable
+`PI_OS_SIGN_IDENTITY` (AGENTS.md).
+
 ## 2026-10-02 voice magic — Mac wiring (C2), built and tested offline, NOT installed
 
 Branch `wp/c2-mac` (on `feat/voice-magic`). The Whisper bar/reader are extended, not
@@ -25,7 +71,7 @@ Built:
   `takeId`). Utterances over 500 characters and any instant failure go straight to the agent.
   `microphone_denied` / `speech_denied` / `voice_unavailable` / `voice_asset_missing` show
   “Open Voice Settings…”; nothing on the hotkey path requests a permission.
-- **Typing.** Debounced `/instant {phase:"typing"}` previews (`= 51`, hints, a typed result
+- **Typing.** `/instant {phase:"typing"}` previews (debounced in C2; leading edge + 33 ms throttle since the final review) (`= 51`, hints, a typed result
   list above the bar). Return = instant action or selected result, else the agent;
   ⌥Return = always the agent; ⌘Return = reveal / type the value into the pinned window
   (copy without control); ↑/↓ move the list; ⌘⇧C copies a path only from a focused or
@@ -70,7 +116,12 @@ microphone/Speech Recognition TCC on the signed `dev.pi-os.mac`; whether SpeechT
 truly needs Speech Recognition; key-down-to-text latency; Carbon key-up/auto-repeat on real
 keyboards; German model download size/UX; Spotlight results in TCC-protected folders for the
 signed app; real Codex latency per Auto tier; glass/vibrancy legibility over real wallpapers;
-VoiceOver and the physical-keyboard matrix. `CFBundleVersion` is still 12 (Info.plist is not
+VoiceOver and the physical-keyboard matrix (including preview/list announcements and the
+reader's VoiceOver cursor following ↑/↓); Bluetooth/AirPods as default input: HFP profile
+switch on mic open (hold ≥ 2 s on the first take after idle; the take must not end with “The
+audio input changed while listening”), and connecting or disconnecting a headset mid-take —
+the one-restart behaviour is unverified on hardware; that a streaming reader leaves
+keystrokes with the pinned app; Laya pickers with a real venv and model folder. `CFBundleVersion` is still 12 (Info.plist is not
 owned by this package). The installed copy is stale relative to this branch.
 
 ## 2026-10-01 Whisper native UI — build 12 installed

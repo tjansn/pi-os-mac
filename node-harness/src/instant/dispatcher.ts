@@ -12,7 +12,7 @@ import {
   timeAt, timeDiffWith, type InstantDeps, type InstantEngines,
 } from "./engines.js";
 import { localZone as systemZone } from "./engines/timezones.js";
-import { displayLocale, formatNumber, truncate } from "./format.js";
+import { copyNumber, displayLocale, formatNumber, localizeNumbers, truncate } from "./format.js";
 import { DEFAULT_WEB_SEARCH, DELETION_REFUSAL_MESSAGE, parseInstant } from "./grammar/index.js";
 import { normalize } from "./normalize.js";
 import type { DateQuery, MatchContext, Parsed } from "./types.js";
@@ -21,9 +21,15 @@ import type { DateQuery, MatchContext, Parsed } from "./types.js";
  * POST /instant core (DESIGN §3.3): normalize → anchored grammar → engine →
  * InstantResponse with a pi-os-ui/1 card. Node never performs effects; `act`
  * carries a HostAction descriptor and is produced only for phase "final".
- * Typing/partial phases get previews (answer/list). Budgets: 60 ms, 250 ms for
- * file search and the first ECB download. Never throws: every failure is a
- * fallthrough. Logs (perf) carry phase/decision/intent and timings only.
+ * Typing/partial phases get previews (answer/list). Budgets: 60 ms; 250 ms for
+ * the first ECB download; file search 600 ms for typing/partial previews and
+ * 1600 ms for a final (longer than the host's own 1.5 s Spotlight deadline, so a
+ * final gets the host's answer or its search_timeout, never a Node timeout). A
+ * typed file search waits for 150 ms of quiet first (each keystroke supersedes
+ * the last), so only the settled query reaches the host's serial search queue.
+ * Numbers are parsed and shown in the request's format locale and copied in the
+ * same decimal convention. Never throws: every failure is a fallthrough. Logs
+ * (perf) carry phase/decision/intent and timings only.
  */
 
 export interface InstantDispatcherDeps extends InstantDeps {
@@ -37,9 +43,27 @@ export interface InstantDispatcherDeps extends InstantDeps {
   clock?: () => number;
   /** Home directory for "~/…" display paths. */
   homeDir?: string;
-  budgets?: { defaultMs?: number; fileSearchMs?: number; networkMs?: number; classifierMs?: number };
+  budgets?: {
+    defaultMs?: number;
+    /** File search in phase "final" (default 1600 ms, above the host's 1.5 s FileSearch deadline). */
+    fileSearchFinalMs?: number;
+    /** File search previews in phases "typing" and "partial" (default 600 ms). */
+    fileSearchPreviewMs?: number;
+    /** @deprecated alias of fileSearchPreviewMs. */
+    fileSearchMs?: number;
+    /** Quiet period before a typed (phase "typing") file search reaches the host (default 150 ms). */
+    typingFileQuietMs?: number;
+    networkMs?: number;
+    classifierMs?: number;
+  };
   /** Per-dispatch timing hook, e.g. telemetry.perfLog. Never receives text. */
   perf?: (stage: string, ms: number, fields: PerfFields) => void;
+  /**
+   * When set, a phase "final" grammar miss answers its fallthrough immediately and classifies in
+   * the background (same classifierMs deadline); a non-null result arrives here. The agent path
+   * then never waits on the classifier (it fuses hints only if they already arrived).
+   */
+  onLateHints?: (request: InstantRequest, hints: ClassifierHints) => void;
 }
 
 export interface InstantDispatcher {
@@ -102,6 +126,22 @@ function deadline(parent: AbortSignal, ms: number): { signal: AbortSignal; dispo
   };
 }
 
+/** Resolves true after `ms`, or false as soon as `signal` aborts. */
+function quiet(ms: number, signal: AbortSignal): Promise<boolean> {
+  if (signal.aborted) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      resolve(false);
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve(true);
+    }, ms);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 function quoted(text: string): string {
   return `“${truncate(text, 120)}”`;
 }
@@ -158,7 +198,9 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
   const home = deps.homeDir ?? homedir();
   const budgets = {
     defaultMs: deps.budgets?.defaultMs ?? 60,
-    fileSearchMs: deps.budgets?.fileSearchMs ?? 250,
+    fileSearchFinalMs: deps.budgets?.fileSearchFinalMs ?? 1_600,
+    fileSearchPreviewMs: deps.budgets?.fileSearchPreviewMs ?? deps.budgets?.fileSearchMs ?? 600,
+    typingFileQuietMs: deps.budgets?.typingFileQuietMs ?? 150,
     networkMs: deps.budgets?.networkMs ?? 250,
     classifierMs: deps.budgets?.classifierMs ?? 250,
   };
@@ -176,7 +218,9 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
       value = copy = prefix && !result.text.startsWith(prefix) ? `${prefix}${result.text}` : result.text;
     }
     const intent: InstantIntent = parsed.kind === "base" ? "base" : unit ? "unit" : "calc";
-    const input = parsed.display;
+    // One decimal convention per card: the input and the copied value follow the display locale.
+    const input = parsed.kind === "base" ? parsed.display : localizeNumbers(parsed.display, locale);
+    if (parsed.kind !== "base") copy = copyNumber(copy, locale);
     return {
       decision: "answer",
       intent,
@@ -186,9 +230,12 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
     };
   }
 
-  async function currency(parsed: Extract<Parsed, { kind: "currency" }>, locale: string, signal: AbortSignal): Promise<Body> {
+  async function currency(parsed: Extract<Parsed, { kind: "currency" }>, locale: string, phase: InstantPhase, signal: AbortSignal): Promise<Body> {
     const result = await convertCurrencyWith(deps.fx, parsed.amount, parsed.from, parsed.to, locale, { signal, waitMs: budgets.networkMs - 10 });
     if (!result.ok) {
+      // A notice ("Downloading ECB reference rates…", an unknown currency) is a preview hint, never
+      // the final answer to the request: the agent gets the final instead.
+      if (phase === "final") return fallthrough("no_match");
       const asked = `${formatNumber(parsed.amount, locale, 2)} ${parsed.from} in ${parsed.to}`;
       return { decision: "answer", intent: "currency", title: result.message, subtitle: asked, card: noticeCard(result.error === "unknown_currency" ? "warning" : "info", result.message, asked) };
     }
@@ -204,7 +251,7 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
         value: result.display,
         detail: result.rateDisplay,
         freshness: { label: result.label, level: result.freshness },
-        copyText: result.copy,
+        copyText: copyNumber(result.copy, locale),
         summary: `${result.amountDisplay} = ${result.display}`,
       }),
     };
@@ -324,6 +371,17 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
     return { decision: "list", intent: "open_app", title, card: appListCard(title, apps) };
   }
 
+  function refusal(): Body {
+    return { decision: "refuse", code: "file_deletion_blocked", message: DELETION_REFUSAL_MESSAGE, card: refuseCard(DELETION_REFUSAL_MESSAGE) };
+  }
+
+  /** "delete Slack" / "Zoom löschen": uninstalling moves the app to the Trash. Other objects are in-app edits. */
+  async function deleteTarget(target: string, signal: AbortSignal): Promise<Body> {
+    const matcher = deps.apps ? await deps.apps.get(signal) : null;
+    const exact = matcher?.match(target, 8, now().getTime()).some((match) => match.score >= 1);
+    return exact ? refusal() : fallthrough("no_match");
+  }
+
   function system(parsed: Extract<Parsed, { kind: "system" }>, phase: InstantPhase): Body {
     const action: HostAction = parsed.value === undefined ? { type: "system", op: parsed.op } : { type: "system", op: parsed.op, value: parsed.value };
     if (phase === "final") return { decision: "act", intent: "system", title: parsed.title, action, confirm: false };
@@ -333,7 +391,9 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
   async function resolve(parsed: Parsed, request: InstantRequest, ctx: MatchContext, signal: AbortSignal): Promise<Body | null> {
     switch (parsed.kind) {
       case "refuse":
-        return { decision: "refuse", code: "file_deletion_blocked", message: DELETION_REFUSAL_MESSAGE, card: refuseCard(DELETION_REFUSAL_MESSAGE) };
+        return refusal();
+      case "delete_target":
+        return deleteTarget(parsed.target, signal);
       case "fallthrough":
         return fallthrough(parsed.reason);
       case "calc":
@@ -341,7 +401,7 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
       case "base":
         return math(parsed, ctx.locale);
       case "currency":
-        return currency(parsed, ctx.locale, signal);
+        return currency(parsed, ctx.locale, request.phase, signal);
       case "time":
       case "time_convert":
       case "time_diff":
@@ -361,16 +421,28 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
     }
   }
 
-  function budgetFor(parsed: Parsed): number {
-    if (parsed.kind === "file_search") return budgets.fileSearchMs;
+  function budgetFor(parsed: Parsed, phase: InstantPhase): number {
+    if (parsed.kind === "file_search") return phase === "final" ? budgets.fileSearchFinalMs : budgets.fileSearchPreviewMs;
     if (parsed.kind === "currency" && !deps.fx?.snapshot()) return budgets.networkMs + 20;
     return budgets.defaultMs;
   }
 
-  async function hintsFor(reason: FallthroughReason, text: string, phase: InstantPhase, signal: AbortSignal): Promise<ClassifierHints | undefined> {
+  async function hintsFor(reason: FallthroughReason, text: string, request: InstantRequest, phase: InstantPhase, signal: AbortSignal): Promise<ClassifierHints | undefined> {
     const heuristic: ClassifierHints | undefined = reason === "deictic" ? { source: "heuristic", latencyMs: 0, needsScreen: 0.9 } : undefined;
     const classifier = deps.classifier;
     if (!classifier || !text || phase === "typing" || reason === "timeout" || reason === "disabled") return heuristic;
+    // Partials (and takes the user then cancels) never leave the machine: remote classifiers see finals only.
+    if (phase !== "final" && classifier.local === false) return heuristic;
+    const late = deps.onLateHints;
+    if (phase === "final" && late) {
+      // The final is on the critical path to the agent: answer now, deliver hints if they come.
+      const background = deadline(signal, budgets.classifierMs);
+      void race(classifier.classify(text, background.signal).catch(() => null), background.signal)
+        .then((result) => { if (result && result !== TIMEOUT && result !== FAILED) late(request, result); })
+        .catch(() => undefined)
+        .finally(() => background.dispose());
+      return heuristic;
+    }
     const budget = deadline(signal, budgets.classifierMs);
     try {
       const result = await race(classifier.classify(text, budget.signal).catch(() => null), budget.signal);
@@ -401,10 +473,15 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
       intentLabel = parsed?.kind ?? "none";
       if (!parsed || parsed.kind === "fallthrough") {
         const reason: FallthroughReason = parsed?.reason ?? "no_match";
-        const hints = await hintsFor(reason, n.text, phase, signal);
+        const hints = await hintsFor(reason, n.text, request, phase, signal);
         return finish(hints ? { decision: "fallthrough", reason, hints } : fallthrough(reason));
       }
-      const budget = deadline(signal, budgetFor(parsed));
+      // Typing: only the query that survives a quiet period reaches the host's serial search queue;
+      // the next keystroke's request aborts this one (server latest-wins), which answers "timeout".
+      if (phase === "typing" && parsed.kind === "file_search" && budgets.typingFileQuietMs > 0) {
+        if (!(await quiet(budgets.typingFileQuietMs, signal))) return finish(fallthrough("timeout"));
+      }
+      const budget = deadline(signal, budgetFor(parsed, phase));
       let body: Body | null | typeof TIMEOUT | typeof FAILED;
       try {
         body = await race(resolve(parsed, request, ctx, budget.signal), budget.signal);
@@ -413,11 +490,11 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
       }
       if (body === TIMEOUT) return finish(fallthrough("timeout"));
       if (body === FAILED || !body) {
-        const hints = await hintsFor("no_match", n.text, phase, signal);
+        const hints = await hintsFor("no_match", n.text, request, phase, signal);
         return finish(hints ? { decision: "fallthrough", reason: "no_match", hints } : fallthrough("no_match"));
       }
       if (body.decision === "fallthrough" && body.reason !== "timeout" && !body.hints) {
-        const hints = await hintsFor(body.reason, n.text, phase, signal);
+        const hints = await hintsFor(body.reason, n.text, request, phase, signal);
         if (hints) return finish({ ...body, hints });
       }
       return finish(body);

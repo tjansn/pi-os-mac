@@ -118,6 +118,9 @@ export async function start(options: StartOptions = {}) {
   const stats = options.latencyStats ?? new LatencyStats({ log: () => {} });
   const server = new HarnessServer({ ...loadConfig({}), port: 0, hostToken: TOKEN, agentEnabled: true, invokeTimeoutMs: 20_000,
     capturesDir: CAPTURES, ...options.config }, {
+    // Auto-default behaviour is per host; the shared suite pins macOS so it runs alike on every CI OS
+    // (Windows defaults are covered by tests that inject "win32").
+    platform: "darwin",
     ...options,
     hostClient: host as unknown as HostClient,
     modelSettings: options.modelSettings ?? new AgentModelSettings(join(dir, "settings.json"), () => {}),

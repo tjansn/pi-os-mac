@@ -69,11 +69,11 @@ public enum VoiceSettingsText {
     }
     public static func asset(_ status: VoiceAssetStatus, language: VoiceLanguage, progress: Double? = nil) -> String {
         switch status {
-        case .installed: return "\(language.displayName): ready on this Mac"
-        case .notInstalled: return "\(language.displayName): download needed"
+        case .installed: return "\(language.englishName): ready on this Mac"
+        case .notInstalled: return "\(language.englishName): download needed"
         case .downloading:
-            return "\(language.displayName): downloading" + (progress.map { " \(Int(($0 * 100).rounded()))%" } ?? "…")
-        case .unsupported: return "\(language.displayName): not available on this Mac"
+            return "\(language.englishName): downloading" + (progress.map { " \(Int(($0 * 100).rounded()))%" } ?? "…")
+        case .unsupported: return "\(language.englishName): not available on this Mac"
         }
     }
     public static let unavailable = "Voice input needs macOS 26 or later with on-device speech recognition."

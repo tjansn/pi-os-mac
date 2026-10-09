@@ -144,6 +144,16 @@ test("deletion phrases are refused in every phase and never reach the classifier
   assert.deepEqual(calls, []);
 });
 
+test("trash questions and web searches are never refused, in any phase", async () => {
+  const dispatcher = make();
+  for (const phase of ["typing", "partial", "final"] as const) {
+    for (const text of ["how do I empty the trash", "google how to empty the trash", "delete the comma", "lösch das"]) {
+      const response = await dispatcher.dispatch(request(text, phase));
+      assert.notEqual(response.decision, "refuse", `${text} (${phase})`);
+    }
+  }
+});
+
 test("classifier: only on grammar miss, only partial/final, only hints, never an action", async () => {
   const hints: ClassifierHints = { source: "laya", latencyMs: 12, intent: "open_launch", intentP: 0.95, complete: 0.97 };
   const { classifier, calls } = stubClassifier(hints);
@@ -160,6 +170,50 @@ test("classifier: only on grammar miss, only partial/final, only hints, never an
   assert.deepEqual(deictic.decision === "fallthrough" && deictic.hints, hints);
 });
 
+test("a remote classifier (local: false) sees finals only: partials never leave the machine", async () => {
+  const hints: ClassifierHints = { source: "pi-classifier", latencyMs: 300, intent: "open_launch", intentP: 0.9 };
+  const { classifier, calls } = stubClassifier(hints);
+  const dispatcher = make({ classifier: { ...classifier, local: false } });
+  for (const phase of ["typing", "partial"] as const) {
+    const response = await dispatcher.dispatch(request("could you bring figma up", phase));
+    assert.deepEqual(response.decision === "fallthrough" && response.hints, undefined, phase);
+  }
+  // Deixis keeps its local heuristic hint without asking the remote classifier.
+  const deictic = await dispatcher.dispatch(request("summarize this page", "partial"));
+  assert.deepEqual(deictic.decision === "fallthrough" && deictic.hints, { source: "heuristic", latencyMs: 0, needsScreen: 0.9 });
+  assert.deepEqual(calls, []);
+  const final = await dispatcher.dispatch(request("could you bring figma up", "final"));
+  assert.deepEqual(final.decision === "fallthrough" && final.hints, hints);
+  assert.equal(calls.length, 1);
+});
+
+test("with onLateHints a final never waits on the classifier; late hints arrive via the callback", async () => {
+  const hints: ClassifierHints = { source: "laya", latencyMs: 120, needsScreen: 0.8 };
+  const slow: IntentClassifier = { name: "slow", classify: () => new Promise((resolve) => setTimeout(() => resolve(hints), 120)) };
+  const late: { request: InstantRequest; hints: ClassifierHints }[] = [];
+  const dispatcher = make({ classifier: slow, budgets: { classifierMs: 250 }, onLateHints: (request, value) => late.push({ request, hints: value }) });
+  const started = performance.now();
+  const final = await dispatcher.dispatch(request("could you bring figma up", "final", { takeId: "take-1" }));
+  assert.ok(performance.now() - started < 60, "the final answered without waiting");
+  assert.deepEqual(withoutTiming(final), { seq: 1, source: "grammar", decision: "fallthrough", reason: "no_match" });
+  // Deixis still carries its immediate heuristic hint.
+  const deictic = await dispatcher.dispatch(request("summarize this page", "final", { takeId: "take-2" }));
+  assert.deepEqual(deictic.decision === "fallthrough" && deictic.hints, { source: "heuristic", latencyMs: 0, needsScreen: 0.9 });
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  assert.deepEqual(late.map((entry) => [entry.request.takeId, entry.hints]), [["take-1", hints], ["take-2", hints]]);
+  // Partials still wait (they run during speech, off the critical path) and never use the callback.
+  const partial = await dispatcher.dispatch(request("could you bring figma up", "partial", { takeId: "take-3" }));
+  assert.deepEqual(partial.decision === "fallthrough" && partial.hints, hints);
+  assert.equal(late.length, 2);
+  // A hanging classifier never calls back and leaves nothing pending past its deadline.
+  const hang = stubClassifier("hang");
+  const quiet: unknown[] = [];
+  const hanging = make({ classifier: hang.classifier, budgets: { classifierMs: 30 }, onLateHints: (...args) => quiet.push(args) });
+  await hanging.dispatch(request("could you bring figma up", "final", { takeId: "take-4" }));
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  assert.deepEqual(quiet, []);
+});
+
 test("classifier failures and hangs degrade to heuristic hints within the deadline", async () => {
   const hang = stubClassifier("hang");
   const dispatcher = make({ classifier: hang.classifier, budgets: { classifierMs: 40 } });
@@ -173,7 +227,7 @@ test("classifier failures and hangs degrade to heuristic hints within the deadli
 });
 
 test("budgets: a hanging host or engine falls through with timeout", async () => {
-  const hangingFiles = make({ searchFiles: () => new Promise(() => {}), budgets: { fileSearchMs: 80 } });
+  const hangingFiles = make({ searchFiles: () => new Promise(() => {}), budgets: { fileSearchFinalMs: 80 } });
   let started = performance.now();
   const files = await hangingFiles.dispatch(request("find my resume"));
   assert.deepEqual(files.decision === "fallthrough" && files.reason, "timeout");
@@ -196,6 +250,84 @@ test("budgets: a hanging host or engine falls through with timeout", async () =>
   // An engine failure is a miss, not a timeout.
   const brokenFend = make({ fend: { get: () => Promise.reject(new Error("no wasm")), peek: () => null } });
   assert.deepEqual(await brokenFend.dispatch(request("2+2")).then((r) => r.decision === "fallthrough" && r.reason), "no_match");
+});
+
+test("file-search budgets depend on the phase: a final waits past the host's own 1.5 s deadline, previews stay short", async () => {
+  const slow = (ms: number) => async () => { await new Promise((resolve) => setTimeout(resolve, ms)); return searchResponse; };
+  // Defaults: 400 ms (a few-hit search with the host's substring fallback) still lists on a final.
+  const final = await make({ searchFiles: slow(400) }).dispatch(request("find invoice pdfs"));
+  assert.equal(final.decision, "list");
+  // Previews keep a short budget; the stale preview is superseded anyway.
+  const preview = make({ searchFiles: slow(400), budgets: { fileSearchPreviewMs: 250, typingFileQuietMs: 0 } });
+  for (const phase of ["typing", "partial"] as const) {
+    const response = await preview.dispatch(request("find invoice pdfs", phase));
+    assert.deepEqual(response.decision === "fallthrough" && response.reason, "timeout", phase);
+  }
+  // The deprecated fileSearchMs alias still sets the preview budget only.
+  const alias = make({ searchFiles: slow(150), budgets: { fileSearchMs: 50, typingFileQuietMs: 0 } });
+  assert.deepEqual(await alias.dispatch(request("find invoice pdfs", "partial")).then((r) => r.decision === "fallthrough" && r.reason), "timeout");
+  assert.equal((await alias.dispatch(request("find invoice pdfs"))).decision, "list");
+});
+
+test("typing: a file search waits for quiet (each keystroke supersedes it); other intents answer at once; partial/final never wait", async () => {
+  const calls: string[] = [];
+  const dispatcher = make({
+    searchFiles: async (req) => { calls.push(req.nameGroups.flat().join(" ")); return searchResponse; },
+    budgets: { typingFileQuietMs: 150 },
+  });
+  // Three keystrokes 20 ms apart: the caller (server latest-wins) aborts the previous request each time.
+  const results: Promise<InstantResponse>[] = [];
+  let controller: AbortController | undefined;
+  for (const text of ["find invoice", "find invoice pd", "find invoice pdfs"]) {
+    controller?.abort();
+    controller = new AbortController();
+    results.push(dispatcher.dispatch(request(text, "typing"), controller.signal));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  const lastSent = performance.now() - 20;
+  const settled = await Promise.all(results);
+  assert.deepEqual(settled.slice(0, 2).map((r) => r.decision === "fallthrough" && r.reason), ["timeout", "timeout"]);
+  assert.equal(settled[2]!.decision, "list");
+  assert.ok(performance.now() - lastSent >= 140, "the surviving request waited for quiet");
+  assert.equal(calls.length, 1, "only the settled query reaches the host");
+  assert.match(calls[0]!, /invoice/);
+
+  let started = performance.now();
+  const calc = await dispatcher.dispatch(request("15% of 340", "typing"));
+  assert.equal(calc.decision, "answer");
+  assert.ok(performance.now() - started < 100, "calculations preview on every keystroke");
+  for (const phase of ["partial", "final"] as const) {
+    started = performance.now();
+    await dispatcher.dispatch(request("find invoice pdfs", phase));
+    assert.ok(performance.now() - started < 120, `${phase} is not delayed`);
+  }
+});
+
+test("one decimal convention per card: input, value and copy follow the format locale", async () => {
+  const dispatcher = make();
+  const copyOf = (response: InstantResponse): unknown => (response.decision === "answer" ? response.card.elements.n1?.on?.copy?.params.text : undefined);
+  const inputOf = (response: InstantResponse): unknown => (response.decision === "answer" ? response.card.elements.n1?.props.input : undefined);
+  for (const [text, locale] of [["15% von 1234,5", "de-DE"], ["15% of 1234,5", "en-DE"]] as const) {
+    const response = await dispatcher.dispatch(request(text, "final", { locale }));
+    assert.equal(response.decision, "answer", `${text} ${locale}`);
+    assert.equal(inputOf(response), "15% of 1234,5", locale);
+    assert.equal(response.decision === "answer" && response.title, "185,175", locale);
+    assert.equal(copyOf(response), "185,175", locale);
+  }
+  const us = await dispatcher.dispatch(request("15% of 1234.5", "final", { locale: "en-US" }));
+  assert.deepEqual([inputOf(us), us.decision === "answer" && us.title, copyOf(us)], ["15% of 1234.5", "185.175", "185.175"]);
+  // en-DE (an en-US Mac with region Germany) parses German separators.
+  assert.equal(copyOf(await dispatcher.dispatch(request("2,5 * 4", "final", { locale: "en-DE" }))), "10");
+  assert.equal(copyOf(await dispatcher.dispatch(request("1.000 + 1", "final", { locale: "en-DE" }))), "1001");
+  assert.equal(copyOf(await dispatcher.dispatch(request("1,250 * 4", "final", { locale: "en-US" }))), "5000");
+  assert.equal((await dispatcher.dispatch(request("2,5 * 4", "final", { locale: "en-US" }))).decision, "fallthrough");
+  // Units: the copied number uses the display convention too.
+  const km = await dispatcher.dispatch(request("2,5 km in miles", "final", { locale: "de-DE" }));
+  assert.equal(inputOf(km), "2,5 km in miles");
+  assert.match(String(copyOf(km)), /^1,55/);
+  // Base conversions keep programmer literals.
+  const hex = await dispatcher.dispatch(request("0xff in decimal", "final", { locale: "de-DE" }));
+  assert.deepEqual([hex.decision === "answer" && hex.title, copyOf(hex)], ["255", "255"]);
 });
 
 test("budget timers are cleared once a dispatch settles", async () => {
@@ -228,8 +360,10 @@ test("never throws: invalid requests, disabled lane and throwing dependencies", 
   const noDeps = createInstantDispatcher({ fend, now: () => NOW });
   assert.equal((await noDeps.dispatch(request("find my resume"))).decision, "fallthrough");
   assert.equal((await noDeps.dispatch(request("open figma"))).decision, "fallthrough");
-  const currency = await noDeps.dispatch(request("100 usd in eur"));
+  const currency = await noDeps.dispatch(request("100 usd in eur", "typing"));
   assert.deepEqual(currency.decision === "answer" && currency.title, "Currency rates are not available.");
+  // A notice is a preview only: the final goes to the agent.
+  assert.deepEqual(withoutTiming(await noDeps.dispatch(request("100 usd in eur"))), { seq: 1, source: "grammar", decision: "fallthrough", reason: "no_match" });
 });
 
 test("privacy: perf hook and logs never carry the utterance", async () => {
@@ -269,20 +403,26 @@ test("currency rates download on the first currency query only, then come from t
   assert.deepEqual(first.decision === "answer" && { intent: first.intent, title: first.title }, { intent: "currency", title: "89.09 EUR" });
   await dispatcher.dispatch(request("50 chf in usd"));
   assert.equal(fetches, 1);
-  const unknown = await dispatcher.dispatch(request("100 usd in inr"));
+  // The copied amount uses the card's decimal convention (de: "89,09"), never grouping.
+  const german = await dispatcher.dispatch(request("100 usd in eur", "final", { locale: "de-DE" }));
+  const germanCopy = german.decision === "answer" ? german.card.elements.n1?.on?.copy?.params.text : undefined;
+  assert.deepEqual([german.decision === "answer" && german.title, germanCopy], ["89,09 EUR", "89,09"]);
+  const unknown = await dispatcher.dispatch(request("100 usd in inr", "partial"));
   assert.deepEqual(unknown.decision === "answer" && unknown.title, "No ECB reference rate for INR.");
+  assert.equal((await dispatcher.dispatch(request("100 usd in inr"))).decision, "fallthrough", "a notice never ends a final");
 
   let offlineFetches = 0;
   const offline = make({ fx: new EcbRateStore({ file: join(mkdtempSync(join(tmpdir(), "pi-os-instant-fx-")), "fx.json"), fetch: (async () => { offlineFetches++; throw new Error("offline"); }) as typeof fetch, log: () => {} }) });
-  for (const phase of ["typing", "typing", "partial", "final"] as const) {
+  for (const phase of ["typing", "typing", "partial"] as const) {
     const failed = await offline.dispatch(request("100 usd in eur", phase));
     assert.deepEqual(failed.decision === "answer" && failed.title, "ECB reference rates could not be downloaded.", phase);
   }
+  assert.equal((await offline.dispatch(request("100 usd in eur", "final"))).decision, "fallthrough", "the final goes to the agent");
   assert.equal(offlineFetches, 1, "previews while offline do not re-fetch per keystroke");
 
   const disabled = make({ fx: new EcbRateStore({ file: join(mkdtempSync(join(tmpdir(), "pi-os-instant-fx-")), "fx.json"), enabled: () => false }) });
-  const off = await disabled.dispatch(request("100 usd in eur"));
-  assert.deepEqual(off.decision === "answer" && off.title, "Currency rates are turned off in Settings.");
+  const off = await disabled.dispatch(request("100 usd in eur", "typing"));
+  assert.deepEqual(off.decision === "answer" && off.title, "Currency rate downloads are turned off (PI_OS_FX_RATES=0).");
 });
 
 test("every card binding is a valid host action and file actions only carry host tokens", async () => {

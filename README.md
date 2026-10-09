@@ -83,8 +83,8 @@ adds a faster path on top of the agent:
 
 - **Push-to-talk (opt-in).** Turn on *Settings → Voice*, then hold the hotkey and speak
   (macOS 26+, on-device Apple speech recognition, English or German). A quick tap still
-  opens the text bar. Microphone and Speech Recognition are requested only from buttons in
-  Settings, never from the hotkey. Audio and transcripts stay on the Mac and are never
+  opens the text bar; while voice is off, a hold says where to turn it on. Microphone and
+  Speech Recognition are requested only from buttons in Settings, never from the hotkey. Audio and transcripts stay on the Mac and are never
   recorded or logged.
 - **Instant commands.** Math, units, currencies, time zones, dates, opening apps and links,
   web searches, file search and volume run without a model, usually in milliseconds, with a
@@ -98,7 +98,8 @@ adds a faster path on top of the agent:
 - **Streaming and result cards.** Answers stream into the reader and can be native cards
   (tables, lists, files) with buttons limited to copy, open, reveal and ask.
 - **Local classifier (opt-in).** The optional Laya classifier (*Settings → Classifier*) is
-  advisory only, runs on the CPU, needs about 5 GB of memory, and is off by default.
+  advisory only, runs on the CPU, needs about 5 GB of memory, and is off by default. Choose
+  its Python environment and model folder on that page, then switch it on.
 
 Windows keeps its text prompt; it also sees *Auto* in its model list and quick answers
 (math, conversions) arrive as ordinary answer text.
@@ -127,6 +128,7 @@ in the tray settings page).
 | `shared/protocol/protocol.md` | You change any endpoint, port, or message shape |
 | `shared/schemas/desktop-context.ts` | You touch the context snapshot shape (C# mirror must stay field-compatible) |
 | `AGENTS.md` | You use a coding agent in this repository |
+| `VOICE_MAGIC.md` | You want the voice/instant/Auto design, its measurements, the evaluations (macbrow, jev, json-render, Laya, Clef, pi-durable) and what is still unverified |
 
 ## Current Windows capabilities
 

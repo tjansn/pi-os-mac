@@ -225,11 +225,14 @@ public enum LauncherPolicy {
     // UTIs whose "open" would run code, install software, mount an image or follow a link elsewhere.
     // Verified on macOS 27: .command/.tool → com.apple.terminal.shell-script, .js → public.executable,
     // .app → com.apple.application, .dmg/.iso → com.apple.disk-image, .webloc/.fileloc → internet-location.
+    // Archives (zip, xip, tar, gz, rar, 7z…) are revealed too: Archive Utility may move the archive to
+    // the Trash or delete it after expanding, depending on a user setting, and Move to Trash is
+    // prohibited. Zip-based documents (docx, pages, epub, odt) do not conform to public.archive.
     private static let revealConformances = [
         "public.executable", "public.script", "public.shell-script", "public.unix-executable",
         "com.apple.terminal.shell-script", "com.apple.automator-workflow", "com.apple.installer-package-archive",
         "com.apple.application", "com.apple.bundle", "com.apple.disk-image", "com.apple.internet-location",
-        "com.apple.alias-file", "public.symlink",
+        "com.apple.alias-file", "public.symlink", "public.archive",
     ].compactMap { UTType($0) }
     /// Declared types outside those trees that still run, install or redirect when opened.
     public static let revealIdentifiers: Set<String> = [
@@ -249,10 +252,11 @@ public enum LauncherPolicy {
         "pkg", "mpkg", "dmg", "iso", "mobileconfig", "provisionprofile", "mobileprovision", "safariextz", "xpi", "crx",
         "workflow", "wflow", "shortcut", "terminal", "term",
         "webloc", "inetloc", "fileloc", "url", "desktop", "lnk",
+        "zip", "xip", "tar", "gz", "tgz", "bz2", "tbz", "tbz2", "xz", "txz", "rar", "7z", "cpio", "lz", "lzma", "zst", "sit", "sitx", "cab",
     ]
 
     /// True when "open" must be downgraded to "Reveal in Finder": executables, scripts,
-    /// installers, disk images, workflows, terminal documents, bundles and link/alias files.
+    /// installers, disk images, archives, workflows, terminal documents, bundles and link/alias files.
     /// Opening them by hand in Finder still works; pi-os just never launches them.
     public static func opensAsReveal(contentType: String?, pathExtension: String,
                                      isExecutableFile: Bool = false, isLink: Bool = false) -> Bool {

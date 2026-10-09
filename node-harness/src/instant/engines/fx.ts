@@ -67,6 +67,37 @@ export function defaultFxCacheFile(): string {
 }
 
 /** Tiny tolerant parser for eurofxref-daily.xml. Null when no date or no valid rate is present. */
+/**
+ * The body as text, or null when it is (or announces itself as) larger than `max` bytes. Reads
+ * the stream with a byte cap instead of buffering an arbitrarily large response first.
+ */
+async function readCapped(response: Response, max: number): Promise<string | null> {
+  const declared = Number(response.headers.get("content-length") ?? "");
+  if (Number.isFinite(declared) && declared > max) {
+    await response.body?.cancel().catch(() => {});
+    return null;
+  }
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > max) {
+        await reader.cancel().catch(() => {});
+        return null;
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return null;
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
 export function parseEcbXml(xml: string): { asOf: string; rates: Record<string, number> } | null {
   if (xml.length > MAX_XML_BYTES) return null;
   const time = /<Cube\s+time=['"](\d{4}-\d{2}-\d{2})['"]/.exec(xml);
@@ -279,7 +310,8 @@ export class EcbRateStore {
       this.log(`[instant] ecb fx refresh status=${response.status}`);
       return "failed";
     }
-    const parsed = parseEcbXml(await response.text());
+    const body = await readCapped(response, MAX_XML_BYTES);
+    const parsed = body === null ? null : parseEcbXml(body);
     if (!parsed) {
       this.log("[instant] ecb fx refresh status=200 parse=failed");
       return "failed";

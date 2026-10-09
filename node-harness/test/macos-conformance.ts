@@ -116,6 +116,15 @@ test("real Swift NWListener ↔ Node fetch/hostClient and supervised harness (no
       assert.notEqual(parseHostAction({ type: "openFile", token: minted }), null, "Swift-minted tokens satisfy the Node action contract");
       assert.ok(!filesFixture.items.some(item => item.token === minted), "Tokens are minted per search, never echoed");
     }
+    // The host cancels a launcher read whose client went away (Node aborting a superseded search).
+    // Node's fetch never half-closes after a request, so live searches on the same keep-alive
+    // pool still complete, including one sent right after an aborted one.
+    const abort = new AbortController();
+    const aborted = client.invokeTool<FileSearchResult>("launcher.searchFiles", searchRequest, abort.signal);
+    abort.abort();
+    await aborted.then(() => undefined, () => undefined);
+    const live = await Promise.all([1, 2, 3].map(() => client.invokeTool<FileSearchResult>("launcher.searchFiles", searchRequest)));
+    assert.ok(live.every(outcome => outcome.ok && outcome.result.items.length === filesFixture.items.length));
     const tooMany = await client.invokeTool("launcher.searchFiles", { nameGroups: [["a", "b", "c", "d", "e", "f", "g"]] });
     assert.equal(tooMany.ok, false);
     if (!tooMany.ok) assert.equal(tooMany.error.code, "invalid_arguments");

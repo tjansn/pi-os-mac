@@ -11,9 +11,20 @@ New states extend Whisper; nothing replaces the bar, reader, presets or material
 | MEDIUM | `PromptPanel.swift` (typed lists) | None | File/app results on the reader material above the bar (bar stays anchored, grows upward); the composer keeps focus; ↑/↓/Return/⌘Return/⌘⇧C act on the list | Keyboard-first results without moving focus |
 | MEDIUM | `PromptPanel.swift` (reader cards) | Markdown only | One `CardView` in the reader for instant and agent cards; lists take focus, typing redirects to the follow-up composer; recalled cards read-only | B8 integration notes; first-responder/scroll preservation (HIGH rule kept: the focused card is never hidden during layout) |
 | LOW | `PromptPanel.swift` (confirmation) | None | Small non-key capsule “✓ Opened Figma”, gone after 1.2 s | Confirms an action without stealing focus |
-| LOW | `PromptPanel.swift` (streaming) | Working capsule until done | Reader fills progressively (≤ 30 Hz), scroll kept; status lives in the bar (“Answering… · Escape stops”) | Faster perceived answers, one status location |
+| MEDIUM | `PromptPanel.swift` (streaming) | Working capsule until done | Reader fills progressively (≤ 30 Hz), scroll kept, **without taking keyboard focus** (a click still focuses it); the bar keeps the capsule's controls: “–” continues in the background, “■” stops, Escape/close hides (“Answering… · Escape hides”); completion takes focus as before | Faster perceived answers without stealing keystrokes typed into the pinned app; a reflex Escape no longer cancels the run |
 | LOW | `AnswerRenderer.swift` | Permission CTA only | Voice failures (`microphone_denied`, `speech_denied`, `voice_unavailable`, `voice_asset_missing`) with “Open Voice Settings…”; presenting never prompts | Recoverable failures |
 | LOW | `SettingsWindow.swift` | One tall page | General / Voice / Classifier segmented pages, original General controls and order kept, Auto first with bias labels | Room for voice/classifier without a taller window |
+
+Final-review fixes (same day, offscreen-verified):
+
+| Severity | Location | Before | After | Why |
+| --- | --- | --- | --- | --- |
+| MEDIUM | `PromptPanel.swift` (inline preview) | Word-wrapping label in a one-line frame: `2^100` showed a bare “=”, hints/warnings lost words, `= ≈ 1,55 miles`, value ~7 pt below the draft with Larger text | One line with a truncating paragraph style; values shrink (15→13→11 pt) and then show `≈ 1.27 × 10³⁰` (never dropping digits) or “Return for result”; no doubled sign; short drafts give hints room (“↩ Sleep display” when even that is short); the label sits on the draft's first line | Whole, legible previews at both text sizes |
+| MEDIUM | `PromptPanel.swift` (failure reader) | Height from the layout manager, frame from the cell: the last line (the remedy) was clipped at Larger text | Measured with the field's own cell and one shared 139 pt inset; ellipsis if the 320 pt cap is ever reached | Recovery instructions always visible |
+| MEDIUM | `PromptPanel.swift` / `CardView.swift` (VoiceOver) | Only `= value` was announced; list selection changed silently | Hints, warnings (medium priority) and lists (“3 files… Return opens …”) are announced once; ↑/↓ announce the row and “2 of 3”, post selected-children changes and move the VoiceOver cursor in the reader; nothing is spoken while listening | Return acts on what VoiceOver users heard |
+| LOW | `PromptPanel.swift` (voice off) | A hold looked like a tap; voice was undiscoverable | “Voice is off — turn it on in Settings → Voice” as the empty composer's placeholder on a real hold (≤ 3 times, never once voice was on); status menu “Turn On Hold to Talk…” | Discoverable without changing the off default |
+| LOW | `PromptPanel.swift` (listening disc) | Level-driven opacity down to 45–62 % | ≥ 85 %, full accent while transcribing and under Contrast / Increase Contrast | Glyph contrast ≥ 3:1 |
+| LOW | `SettingsWindow.swift` | “Open System Setti…”; Auto named twice; Apply/Return on pages whose switches apply at once; Laya only via env vars | Buttons sized to their titles with row-specific VoiceOver labels; Auto's Model row reads “Chosen per request” (disabled); Voice/Classifier pages show one Done; Python and Model folder pickers with plain-sentence status | Settings that say what they do |
 
 Verified: `pi-os-ui-preview --snapshot` rendered every new state offscreen (never a window)
 for System, Frost, Contrast and Graphite in light and dark; contact sheets were inspected and
@@ -22,8 +33,14 @@ coloured symbol + readable ink). Frost/Contrast are light presets by design, so 
 renders match the light ones. Snapshot materials are approximations: native glass and
 vibrancy only exist in the window server. 47 new CPU tests cover the flows and layouts.
 
-Not verified: any live window, real glass over busy wallpapers, VoiceOver announcements,
-physical keyboard/IME during listening, Carbon key-up timing, live microphone. No custom
+The final-review states (big-1/2/3, instant-unit, hint-web, confirm-hint, voice-hint,
+streaming with its new bar controls, the four voice failures, the classifier pickers) were
+rendered for the same presets at standard **and** Larger text (`--larger`) and inspected.
+
+Not verified: any live window, real glass over busy wallpapers, VoiceOver announcements
+(previews, list selection, the reader's VoiceOver cursor following ↑/↓), whether a streaming
+reader really leaves keystrokes with the pinned app, physical keyboard/IME during listening,
+Carbon key-up timing, live microphone. No custom
 animation was added; the level meter only changes opacity.
 
 ## 2026-10-01 Whisper — build 12 installed

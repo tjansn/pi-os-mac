@@ -14,19 +14,19 @@ import { AgentModelSettings, type ModelSelection } from "./agent/modelSettings.j
 import { AgentResourceSettings, TRUST_WARNING } from "./agent/resourceSettings.js";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import {
-  AUTO_MODEL_ID, AUTO_PROVIDER, AUTO_THINKING_LEVELS, biasForThinkingLevel, buildRoutingCatalog, classifyUtterance, DEFAULT_STATS_FILE, HEALTH_PENALTY_MS,
+  AUTO_MODEL_ID, AUTO_PROVIDER, AUTO_THINKING_LEVELS, classifyProviderError, biasForThinkingLevel, buildRoutingCatalog, classifyUtterance, DEFAULT_STATS_FILE, HEALTH_PENALTY_MS,
   isAutoSelection, LatencyStats, RoutingSettingsStore, thinkingLevelForBias, validateRoutingPatch, validateTierOverrides,
   type RouteEvent,
 } from "./agent/routing/index.js";
 import {
   createClassifier, type ClassifierFactoryDeps, type ManagedClassifier,
 } from "./classifier/factory.js";
-import { ClassifierSettingsStore, parseClassifierSettings } from "./classifier/settings.js";
+import { ClassifierSettingsStore, parseClassifierSettings, resolveLayaLaunch, type LayaLaunchReason } from "./classifier/settings.js";
 import {
   AppIndexCache, createFendLoader, createInstantDispatcher, EcbRateStore, MAX_INSTANT_TEXT,
   type InstantDispatcher, type InstantDispatcherDeps,
 } from "./instant/index.js";
-import type { ClassifierHints, InstantPhase, InstantRequest, InstantResponse } from "./contracts/instant.js";
+import type { ClassifierHints, InstantPhase, InstantRequest, InstantResponse, IntentClassifier } from "./contracts/instant.js";
 import { HOST_ACTION_TYPES } from "./contracts/actions.js";
 import type { CardSpec } from "./contracts/cards.js";
 import { cardToText } from "./ui/text.js";
@@ -51,7 +51,17 @@ import { supportDirectory } from "./platformPaths.js";
  */
 
 class RequestError extends Error {
-  constructor(readonly status: number, message: string) { super(message); }
+  constructor(readonly status: number, message: string, readonly code?: string) { super(message); }
+}
+
+/**
+ * Browsers mark their requests (Origin, Sec-Fetch-Site); the native hosts (URLSession, .NET
+ * HttpClient, Node fetch) send neither. Refusing them stops a web page from driving the
+ * loopback harness by CSRF, also in insecure-dev mode where no token is required.
+ */
+function fromBrowser(request: IncomingMessage): boolean {
+  const site = request.headers["sec-fetch-site"];
+  return request.headers.origin !== undefined || (site !== undefined && site !== "none");
 }
 
 interface InvokeBody {
@@ -89,6 +99,8 @@ export interface HarnessServerOptions {
   sseCoalesceMs?: number;
   /** Prepared-session lifetime (default 30 s). */
   prepareTtlMs?: number;
+  /** Host platform for per-host defaults (default process.platform; tests inject it): Auto is the default on macOS only. */
+  platform?: NodeJS.Platform;
 }
 
 /** Bookkeeping for one in-flight invocation (A.3: cancel + timeout). */
@@ -242,10 +254,23 @@ export class HarnessServer {
       ...options.instant,
     };
     // The managed classifier is replaced on settings changes; the dispatcher always asks the current one.
-    const advisory = { name: "advisory", classify: (text: string, signal: AbortSignal) => this.classifier.classify(text, signal) };
-    this.instant = createInstantDispatcher({ ...this.instantDeps, classifier: advisory });
-    this.instantDirect = createInstantDispatcher(this.instantDeps);
+    const current = (): ManagedClassifier => this.classifier;
+    const advisory: IntentClassifier = {
+      name: "advisory",
+      get local() { return current().local !== false; },
+      classify: (text: string, signal: AbortSignal) => current().classify(text, signal),
+    };
+    // Finals never wait on the classifier: hints that arrive later are remembered for the take's /invoke.
+    this.instant = createInstantDispatcher({
+      ...this.instantDeps, classifier: advisory,
+      onLateHints: (request, hints) => { if (request.takeId) this.rememberHints(request.takeId, hints); },
+    });
+    // /invoke answers pure results only (answerInstantly): app and file decisions can never answer
+    // there, so it never calls the launcher read routes (which the Windows host does not have).
+    const { apps: _apps, searchFiles: _searchFiles, ...direct } = this.instantDeps;
+    this.instantDirect = createInstantDispatcher(direct);
     this.services = {
+      platform: options.platform ?? process.platform,
       routing: () => this.routing.get(),
       stats: this.stats,
       engines: toolEnginesFrom(this.instant.engines),
@@ -306,6 +331,10 @@ export class HarnessServer {
         });
       }
 
+      if (fromBrowser(request)) {
+        return this.json(response, 403, { error: { code: "forbidden_origin", message: "Browser requests are not accepted" } });
+      }
+
       if (!this.authorized(request)) {
         return this.json(response, 401, {
           error: { code: "unauthorized", message: "Missing or wrong X-Harness-Token" },
@@ -331,8 +360,10 @@ export class HarnessServer {
         // Catalog for the host settings page; 500s flow through handle().
         const models = await this.withModelRuntime(runtime => listAvailableModels(runtime));
         const stored = this.modelSettings.get();
-        // No stored choice means Auto; report it as the effective selection while Auto is offered.
-        const current = stored ?? (models.length
+        // macOS: no stored choice means Auto; report it as the effective selection while Auto is offered.
+        // Elsewhere (Windows) Auto is opt-in: nothing stored is pi's own default, reported as null.
+        const autoByDefault = (this.options.platform ?? process.platform) === "darwin";
+        const current = stored ?? (models.length && autoByDefault
           ? { provider: AUTO_PROVIDER, modelId: AUTO_MODEL_ID, thinkingLevel: thinkingLevelForBias(this.routing.get().bias) }
           : null);
         return this.json(response, 200, { models, current, ...(!stored && current ? { currentIsDefault: true } : {}) });
@@ -368,7 +399,7 @@ export class HarnessServer {
       }
 
       if (route === "GET /settings/classifier") {
-        return this.json(response, 200, { ...this.classifierSettings.get(), status: this.classifier.status() });
+        return this.json(response, 200, { ...this.classifierSettings.get(), status: this.classifierStatus() });
       }
       if (route === "POST /settings/classifier") {
         await this.handleSetClassifier(request, response);
@@ -412,7 +443,10 @@ export class HarnessServer {
       if (response.headersSent) { response.end(); return; }
       const status = error instanceof RequestError ? error.status : error instanceof SyntaxError ? 400 : 500;
       this.json(response, status, {
-        error: { code: status < 500 ? "invalid_arguments" : "internal_error", message: error instanceof Error ? error.message : String(error) },
+        error: {
+          code: error instanceof RequestError && error.code ? error.code : status < 500 ? "invalid_arguments" : "internal_error",
+          message: error instanceof Error ? error.message : String(error),
+        },
       });
     }
   }
@@ -726,7 +760,24 @@ export class HarnessServer {
     const previous = this.classifier;
     this.classifier = this.buildClassifier();
     await previous.dispose().catch(() => {});
-    return this.json(response, 200, { ...saved, status: this.classifier.status() });
+    return this.json(response, 200, { ...saved, status: this.classifierStatus() });
+  }
+
+  /**
+   * The classifier status plus `layaLaunch`: whether Laya could start with the stored paths
+   * (for every kind, so Settings can say what is missing before the switch is turned on).
+   * Only existence checks; nothing is spawned and no path is reported.
+   */
+  private classifierStatus(): ReturnType<ManagedClassifier["status"]> & { layaLaunch: { ok: boolean; reason?: LayaLaunchReason | "disabled_by_env" } } {
+    const deps = this.options.classifierDeps ?? {};
+    const env = deps.env ?? process.env;
+    let layaLaunch: { ok: boolean; reason?: LayaLaunchReason | "disabled_by_env" };
+    if (env.PI_OS_LAYA === "0" && !deps.fakeEngine) layaLaunch = { ok: false, reason: "disabled_by_env" };
+    else {
+      const resolved = resolveLayaLaunch(this.classifierSettings.get(), env, deps.exists, deps.supportDir ?? this.supportDir);
+      layaLaunch = resolved.ok ? { ok: true } : { ok: false, reason: resolved.reason };
+    }
+    return { ...this.classifier.status(), layaLaunch };
   }
 
   private buildClassifier(): ManagedClassifier {
@@ -860,13 +911,16 @@ export class HarnessServer {
       // A partial card from an interrupted show_result must never outlive the turn.
       if (!record.cardComplete) this.invocations.clearCard(id);
       this.invocations.setTimings(id, { totalMs: watch.elapsed() });
+      // Logs carry the error class only; provider and host messages can quote the request or
+      // name files, so the full message stays on the record (failureMessage), never on disk.
+      const kind = /^([a-z][a-z0-9_]{1,40}):/.exec(message)?.[1] ?? classifyProviderError(message);
       if (aborted) {
-        console.warn(`[invoke] ${entry.timedOut ? "timed out" : "aborted"}: ${message}`);
+        console.warn(`[invoke] ${entry.timedOut ? "timed out" : "aborted"} kind=${kind}`);
         this.invocations.addStep(id,
           entry.timedOut ? "timeout" : "cancel", false, message);
         this.invocations.finish(id, entry.timedOut ? "timed_out" : "aborted", message);
       } else {
-        console.error(`[invoke] failed: ${message}`);
+        console.error(`[invoke] failed kind=${kind}`);
         this.invocations.addStep(id, "process", false, message);
         this.invocations.finish(id, "failed", message);
       }
@@ -959,7 +1013,8 @@ export class HarnessServer {
         // that image would carry no coordinate authority, costing the model a capture before clicking.
         turnPlan = plan(live);
         if (attachesScreenshot(snapshot, turnPlan) && live.controls.initialScreenshotId !== snapshot.screenshot?.imageId) {
-          await live.close();
+          // Off the critical path: the replacement session is built while this one disposes.
+          void live.close().catch(() => {});
           console.log("[prepare] discarded reason=screenshot");
           live = turnPlan = undefined;
         }
@@ -1001,10 +1056,10 @@ export class HarnessServer {
 
   /**
    * Windows-compatible instant answers: a pure `answer` (calc, units, currency, time, dates) completes
-   * the invocation; everything else goes to the agent. `act`/`list` need host effects. `refuse` does
-   * too: the deletion grammar also matches ordinary edits ("delete this message", "delete everything
-   * I typed"), which the agent (bound by the same file-deletion prohibition, with the host's native
-   * checks) handles as before.
+   * the invocation; everything else goes to the agent. `act`/`list` need host effects. `refuse` is not
+   * short-circuited either: the agent is bound by the same file-deletion prohibition (with the host's
+   * native checks), so hosts without /instant keep their previous behaviour for every request the
+   * (now narrow) deletion grammar refuses, and DESIGN §1.5 allows only pure answers here.
    */
   private async answerInstantly(record: InvocationRecord, turn: TurnMeta, signal: AbortSignal): Promise<boolean> {
     const watch = new Stopwatch();
@@ -1122,6 +1177,7 @@ export class HarnessServer {
         }
         perfLog("agent.response", sample.ttftMs ?? 0, {
           model, outTokens: sample.outputTokens ?? 0, streamMs: Math.round(sample.streamMs ?? 0),
+          ...(sample.cacheReadTokens !== undefined ? { cacheRead: sample.cacheReadTokens } : {}),
         });
       },
     };
@@ -1145,6 +1201,11 @@ export class HarnessServer {
       "X-Accel-Buffering": "no",
     });
     const coalesceMs = this.options.sseCoalesceMs ?? 33;
+    // Milestones skip the coalescing window: the first token, a card (or its completion), the
+    // answer and the terminal state reach the reader at once; only text growth is coalesced.
+    const milestoneOf = (record: InvocationRecord): string =>
+      `${record.state}|${record.partialText ? 1 : 0}|${record.card ? (record.cardComplete ? 2 : 1) : 0}|${record.responseText !== undefined ? 1 : 0}`;
+    let milestone = "";
     let sent = -1;
     let lastWrite = Number.NEGATIVE_INFINITY;
     let timer: NodeJS.Timeout | undefined;
@@ -1174,12 +1235,20 @@ export class HarnessServer {
       if (record.revision !== sent) {
         response.write(`event: record\ndata: ${JSON.stringify(record)}\n\n`);
         sent = record.revision;
+        milestone = milestoneOf(record);
         lastWrite = performance.now();
       }
       if (TERMINAL_STATES.has(record.state)) finish();
     };
     const schedule = () => {
-      if (closed || timer || draining) return;
+      if (closed || draining) return;
+      const record = this.invocations.get(id);
+      if (record && milestoneOf(record) !== milestone) {
+        if (timer) clearTimeout(timer);
+        flush();
+        return;
+      }
+      if (timer) return;
       const wait = lastWrite + coalesceMs - performance.now();
       if (wait <= 0) flush();
       else timer = setTimeout(flush, wait);
@@ -1241,6 +1310,9 @@ export class HarnessServer {
   }
 
   private async readJson(request: IncomingMessage, maxBytes = 1_000_000): Promise<unknown> {
+    // JSON only: a text/plain "simple request" (no CORS preflight) never reaches a handler.
+    const type = (request.headers["content-type"] ?? "").split(";")[0]!.trim().toLowerCase();
+    if (type !== "application/json") throw new RequestError(415, "Content-Type must be application/json", "unsupported_media_type");
     const chunks: Buffer[] = [];
     let total = 0;
     for await (const chunk of request) {

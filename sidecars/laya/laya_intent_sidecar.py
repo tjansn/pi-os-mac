@@ -2,8 +2,8 @@
 """pi-os Laya intent sidecar: stdio JSON-lines, CPU-only, offline, ADVISORY ONLY.
 
 Spawned and supervised by node-harness (src/classifier/laya.ts), one child per harness.
-It never executes anything, never opens a network socket, and writes only inside the
-staging directory it is given. Its answers are routing hints; they never authorize an
+It never executes anything, does not use the network (a defense-in-depth Python-level
+socket kill-switch, see Guards), and writes only inside the staging directory it is given. Its answers are routing hints; they never authorize an
 action (DESIGN.md §3.4).
 
 Protocol (proto 1, one UTF-8 JSON object per line; fd 1 carries protocol lines only):
@@ -18,7 +18,9 @@ Protocol (proto 1, one UTF-8 JSON object per line; fd 1 carries protocol lines o
                    {"id":"c1","ok":false,"error":{"code":"...","message":"..."}}
 Error codes: bad_request | state_too_long | expired | cancelled | internal.
 
-Guards: socket kill-switch (exit 97 on any non-AF_UNIX connect, send, bind or name lookup), offline
+Guards: socket kill-switch (exit 97 on any non-AF_UNIX connect, send, bind or name lookup, through
+socket and the C-level _socket module alike; native code that opens sockets itself is outside its
+reach, so it is defense in depth, not a sandbox), offline
 HF/transformers env, MPS hidden + every parameter/buffer asserted on CPU, optional
 sha256 of the weights, model directory staged (configs copied, weights linked) so the
 user's checkpoint can never be rewritten, utterances capped at 500 characters, and a
@@ -137,13 +139,34 @@ def offline_guard():
         return guarded
 
     # Outbound (connect, connectionless sends) and inbound (bind, so no listener either).
-    for name in ("connect", "connect_ex", "sendto", "sendmsg", "bind"):
+    methods = ("connect", "connect_ex", "sendto", "sendmsg", "bind")
+    for name in methods:
         real = getattr(socket.socket, name, None)  # no sendmsg on Windows
         if real is not None:
             setattr(socket.socket, name, unix_only(real))
-    for name in ("create_connection", "getaddrinfo", "gethostbyname", "gethostbyname_ex", "gethostbyaddr",
-                 "getnameinfo"):
+    lookups = ("getaddrinfo", "gethostbyname", "gethostbyname_ex", "gethostbyaddr", "getnameinfo")
+    for name in ("create_connection",) + lookups:
         setattr(socket, name, deny)
+
+    # The C-level _socket module is reachable directly (`import _socket`). Its type is immutable,
+    # so new sockets made through it get a guarded subclass, and its lookups are denied too.
+    import _socket
+
+    base = _socket.socket
+
+    class GuardedSocket(base):
+        __slots__ = ()
+
+    for name in methods:
+        real = getattr(base, name, None)
+        if real is not None:
+            setattr(GuardedSocket, name, unix_only(real))
+    _socket.socket = GuardedSocket
+    if getattr(_socket, "SocketType", None) is base:
+        _socket.SocketType = GuardedSocket
+    for name in lookups:
+        if hasattr(_socket, name):
+            setattr(_socket, name, deny)
 
 
 def peak_rss_bytes():

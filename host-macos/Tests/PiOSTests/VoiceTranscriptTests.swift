@@ -100,7 +100,7 @@ final class VoiceTranscriptTests: XCTestCase {
         XCTAssertEqual(VoiceError.unavailable().code, "voice_unavailable")
         XCTAssertTrue(VoiceError.unavailable().message.contains("macOS 26"))
         XCTAssertEqual(VoiceError.assetMissing(.germanDE).code, "voice_asset_missing")
-        XCTAssertTrue(VoiceError.assetMissing(.germanDE).message.contains("Deutsch"))
+        XCTAssertTrue(VoiceError.assetMissing(.germanDE).message.contains("German (Germany)"))
         XCTAssertTrue(VoiceError.assetMissing(.germanDE, downloading: true).message.contains("downloading"))
     }
 

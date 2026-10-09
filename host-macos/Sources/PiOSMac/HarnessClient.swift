@@ -393,7 +393,45 @@ private final class OwnedChild {
         public var isTerminal: Bool { !["queued", "running"].contains(state) }
     }
     public func status(_ id: String) async throws -> Status {
-        try JSONDecoder().decode(Status.self, from: await request("GET", "/invocations/" + id))
+        try Self.decodeRecord(await request("GET", "/invocations/" + id))
+    }
+    /// One record, after `wellFormedJSON`: a lone surrogate in one text field must never fail the
+    /// whole record (and with it a completed answer).
+    nonisolated static func decodeRecord(_ data: Data) throws -> Status {
+        try JSONDecoder().decode(Status.self, from: wellFormedJSON(data))
+    }
+    /// Replaces each `\uD800`–`\uDFFF` escape that is not half of a high+low escape pair with
+    /// `\uFFFD`. Older harnesses could cut text inside a surrogate pair, which JSONDecoder rejects.
+    /// Only real escapes count (an escaped backslash followed by "u" is text); nothing else changes.
+    nonisolated static func wellFormedJSON(_ data: Data) -> Data {
+        let backslash = UInt8(ascii: "\\")
+        guard data.contains(backslash) else { return data }
+        let bytes = [UInt8](data)
+        /// The code unit of a `\uXXXX` escape whose backslash is at `at`, if there is one there.
+        func escape(_ at: Int) -> UInt16? {
+            guard at + 6 <= bytes.count, bytes[at] == backslash, bytes[at + 1] == UInt8(ascii: "u") else { return nil }
+            var value: UInt16 = 0
+            for byte in bytes[at + 2..<at + 6] {
+                guard let digit = Character(Unicode.Scalar(byte)).hexDigitValue else { return nil }
+                value = value << 4 | UInt16(digit)
+            }
+            return value
+        }
+        var output: [UInt8] = []; output.reserveCapacity(bytes.count)
+        var changed = false, index = 0
+        while index < bytes.count {
+            guard bytes[index] == backslash, index + 1 < bytes.count else { output.append(bytes[index]); index += 1; continue }
+            guard let unit = escape(index), (0xD800...0xDFFF).contains(unit) else {
+                // Any other escape, an escaped backslash included, is copied as one unit.
+                let length = escape(index) == nil ? 2 : 6
+                output.append(contentsOf: bytes[index..<index + length]); index += length; continue
+            }
+            if unit <= 0xDBFF, let next = escape(index + 6), (0xDC00...0xDFFF).contains(next) {
+                output.append(contentsOf: bytes[index..<index + 12]); index += 12; continue
+            }
+            output.append(contentsOf: Array("\\uFFFD".utf8)); changed = true; index += 6
+        }
+        return changed ? Data(output) : data
     }
     /// GET /invocations/{id}/events (SSE, macOS only): one full record per revision, the terminal
     /// record last. Ends by throwing when the route is missing or the stream stops early, so the
@@ -408,7 +446,7 @@ private final class OwnedChild {
             let task = Task { @MainActor in
                 do {
                     for try await data in raw {
-                        let status = try JSONDecoder().decode(Status.self, from: data)
+                        let status = try Self.decodeRecord(data)
                         continuation.yield(status)
                         if status.isTerminal { continuation.finish(); return }
                     }
@@ -490,25 +528,44 @@ public struct AgentInput: Equatable, Sendable {
     }
 }
 
-/// /settings/classifier (protocol §3.5). Only `kind` is edited here; every other stored field is
-/// echoed back unchanged, and the read-only `status` is never posted.
+/// /settings/classifier (protocol §3.5). `kind`, `python` and `modelDir` are edited here; every
+/// other stored field is echoed back unchanged, and the read-only `status` is never posted.
 public struct ClassifierSettings {
     public var kind: String
     public let statusState: String?
     public let statusReason: String?
+    /// `status.layaLaunch` (additive; nil on older harnesses): whether Laya could start with the
+    /// stored paths or PI_OS_LAYA_* (existence checks only; nothing is spawned to compute it).
+    public let launchOK: Bool?
+    public let launchReason: String?
     private var stored: [String: Any]
     public init(json: Data) throws {
         guard let object = try JSONSerialization.jsonObject(with: json) as? [String: Any], let kind = object["kind"] as? String else {
             throw DomainError("invalid_response", "Classifier settings were not understood")
         }
         let status = object["status"] as? [String: Any]
+        let launch = status?["layaLaunch"] as? [String: Any]
         self.kind = kind; statusState = status?["state"] as? String; statusReason = status?["reason"] as? String
+        launchOK = launch?["ok"] as? Bool; launchReason = launch?["reason"] as? String
         stored = object; stored["status"] = nil
     }
-    public init(kind: String, statusState: String? = nil, statusReason: String? = nil) {
-        self.kind = kind; self.statusState = statusState; self.statusReason = statusReason; stored = ["kind": kind]
+    public init(kind: String, statusState: String? = nil, statusReason: String? = nil, launchOK: Bool? = nil, launchReason: String? = nil,
+                python: String? = nil, modelDir: String? = nil) {
+        self.kind = kind; self.statusState = statusState; self.statusReason = statusReason
+        self.launchOK = launchOK; self.launchReason = launchReason; stored = ["kind": kind]
+        self.python = python; self.modelDir = modelDir
     }
     public var shadowLog: Bool { stored["shadowLog"] as? Bool ?? false }
+    /// Absolute path of the Laya environment's Python (nil removes it; Node then falls back to PI_OS_LAYA_PYTHON).
+    public var python: String? {
+        get { stored["python"] as? String }
+        set { stored["python"] = newValue }
+    }
+    /// Absolute path of the Laya model folder (nil removes it; Node then falls back to PI_OS_LAYA_MODEL_DIR).
+    public var modelDir: String? {
+        get { stored["modelDir"] as? String }
+        set { stored["modelDir"] = newValue }
+    }
     func body() throws -> Data {
         var object = stored; object["kind"] = kind
         return try JSONSerialization.data(withJSONObject: object)

@@ -46,6 +46,30 @@ export function groupNumber(text: string, locale: string): string {
   return `${m[1]}${integer}${m[3] !== undefined ? decimal + m[3] : ""}`;
 }
 
+/** Plain decimal tokens; hex/binary/octal literals and exponents are matched whole so they stay untouched. */
+const NUMBER_TOKEN = /(?<![\w.])(?:0[xbo][0-9a-f]+|\d+(?:\.\d+)?(?:e[+-]?\d+)?)(?![\w])|(?<![\w.])\d+(?:\.\d+)?/gi;
+
+/**
+ * Rewrites the plain decimal numbers in a display string ("15% of 1234.5") in the locale's
+ * convention ("15% of 1234,5" for de/en-DE), with groupNumber's grouping rule. One card
+ * then shows one decimal convention. Hex/binary/octal literals, exponents and digits inside
+ * identifiers ("log10") are left alone.
+ */
+export function localizeNumbers(text: string, locale: string): string {
+  return text.replace(NUMBER_TOKEN, (token) => (/^0[xbo]|e/i.test(token) ? token : groupNumber(token, locale)));
+}
+
+/**
+ * Copy/type value of a plain number in the locale's decimal convention, without grouping and
+ * with every digit kept ("185.175" → "185,175" for de). Anything that is not a plain decimal
+ * passes through unchanged.
+ */
+export function copyNumber(text: string, locale: string): string {
+  if (!/^-?\d+\.\d+$/.test(text)) return text;
+  const { decimal } = separators(locale);
+  return decimal === "." ? text : text.replace(".", decimal);
+}
+
 /**
  * Display form of a fend value: groups the leading number, keeps the unit,
  * and shortens integers longer than 40 digits to scientific notation (the

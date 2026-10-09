@@ -1,3 +1,4 @@
+import { separators } from "./format.js";
 import { applyDigitScales, deWordsToDigits, deWordToNumber, DE_EN_COLLISIONS, enWordsToDigits } from "./numberWords.js";
 
 /**
@@ -54,12 +55,25 @@ export function detectLang(lower: string, localeHint?: string): Lang {
   return localeHint?.toLowerCase().startsWith("de") ? "de" : "en";
 }
 
+/** Decimal convention of the input: "comma" (1.000,5) or "point" (1,000.5). */
+export type DecimalConvention = "comma" | "point";
+
 /**
- * Decimal/thousands separators by language. DE: "1.000" → 1000, "1,5" → 1.5.
- * EN: "1,000" → 1000. The calculator always receives "." decimals.
+ * The convention an utterance is parsed with: comma-decimal when the request's format
+ * locale uses a decimal comma ("de-DE", "en-DE" from an rg override) or the utterance is
+ * German; otherwise point-decimal.
  */
-export function fixDecimalSeparators(text: string, lang: Lang): string {
-  if (lang === "de") {
+export function decimalConvention(lang: Lang, localeHint?: string): DecimalConvention {
+  if (lang === "de") return "comma";
+  return localeHint && separators(localeHint).decimal === "," ? "comma" : "point";
+}
+
+/**
+ * Decimal/thousands separators by convention ("de" = comma, "en" = point). Comma: "1.000" → 1000,
+ * "1,5" → 1.5. Point: "1,000" → 1000. The calculator always receives "." decimals.
+ */
+export function fixDecimalSeparators(text: string, convention: Lang | DecimalConvention): string {
+  if (convention === "de" || convention === "comma") {
     return text
       .replace(/\b\d{1,3}(?:\.\d{3})+(?![\d.])/g, (group) => group.replace(/\./g, ""))
       .replace(/(\d),(\d)/g, "$1.$2");
@@ -88,7 +102,7 @@ export function normalize(raw: string, localeHint?: string): Normalized {
   const lang = detectLang(lower, localeHint);
   // Both converters always run: transcripts mix languages ("hundert dollar in euro").
   // German words that collide with English convert only in German utterances.
-  let numeric = fixDecimalSeparators(lower, lang);
+  let numeric = fixDecimalSeparators(lower, decimalConvention(lang, localeHint));
   numeric = enWordsToDigits(numeric);
   numeric = deWordsToDigits(numeric, lang === "de" ? new Set() : DE_EN_COLLISIONS);
   numeric = applyDigitScales(numeric);

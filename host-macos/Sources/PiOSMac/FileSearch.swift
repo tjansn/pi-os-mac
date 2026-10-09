@@ -40,10 +40,16 @@ public final class FileTokenStore: @unchecked Sendable {
 enum LauncherDeadline {
     static func run<T>(on queue: DispatchQueue, seconds: TimeInterval, timeout: DomainError,
                        _ work: @escaping () throws -> T) async throws -> T {
+        try await run(on: queue, seconds: seconds, timeout: timeout) { _ in try work() }
+    }
+    /// The same, and `work` can ask whether its caller is already gone (timed out, cancelled or
+    /// disconnected) so it can skip optional follow-up work.
+    static func run<T>(on queue: DispatchQueue, seconds: TimeInterval, timeout: DomainError,
+                       _ work: @escaping (_ abandoned: () -> Bool) throws -> T) async throws -> T {
         try await callback(seconds: seconds, onTimeout: .failure(timeout)) { done, isFinished in
             queue.async {
                 guard !isFinished() else { return }
-                done(Result { try work() })
+                done(Result { try work(isFinished) })
             }
         }
     }
@@ -104,14 +110,28 @@ public final class FileSearch: @unchecked Sendable {
     private let timeout: TimeInterval
     private let engine: Engine
     private let queue = DispatchQueue(label: "dev.pi-os.launcher.file-search", qos: .userInitiated)
+    /// Incremented by every `search()`; a search is superseded once a newer one was enqueued.
+    private let generationLock = NSLock()
+    private var generation = 0
+
+    /// Searches started so far (tests wait on it instead of sleeping).
+    var startedSearches: Int { generationLock.withLock { generation } }
 
     public init(tokens: FileTokenStore, home: String = NSHomeDirectory(), timeout: TimeInterval = 1.5,
                 engine: @escaping Engine = FileSearch.spotlight) {
         self.tokens = tokens; self.home = home; self.timeout = timeout; self.engine = engine
     }
 
+    /// Latest-wins on the serial queue: rapid previews must not keep it busy ahead of the final.
+    /// Work whose caller is gone (Node aborted it, which closes the connection; a timeout; a
+    /// cancellation) never starts. A running search skips its substring fallback, returning the
+    /// word-prefix hits, once its caller is gone or a newer search is already waiting. A superseded
+    /// search whose caller still waits still runs its primary query: the agent's find_files calls
+    /// may run in parallel and must not fail just because another search was queued after them.
     public func search(_ request: FileSearchRequest) async throws -> FileSearchResult {
         let started = DispatchTime.now().uptimeNanoseconds
+        let mine = generationLock.withLock { generation += 1; return generation }
+        let superseded = { [weak self] in self.map { search in search.generationLock.withLock { search.generation != mine } } ?? true }
         let limit = request.maxResults ?? FileSearchRequest.defaultMaxResults
         guard (1...FileSearchRequest.maxResultsLimit).contains(limit) else {
             throw DomainError("invalid_arguments", "maxResults must be 1–\(FileSearchRequest.maxResultsLimit).")
@@ -125,12 +145,12 @@ public final class FileSearch: @unchecked Sendable {
         let (engine, home, cap, budget) = (self.engine, self.home, Self.queryCap, timeout)
         let gathered = try await LauncherDeadline.run(
             on: queue, seconds: timeout,
-            timeout: DomainError("search_timeout", "File search took too long. Try a more specific name.")) { () throws -> (hits: [SpotlightHit], capped: Bool) in
+            timeout: DomainError("search_timeout", "File search took too long. Try a more specific name.")) { abandoned throws -> (hits: [SpotlightHit], capped: Bool) in
             var hits = try engine(primary, roots, cap)
             var capped = hits.count >= cap
             let usable = SpotlightResults.select(hits, roots: roots, home: home, limit: cap, capped: false).hits.count
             let spent = Double(DispatchTime.now().uptimeNanoseconds - started) / 1_000_000_000
-            if usable < Self.fallbackThreshold, let fallback, spent < budget / 2 {
+            if usable < Self.fallbackThreshold, let fallback, spent < budget / 2, !abandoned(), !superseded() {
                 let more = try engine(fallback, roots, cap)
                 capped = capped || more.count >= cap
                 hits += more

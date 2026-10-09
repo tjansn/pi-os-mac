@@ -27,6 +27,10 @@ cp "$ROOT/LICENSE" "$RES/License.txt"
 cp "$NODE" "$RES/runtime/bin/node"
 cp "$ROOT/node-harness/package.json" "$ROOT/node-harness/package-lock.json" "$RES/node-harness/"
 ditto "$ROOT/node-harness/dist" "$RES/node-harness/dist"
+# The optional Laya classifier's helper script only (no training code, no model). Node resolves it
+# from node-harness/dist/classifier/ as ../../../sidecars/laya/. It runs with -I -B, so no
+# __pycache__ is ever written into the signed bundle.
+mkdir -p "$RES/sidecars/laya" && cp "$ROOT/sidecars/laya/laya_intent_sidecar.py" "$RES/sidecars/laya/"
 # Locked production dependencies; never copy credentials, settings, captures or the agent cwd.
 npm --prefix "$RES/node-harness" ci --omit=dev --ignore-scripts
 # pi-coding-agent 1.0 depends on @earendil-works/chord -> esbuild: 26 platform packages (~285 MB)

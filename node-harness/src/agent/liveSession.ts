@@ -20,6 +20,8 @@ export interface ResponseSample {
   /** First delta → message end. */
   streamMs?: number;
   outputTokens?: number;
+  /** Prompt tokens served from the provider's prompt cache (count only; checks the stable cache key). */
+  cacheReadTokens?: number;
   ok: boolean;
   /** Classified provider error for failed responses (rate_limit, quota, …). */
   errorKind?: ProviderErrorKind;
@@ -65,6 +67,8 @@ export interface SessionControls {
   ledger?: FileLedger;
   /** Build-time identity of a prepared session; reused only when it matches the invocation. */
   setupKey?: string;
+  /** Record the user's raw words for this turn (open_item opens only user-named sites directly). */
+  addUserRequest?: (text: string) => void;
 }
 
 const now = () => performance.now();
@@ -167,6 +171,7 @@ export class LiveAgentSession {
       ...(message.thinkingLevel ? { thinkingLevel: message.thinkingLevel } : {}),
       ...(ok && requestAt !== undefined && firstAt !== undefined ? { ttftMs: firstAt - requestAt, streamMs: end - firstAt } : {}),
       ...(ok && Number.isFinite(message.usage?.output) ? { outputTokens: message.usage.output } : {}),
+      ...(ok && Number.isFinite(message.usage?.cacheRead) ? { cacheReadTokens: message.usage.cacheRead } : {}),
       ok,
       ...(ok ? {} : { errorKind: classifyProviderError(message.errorMessage) }),
     };

@@ -68,6 +68,9 @@ final class LauncherPolicyTests: XCTestCase {
             ("com.sun.java-web-start", "jnlp"), (nil, "jnlp"), (nil, "playground"), (nil, "pyz"), ("public.python-bytecode", "pyc"),
             ("com.apple.itunes.ipa", "ipa"), ("com.apple.provisionprofile", ""), (nil, "mobileprovision"),
             ("com.apple.safari.extension", ""), (nil, "xpi"), (nil, "crx"), ("com.apple.disk-image-sparse-bundle", "sparsebundle"),
+            // Archive Utility can move an expanded archive to the Trash (a user setting): reveal only.
+            ("public.zip-archive", "zip"), (nil, "zip"), ("com.apple.xip-archive", "xip"), ("org.gnu.gnu-zip-archive", "gz"),
+            ("public.tar-archive", "tar"), ("com.rarlab.rar-archive", "rar"), ("org.7-zip.7-zip-archive", "7z"), (nil, "tgz"),
         ]
         for (type, ext) in reveal {
             XCTAssertTrue(LauncherPolicy.opensAsReveal(contentType: type, pathExtension: ext), "\(type ?? "nil") .\(ext)")
@@ -75,7 +78,8 @@ final class LauncherPolicyTests: XCTestCase {
         let open: [(String?, String)] = [
             ("com.adobe.pdf", "pdf"), ("public.plain-text", "txt"), ("public.folder", ""), ("public.png", "png"),
             ("org.openxmlformats.wordprocessingml.document", "docx"), ("public.html", "html"), ("net.daringfireball.markdown", "md"),
-            ("com.apple.iwork.pages.sffpages", "pages"), ("public.zip-archive", "zip"), (nil, "pdf"), (nil, ""),
+            ("com.apple.iwork.pages.sffpages", "pages"), ("org.idpf.epub-container", "epub"), ("org.oasis-open.opendocument.text", "odt"),
+            ("org.openxmlformats.spreadsheetml.sheet", "xlsx"), (nil, "pdf"), (nil, ""),
         ]
         for (type, ext) in open {
             XCTAssertFalse(LauncherPolicy.opensAsReveal(contentType: type, pathExtension: ext), "\(type ?? "nil") .\(ext)")

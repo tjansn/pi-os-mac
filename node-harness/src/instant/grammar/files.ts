@@ -81,6 +81,11 @@ function dateTail(query: string, ctx: MatchContext): { rest: string; range?: Fil
   return { rest: query };
 }
 
+/** True when the utterance starts like a file search ("find …", "wo ist …"), whether or not it parses as one. */
+export function isFileSearchPhrase(lower: string): boolean {
+  return FILE_EN.test(lower) || FILE_DE.test(lower);
+}
+
 export function matchFileSearch(n: Normalized, ctx: MatchContext): Parsed | null {
   const lower = n.lower;
   const m = FILE_EN.exec(lower) ?? FILE_DE.exec(lower);
