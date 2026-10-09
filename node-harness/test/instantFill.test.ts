@@ -260,6 +260,9 @@ test("shared fixtures: request-target-search answers act-fill-submit; the text a
 
 test("compatibility: no target, a target without fill, or fill without a target decide byte-identically to today", async () => {
   const d = make();
+  // Load the engines first: a calculator still loading answers one dispatch as a miss and the next as a result, which is
+  // a timing difference, not a decision difference (seen on a slow CI runner with "15% of 340").
+  await d.warm();
   const texts = [
     "Albert Einstein", "Wie hoch ist der Eiffelturm?", "Öffne Safari", "Notizen", "tippe Hallo Welt", "such nach Katzen", "Nein, Marie Curie.", "Frag Pi, wer war Goethe?",
     "delete the last sentence", "what is this page about", "15% of 340", "google Albert Einstein", "Schreib eine Mail an Anna", "git status",
