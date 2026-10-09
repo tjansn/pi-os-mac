@@ -6,7 +6,8 @@ already knows what you were looking at and has tools to act on it.
 
 **Windows:** current shipping functionality. **macOS 14+:** native AppKit host with
 a signed build-12 native Whisper glass interface with pinned control, persistent reader and conversational
-follow-ups (installed; full parity not yet accepted); [build/run instructions](host-macos/README.md) and
+follow-ups (installed; full parity not yet accepted), plus push-to-talk voice, instant commands,
+the Auto model and result cards on the `feat/voice-magic` line (built and tested offline, not yet installed); [build/run instructions](host-macos/README.md) and
 [acceptance status](host-macos/STATUS.md). Computer-use parity is still gated by
 the [migration plan](MACOS_MIGRATION.md).
 
@@ -74,6 +75,33 @@ effort options adapt to the selected model. The choice persists in
 `%LOCALAPPDATA%\pi-os\settings.json`; every new hotkey invocation uses it
 (a running task keeps its own model), both switches are logged to
 `logs\host.log`.
+
+## On macOS: voice, instant commands, Auto and cards
+
+The macOS host ([details](host-macos/README.md#voice-instant-commands-auto-and-result-cards))
+adds a faster path on top of the agent:
+
+- **Push-to-talk (opt-in).** Turn on *Settings → Voice*, then hold the hotkey and speak
+  (macOS 26+, on-device Apple speech recognition, English or German). A quick tap still
+  opens the text bar. Microphone and Speech Recognition are requested only from buttons in
+  Settings, never from the hotkey. Audio and transcripts stay on the Mac and are never
+  recorded or logged.
+- **Instant commands.** Math, units, currencies, time zones, dates, opening apps and links,
+  web searches, file search and volume run without a model, usually in milliseconds, with a
+  live preview while you type or speak. The native host performs the action after its own
+  policy check; nothing can delete, trash or move files. Return runs it, ⌥Return always asks
+  pi. Currency conversions download the European Central Bank's daily reference rates on
+  first use (no question or personal data is sent); that is the only new network request.
+- **Auto model.** *Auto (recommended)* is listed first in Settings and picks a fast adequate
+  model and effort per request (*Prefer speed / Balanced / Prefer quality*). It is the
+  default when no model is stored; explicit choices still work.
+- **Streaming and result cards.** Answers stream into the reader and can be native cards
+  (tables, lists, files) with buttons limited to copy, open, reveal and ask.
+- **Local classifier (opt-in).** The optional Laya classifier (*Settings → Classifier*) is
+  advisory only, runs on the CPU, needs about 5 GB of memory, and is off by default.
+
+Windows keeps its text prompt; it also sees *Auto* in its model list and quick answers
+(math, conversions) arrive as ordinary answer text.
 
 ## Configuration
 

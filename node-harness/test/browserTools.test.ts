@@ -4,19 +4,23 @@ import { resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createAgentSession, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { createComputerUseExtension } from "../src/agent/computerUseExtension.js";
-import { loadAgentResources, READ_ONLY_TOOLS } from "../src/agent/agentRunner.js";
+import { loadAgentResources, READ_ONLY_TOOLS, sessionExtensions, sessionToolAllowlist } from "../src/agent/agentRunner.js";
 import { BROWSER_GUIDANCE, BROWSER_TOOLS, formatActResult, registerBrowserTools } from "../src/browser/tools.js";
 import { BrowserSession } from "../src/browser/session.js";
 import type { HostClient } from "../src/hostClient.js";
 
 test("Brave route replaces native mutations in the actual isolated SDK tool set", async () => {
   const dir = resolve("test/fixtures/global-agent-dir"), browser = new BrowserSession({} as HostClient, "ctx-fixed");
-  const extension = createComputerUseExtension("ctx-fixed", {} as HostClient, "/captures", false, "darwin", undefined, browser);
-  const loader = await loadAgentResources([extension], process.cwd(), dir, true);
+  const { extensions } = sessionExtensions({ contextId: "ctx-fixed", hostClient: {} as HostClient, capturesDir: "/captures", readOnly: false,
+    platform: "darwin", browser, launcher: true });
+  const loader = await loadAgentResources(extensions, process.cwd(), dir, true);
   const runtime = await ModelRuntime.create({ authPath: resolve(dir, "auth.json"), modelsPath: resolve(dir, "models.json") });
-  const names = [...READ_ONLY_TOOLS, ...BROWSER_TOOLS];
+  // Deliberate exact set (C1): the Brave tools replace desktop_act; launcher tools, cards and codemode stay (manual model: no escalate).
+  const names = [...READ_ONLY_TOOLS, ...BROWSER_TOOLS, "instant_calc", "instant_convert_currency", "instant_time_in",
+    "find_files", "list_apps", "open_item", "show_result", "codemode"];
   const { session } = await createAgentSession({ resourceLoader: loader, modelRuntime: runtime, agentDir: dir,
-    sessionManager: SessionManager.inMemory(), settingsManager: SettingsManager.inMemory(), tools: names });
+    sessionManager: SessionManager.inMemory(), settingsManager: SettingsManager.inMemory(),
+    tools: sessionToolAllowlist({ readOnly: false, browser: true, auto: false }) });
   try {
     assert.deepEqual(session.getAllTools().map(t => t.name).sort(), [...names].sort());
     assert.deepEqual(session.agent.state.tools.map(t => t.name).sort(), [...names].sort());

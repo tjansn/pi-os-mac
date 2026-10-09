@@ -19,6 +19,20 @@ and clicks are no longer vetoed by OS-wide Secure Keyboard Entry; only clearly m
 username/password fields are default-blocked, with explicit Settings opt-in. No OS
 security feature was disabled. See [BROWSER_INTEGRATION.md](BROWSER_INTEGRATION.md).
 
+## Voice magic on macOS — 2026-10-02 (offline-tested, not installed)
+
+| Feature | macOS | Windows |
+| --- | --- | --- |
+| Push-to-talk voice (hold hotkey) | Built (opt-in, macOS 26+); live TCC/latency pending | Not planned in this pass — text prompt only (fallback) |
+| Instant commands with live preview | Built; host performs actions after `LauncherPolicy` | Pure answers (math, conversions) arrive through `/invoke` → `responseText`; acts/lists fall through to the agent |
+| Auto model | Settings lists *Auto (recommended)* first with bias labels | Appears in the existing model list (same `GET /models` / `POST /settings/model`) |
+| Result cards | Native `CardView` in the reader | `responseText` (plain-text fallback) |
+| Streaming | SSE with polling fallback | Unchanged polling |
+| Local classifier (Laya) | Settings switch (advisory, off by default) | Node-side only |
+
+Wire changes are additive (`takeId`, `input`, `/instant`, `/invocations/prepare`, SSE events,
+record fields); Windows never sends them and its polling contract is unchanged.
+
 ## Whisper UI acceptance — build 12, 2026-10-01
 
 Selected from Tom's prototype review: native 480 × 50 pt bar centered on the

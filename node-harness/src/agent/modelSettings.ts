@@ -1,14 +1,19 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { supportDirectory } from "../platformPaths.js";
+import { readJsonObjectFile, SettingsFile } from "../settingsFile.js";
 
 /**
  * User-selected agent model + reasoning effort, chosen in the host settings
  * page and applied by every NEW invocation (sessions are per-invocation, so
  * an in-flight invocation keeps its own model).
  *
- * Persisted at %LOCALAPPDATA%\pi-os\settings.json so the choice survives
- * restarts of the supervised harness child.
+ * Persisted under the `model` key of %LOCALAPPDATA%\pi-os\settings.json
+ * (macOS: ~/Library/Application Support/pi-os/settings.json) so the choice
+ * survives restarts of the supervised harness child. The file is shared with
+ * other key-scoped stores (`routing`), so writes are an atomic read-modify-write
+ * of this key only (settingsFile.ts); sibling keys are never dropped.
+ *
+ * No stored selection means the Auto virtual model `pi-os/auto` (agentRunner).
  */
 
 export interface ModelSelection {
@@ -18,23 +23,23 @@ export interface ModelSelection {
   thinkingLevel: string;
 }
 
-interface SettingsFile {
-  model?: Partial<ModelSelection>;
-}
+export const MODEL_SETTINGS_KEY = "model";
 
 export class AgentModelSettings {
   private current: ModelSelection | null;
+  private readonly file: SettingsFile;
 
   constructor(
-    private readonly filePath: string = defaultSettingsPath(),
+    readonly filePath: string = defaultSettingsPath(),
     private readonly log: (line: string) => void = (line) => console.log(line),
   ) {
+    this.file = new SettingsFile(filePath, log);
     this.current = readSelection(this.filePath, this.log);
     if (this.current) {
       const c = this.current;
       this.log(`[settings] loaded model preference ${c.provider}/${c.modelId} effort=${c.thinkingLevel}`);
     } else {
-      this.log("[settings] no model preference; pi picks its automatic default");
+      this.log("[settings] no model preference; Auto (pi-os/auto) is the default");
     }
   }
 
@@ -53,50 +58,37 @@ export class AgentModelSettings {
       modelId: selection.modelId,
       thinkingLevel: selection.thinkingLevel,
     };
-    writeSelection(this.filePath, this.current, this.log);
+    try {
+      this.file.update(MODEL_SETTINGS_KEY, this.current);
+    } catch (error) {
+      // Memory-only fallback: the session still honors the choice until restart.
+      this.log(`[settings] failed writing model preference: ${error instanceof Error ? error.message : String(error)}`);
+    }
     return previous;
   }
 }
 
-function defaultSettingsPath(): string {
-  return join(supportDirectory(), "settings.json");
+export function defaultSettingsPath(supportDir: string = supportDirectory()): string {
+  return join(supportDir, "settings.json");
 }
 
 /** Tolerant reader: any malformed/stale file degrades to "no preference". */
 function readSelection(path: string, log: (line: string) => void): ModelSelection | null {
-  let raw: string;
-  try {
-    raw = readFileSync(path, "utf8");
-  } catch {
-    return null; // Missing file is the normal first-run case.
+  const { data, status } = readJsonObjectFile(path);
+  if (status === "corrupt") {
+    log("[settings] ignoring unreadable settings.json");
+    return null;
   }
-
-  try {
-    const parsed = JSON.parse(raw) as SettingsFile;
-    const m = parsed?.model;
-    if (
-      typeof m?.provider === "string" && m.provider &&
-      typeof m?.modelId === "string" && m.modelId &&
-      typeof m?.thinkingLevel === "string" && m.thinkingLevel
-    ) {
-      return { provider: m.provider, modelId: m.modelId, thinkingLevel: m.thinkingLevel };
-    }
-    if (m !== undefined) {
-      log(`[settings] ignoring incomplete model entry in ${path}`);
-    } // Else: valid file without a model entry -> keep pi's automatic default.
-  } catch (error) {
-    log(`[settings] ignoring unreadable ${path}: ${error instanceof Error ? error.message : String(error)}`);
+  const m = data[MODEL_SETTINGS_KEY] as Partial<ModelSelection> | undefined;
+  if (
+    typeof m?.provider === "string" && m.provider &&
+    typeof m?.modelId === "string" && m.modelId &&
+    typeof m?.thinkingLevel === "string" && m.thinkingLevel
+  ) {
+    return { provider: m.provider, modelId: m.modelId, thinkingLevel: m.thinkingLevel };
   }
+  if (m !== undefined) {
+    log("[settings] ignoring incomplete model entry in settings.json");
+  } // Else: valid file without a model entry -> Auto default.
   return null;
-}
-
-function writeSelection(path: string, selection: ModelSelection, log: (line: string) => void): void {
-  try {
-    mkdirSync(dirname(path), { recursive: true });
-    const payload: SettingsFile = { model: selection };
-    writeFileSync(path, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
-  } catch (error) {
-    // Memory-only fallback: the session still honors the choice until restart.
-    log(`[settings] failed writing ${path}: ${error instanceof Error ? error.message : String(error)}`);
-  }
 }

@@ -82,6 +82,7 @@ HTTP statuses used:
 | 401 | missing/wrong token |
 | 404 | unknown route or closed/expired thread |
 | 409 | duplicate invocation, busy thread or retained-thread capacity reached |
+| 413 | request body too large (`POST /instant` and `/invocations/prepare` > 4 KB, `/settings/routing` and `/settings/classifier` > 16 KB, others > 1 MB) |
 | 500 | unexpected server failure |
 
 Tool outcome codes (open set, snake_case):
@@ -107,6 +108,8 @@ Tool outcome codes (open set, snake_case):
 | `budget_exceeded` | invocation reached its bounded native input budget |
 | `uia_failed` | UI Automation query/action failed |
 | `busy` | operation was cancelled while waiting for the serialized input gate |
+| `token_expired` | a launcher file token is unknown, expired or belongs to another context |
+| `unsupported` | the host does not implement this operation (for example `system` `appearance.*` on macOS v1) |
 | `internal_error` | unexpected failure inside the host |
 
 ## Native Host API (17831)
@@ -272,11 +275,126 @@ no-delete sandbox. Supported page scope, installation and acceptance limits are 
 `host-macos/BROWSER_INTEGRATION.md`. Windows behavior/schema remains compatible;
 the optional Mac browser hint is additive.
 
+### Launcher routes (macOS)
+
+Contract code: `node-harness/src/contracts/launcher.ts`; exact wire fixtures:
+`shared/fixtures/launcher/*.json` (the conformance suite checks both sides). Same
+envelope as every host tool (`{arguments}` → `{ok:true,result}` | `{ok:false,error}`);
+`contextId` is optional on all three. The Windows host has none of these routes: Node
+then registers only its engine-only instant tools and never calls them.
+
+| Route | Kind | Arguments | Result |
+|-------|------|-----------|--------|
+| `launcher.searchFiles` | read | `nameGroups: string[][]` (OR of AND-groups, ≤ 6 words in total, each ≤ 64 chars, no control/format characters; words < 3 chars match whole words only), `contentType?` (UTI, `kMDItemContentTypeTree`), `scopes?: ("home"\|"applications"\|"icloud")[]` (default `["home"]`), `maxResults?` (≤ 200, default 100) | `{items: FileCandidate[], truncated, elapsedMs}` |
+| `launcher.listApps` | read | none | `{version, apps: [{bundleId, name, aliases[], path, running}]}`; `version` changes with the index (Node caches by it) |
+| `launcher.open` | effect | `action`: `openApp {bundleId}` \| `openURL {url}` (http/https) \| `openFile {token}` \| `revealFile {token}` | `{status, performed}`; `performed: "revealFile"` when an executable, script or installer was downgraded from `openFile` |
+
+`FileCandidate = {token, name, path, contentType?, createdMs?, modifiedMs?, lastUsedMs?,
+useCount?, isDirectory, isPackage}`. Tokens are host-minted per search (random 128-bit,
+`tok_` + 32 hex, TTL 10 min, ≤ 500 live, scoped to the context, revoked with it); `.Trash`
+paths are never returned. Node keeps `path` for ranking and display folders only: the
+model sees refs (`f1`, `f2`, …) and names, cards carry tokens, and nothing logs either.
+`launcher.open` appears in `GET /tools` only while computer control is enabled and refuses
+with `policy_blocked` in read-only invocations and for every other action type (copyText,
+system, anything delete/trash/move-like); an unknown or foreign token is `token_expired`.
+Host messages can name apps or files, so Node logs launcher outcomes by code only.
+
+### Host actions
+
+The closed effect vocabulary (`node-harness/src/contracts/actions.ts`, Swift mirror
+`InstantContracts.swift`). Node never performs any of them; it returns descriptors that
+the native host validates against its own `LauncherPolicy` before acting.
+
+```ts
+type HostAction =
+  | { type: "copyText"; text: string }                    // ≤ 4000 chars
+  | { type: "typeIntoPinned"; text: string }              // instant lane only; through InputPolicy (input.typeText)
+  | { type: "openURL"; url: string }                      // http/https only
+  | { type: "openApp"; bundleId: string }                 // from the host app index
+  | { type: "openFile" | "revealFile" | "copyPath"; token: string } // host-minted tokens only
+  | { type: "system"; op: SystemOp; value?: number | boolean | "dark" | "light" } // instant lane only
+  | { type: "askAgent"; prompt: string };                 // ≤ 500 chars; seeds a fresh /invoke
+type SystemOp = "appearance.set" | "appearance.toggle" | "volume.set" | "volume.step" | "volume.mute" | "display.sleep";
+```
+
+There is no delete, trash, move, rename, write, power, lock or logout action. `volume.set`
+takes a 0…1 fraction, `volume.step` a signed fraction within ±1, `volume.mute` a boolean,
+`display.sleep` nothing; the macOS host refuses `appearance.*` with `unsupported` in v1.
+Model-authored cards may bind only `copyText | openURL | openApp | openFile | revealFile |
+copyPath | askAgent`, and file actions only with tokens from a host search in the same
+thread. Agent tools may request only `openApp | openURL | openFile | revealFile` through
+`launcher.open`.
+
 ## Node Harness API (17832)
 
 ### `GET /health`
 
 Same shape as the host health endpoint, `"service":"node-harness"`.
+
+### `POST /instant`
+
+Deterministic instant lane (`node-harness/src/instant`; contracts
+`node-harness/src/contracts/instant.ts`, Swift `InstantContracts.swift`, fixtures
+`shared/fixtures/instant/*.json`). Synchronous `200`, token-authed, body ≤ 4 KB
+(`413` above), strictly validated (`400`). The macOS host calls it for typed previews,
+voice partials and the final utterance; the Windows host does not use it (it gets instant
+answers through `/invoke`).
+
+```ts
+interface InstantRequest { text: string /* ≤ 500 */; phase: "typing" | "partial" | "final"; seq: number /* integer ≥ 0 */;
+  takeId?: string; contextId?: string; locale?: string /* BCP 47 */; inputMode?: "text" | "voice"; silenceMs?: number }
+type InstantResponse = { seq: number; elapsedMs: number; source: "grammar" | "classifier" } & (
+  | { decision: "answer"; intent: InstantIntent; title: string; subtitle?: string; card: CardSpec }
+  | { decision: "list"; intent: "file_search" | "open_app"; title: string; card: CardSpec; relaxed?: boolean }
+  | { decision: "act"; intent: InstantIntent; title: string; action: HostAction; confirm: boolean; card?: CardSpec }
+  | { decision: "refuse"; code: "file_deletion_blocked"; message: string; card: CardSpec }
+  | { decision: "fallthrough"; reason: "no_match" | "deictic" | "compound" | "low_confidence" | "timeout" | "unknown_place" | "disabled";
+      hints?: ClassifierHints });
+```
+
+- Anchored EN/DE grammar over the whole utterance: calculator/units/bases (fend), ECB
+  currency, time zones, date math, open app/URL, web search, file search, volume/display
+  sleep, and file-deletion refusal (every phase). Deictic words ("this", "hier", "markiert")
+  and two-step requests fall through to the agent.
+- `act` only on `phase: "final"`; `typing`/`partial` return previews (`answer`/`list`) or
+  `fallthrough`. Node never performs effects: the host executes `action` after its own
+  `LauncherPolicy` check. Budgets: 60 ms, 250 ms for file search and the first rate download.
+  It never fails: errors and timeouts are `fallthrough`.
+- Latest wins per take (`takeId`, else `contextId`): a newer `seq` aborts the dispatch still
+  running for that take (it answers `fallthrough`/`timeout`), and a request older than the
+  newest seen is answered `fallthrough`/`timeout` at once. The final wins: once a take's
+  `final` arrived, later `typing`/`partial` requests for it are answered `fallthrough`/`timeout`
+  and never abort it, and a `final` is only superseded by a newer `final`. Requests with
+  neither `takeId` nor `contextId` are independent. Hosts drop responses by `seq`.
+- File and app results come from the host's launcher routes; file rows bind host tokens
+  (`openFile`/`revealFile`/`copyPath`), never paths. Every card passes the strict catalog
+  check before it is returned (see Result cards).
+- Currency: the first currency question (also a typed preview) downloads the ECB
+  reference rates once (conditional GET, cached; disclosed in Settings; `PI_OS_FX_RATES=0`
+  disables it). Until then the answer is a Notice card ("Downloading ECB reference rates…").
+- On a grammar miss in `partial`/`final`, the optional advisory classifier (Settings; off by
+  default) may add `hints` within 250 ms. Hints never trigger or authorize anything; for a
+  `takeId` they are kept briefly so the following `/invoke` can raise (never lower) the
+  routed tier or request the screenshot. The classifier receives the cleaned utterance
+  (wake word and politeness removed); neither text nor hints are logged.
+
+### `POST /invocations/prepare`
+
+`{"contextId":"ctx-123","takeId":"take-7"}` → `202 {"accepted":true,"takeId":"take-7"}`
+(macOS, at hotkey key-down once the context is pinned). Best effort: it warms the instant
+engines (no network) and the host app index, and in agent mode pre-builds the take's agent
+session (model runtime with `pi-os/auto`, resources, extensions, tool set) from the pinned
+snapshot. `POST /invoke` with the same `takeId` **and** `contextId` adopts it when nothing it
+was built from changed (input permissions, launcher routes, resource mode, model selection,
+routing bias, Brave route); otherwise it is discarded and a fresh session is built. The
+screenshot usually lands after the prepare: the prepared session is still adopted when the
+routed turn attaches no screenshot (its seeded coordinate authority is then revoked), and
+rebuilt from the current snapshot when the turn attaches one the session was not built
+with, so an attached image always carries its authority. A prepared session lives 30 s, at
+most 3 exist, a newer prepare for a take replaces it, and
+`{"takeId":"take-7","cancel":true}` → `200 {"cancelled":true,"takeId":"take-7"}` discards it
+(for example when the key is released without a request). A prepare for an unknown context
+builds nothing.
 
 ### `POST /invoke`
 
@@ -299,13 +417,43 @@ Entry point for a hotkey submission. Request:
   `thread_limit` before accepting a new retained invocation at capacity).
 - The snapshot itself is NOT embedded; the agent fetches it via
   `desktop.getContext`.
+- `takeId?: string` (`[A-Za-z0-9_-]{1,128}`): the push-to-talk/composer take (macOS).
+  A host that sends it runs `POST /instant` itself (or bypassed it on purpose, ⌥↵ "Ask pi"),
+  so `/invoke` then skips the instant lane; with a matching `contextId` the session
+  prepared by `POST /invocations/prepare` for that take is reused, and advisory classifier
+  hints that `/instant` already received for the take are fused into routing (never awaited).
+- `input?: {mode: "text"|"voice", confidence?: 0..1, locale?: BCP 47, durationMs?: 0..3600000,
+  engine?: string}` (strictly validated, 400 otherwise). Voice adds a short "spoken request,
+  may be misheard" note (with the locale only) to the prompt. The record keeps
+  `input: {mode}` only; none of it is logged.
+
+Without a `takeId` (the Windows host, older Mac builds), a first-turn `/invoke` runs the
+instant dispatcher on the prompt (`phase: "final"`, no classifier): an `answer` with a result
+(calculator, units, currency, time, dates) completes the invocation at once with
+`responseText` (the card's text form) and `card` (`cardComplete: true`), no model and no
+session (`followupAvailable: false`; a follow-up is a fresh `/invoke`, e.g. "Earlier quick
+answer: Q → A"). Everything else falls through to the agent: `act` and `list` need host
+effects, an `answer` that carries only a Notice (for example "Downloading ECB reference
+rates. Try again in a moment.") answers nothing, and `refuse` stays with the agent, which is
+bound by the same file-deletion prohibition (the deletion grammar also matches some ordinary
+edits, such as deleting a message or typed text, that Windows keeps handling as before).
 
 Response: `202 {"accepted": true, "invocationId": "inv-abc"}`.
 The agent then runs its observe/act loop asynchronously.
 
+Agent sessions use the stored Settings model, or the Auto virtual model `pi-os/auto` when
+none is stored (see Model settings). On Auto, `decide()` picks the physical model and level
+from content-free heuristics before the prompt is sent (< 1 ms, no classifier wait) and
+sets the turn's active tools (light quick/fast lanes leave `codemode` inactive until a
+`pi_os_escalate` hand-off). The pinned screenshot is attached to the first prompt only
+when that decision needs the screen (deixis, acting in the app, browsing without CDP); the
+text context summary is always sent and `desktop_capture_window` stays available. Without
+an attached image there is no coordinate authority until the model captures (macOS). A
+manually chosen model keeps the previous behaviour (screenshot always attached).
+
 ### `GET /invocations/{invocationId}`
 
-Execution status for tests and diagnostics:
+Execution status (hosts poll it; macOS streams it, see `/events`):
 
 ```json
 {
@@ -334,7 +482,46 @@ Result-surfacing fields (ux-design-notes.md):
   invocation reaches a terminal state.
 - `responseText`: final agent answer, capped (~8 KB); set on completion.
 - `failureMessage`: why the invocation failed/aborted/timed out; terminal
-  failure states only.
+  failure states only. Machine-readable prefixes include `session_closed:`,
+  `not_idle:`, `control_disabled:` and `no_authenticated_model:` (Auto found no model with
+  credentials; the user should pick a model or sign in to a provider).
+
+Additive fields (all optional; Windows ignores them, its polling contract is unchanged):
+
+- `revision`: increases with every change of the record (the SSE stream sends each once).
+- `partialText`: visible text of the assistant message currently streaming (≤ 8000 chars,
+  accumulated deltas); cleared when the turn ends.
+- `card` / `cardComplete`: a result card (`pi-os-ui/1`, see Result cards). While the model
+  streams `show_result`, partial cards arrive with `cardComplete: false` and their buttons
+  must stay disabled; the validated card follows with `cardComplete: true`. A turn that
+  ends without a complete card clears it. Instant answers set a complete card too.
+  `responseText` always carries the plain-text fallback (lead sentence + card text).
+- `route`: `{tier?, provider, model, thinkingLevel, reasons[], auto}` — the model the turn
+  ran on. On Auto it starts as the decision (`tier`, content-free `reasons` such as
+  `intent=answer`, `screenshot`, `explicit-deep`) and follows escalations and failovers
+  (`cause=…`); for a manual model `auto: false` and no `tier`.
+- `input`: `{mode: "text"|"voice"}` from the request.
+- `timings`: stage milliseconds, e.g. `instantMs`, `contextMs`, `sessionMs`, `routeMs`,
+  `ttftMs` (model time to first token), `firstTokenMs`, `totalMs`.
+- `followup` requests may also carry `input` (same validation).
+
+#### `GET /invocations/{invocationId}/events`
+
+Server-sent events (macOS; use a separate long-lived HTTP session). Token-authed; `404`
+for an unknown id. Each change of the record is sent as
+
+```text
+event: record
+data: {"invocationId":"…","revision":7,"state":"running","partialText":"…",…}
+
+```
+
+with the **full** record JSON (same shape as `GET /invocations/{id}`), at most one write per
+33 ms window (the latest revision wins; a reader that falls behind gets the latest record
+once it catches up, never a backlog). The stream starts with the current record, ends
+after the record reaches a terminal state (that record is always sent), and carries
+`: ping` comments every 15 s. A follow-up turn is a new stream. Disconnecting is safe at
+any time; polling `GET /invocations/{id}` remains the fallback and the Windows path.
 
 #### `POST /invocations/{invocationId}/cancel`
 
@@ -389,11 +576,13 @@ picks up the current setting; an existing thread and its follow-ups keep their m
 #### `GET /models`
 
 Catalog for the settings page. Only models with configured authentication are
-listed (`ModelRuntime.getAvailable()`), sorted provider then id:
+listed (`ModelRuntime.getAvailable()`), sorted provider then id, preceded by the Auto
+virtual model whenever at least one physical model is usable:
 
 ```json
 {
   "models": [
+    { "provider": "pi-os", "id": "auto", "name": "Auto", "reasoning": true, "thinkingLevels": ["low", "medium", "high"] },
     {
       "provider": "openai",
       "id": "gpt-5.2",
@@ -409,8 +598,17 @@ listed (`ModelRuntime.getAvailable()`), sorted provider then id:
 - `thinkingLevels`: pi thinking levels this exact model accepts, ascending;
   non-reasoning models report `["off"]` only. Derived via pi-ai's
   `getSupportedThinkingLevels` (`thinkingLevelMap` null entries excluded).
-- `current`: the stored selection; `null` when no preference is saved and pi
-  resolves its automatic default at session creation.
+- `current`: the stored selection. With nothing stored, Auto is the default:
+  `current` is `{"provider":"pi-os","modelId":"auto","thinkingLevel":<bias level>}` plus an
+  additive `"currentIsDefault": true`. `current` is `null` only when no model is usable
+  (then `models` is empty).
+- Auto (`pi-os/auto`) is a pi 1.0 virtual model: for every request it picks a physical
+  model and thinking level among the authenticated models (heuristics, measured latency,
+  routing settings) and escalates or fails over within the turn. Its thinking levels are
+  the routing bias: `low` = prefer speed, `medium` = balanced, `high` = prefer quality.
+  xhigh/max levels are reached only through explicit words ("think hard", "ultrathink",
+  "gründlich") or tier overrides. Hosts may show it as "Auto (recommended)". pi's own
+  `~/.pi` settings are never changed.
 
 #### `POST /settings/model`
 
@@ -421,11 +619,69 @@ Validated against the live catalog before storing:
 - Level not in that model's supported list → `400` listing valid levels.
 - Success → `200 {"current":{"provider","modelId","thinkingLevel"}}`; the
   switch is logged (`[settings] model switched: <old> -> <new>`).
+- `{"provider":"pi-os","modelId":"auto","thinkingLevel":"low"|"medium"|"high"}` is always
+  accepted (other levels → `400`) and also sets the routing `bias`.
 
-The choice persists in `%LOCALAPPDATA%\pi-os\settings.json` on Windows or
-`~/Library/Application Support/pi-os/settings.json` on macOS and is re-applied
-to each new invocation by `runAgent`, which also logs the effective pair
-(`[agent] model=<provider>/<id> effort=<level>`) as the session starts.
+The choice persists under the `model` key of `%LOCALAPPDATA%\pi-os\settings.json` on
+Windows or `~/Library/Application Support/pi-os/settings.json` on macOS (an atomic
+read-modify-write that keeps every other key, e.g. `routing`) and is re-applied to each
+new invocation, which also logs the effective pair
+(`[agent] model=<provider>/<id> effort=<level>`) as the session starts. A stored model
+that is no longer registered falls back to Auto.
+
+#### `GET /settings/routing` / `POST /settings/routing`
+
+Auto's knobs, stored under the `routing` key of the same `settings.json`:
+
+```json
+{ "bias": "balanced", "maxAutoTier": "deep", "allowLocalModels": false,
+  "tierOverrides": { "deep": { "provider": "openai-codex", "id": "gpt-6.1-sol", "thinkingLevel": "medium" } } }
+```
+
+- `bias`: `speed | balanced | quality` (default balanced). Changing it while the stored
+  model is Auto also updates that selection's level.
+- `maxAutoTier`: highest tier Auto picks on its own, one of `quick | fast | standard | deep |
+  max` (default `deep`); explicit depth words may exceed it.
+- `tierOverrides?`: pin `{provider, id (or modelId), thinkingLevel}` per tier; validated
+  against the available catalog at save time (`400` naming the problem). `null` for a tier
+  clears it; `"tierOverrides": null` clears all.
+- `allowLocalModels`: route to loopback providers (default false: local inference is
+  coordinated separately).
+- POST takes a partial patch; unknown keys and invalid values are `400`. Both GET and POST
+  return the full current settings object.
+
+Measured latency per `provider/model@level` and temporary provider health blocks
+(rate limits 60 s, quota 30 min, auth 10 min) persist in `routing-stats.json` next to
+`settings.json` (ids, counts and averages only).
+
+#### `GET /settings/classifier` / `POST /settings/classifier`
+
+Optional advisory intent classifier, stored separately in `classifier.json`; default off.
+
+```json
+{ "kind": "off" | "laya" | "pi", "python": "/abs/venv/bin/python", "script": "/abs/…", "modelDir": "/abs/…",
+  "sha256": "…", "calibration": "/abs/….json", "threads": 4, "provider": "cloudflare-workers-ai", "model": "typesafe/jev",
+  "shadowLog": false,
+  "status": { "kind": "laya", "state": "stopped", "reason": "…", "name": "laya", "shadowLog": false,
+              "laya": { "failures": 0, "maxRestarts": 3, "lastError": "…", "model": { … }, "requestErrors": 0 } } }
+```
+
+- `laya`: a local CPU-only sidecar (stdio child of the harness, never the GPU), started
+  lazily on first use and warmed at `/invocations/prepare`; it stops after 10 idle minutes
+  and with the harness. ~5 GB RAM while loaded, ~18 s to load. `pi`: a pi catalog
+  classifier (e.g. Cloudflare Workers AI Jev); this sends utterances to that provider.
+- Paths must be absolute; `PI_OS_LAYA_PYTHON` / `PI_OS_LAYA_MODEL_DIR` fill missing ones.
+- `status` is read-only (an echoed `status` in a POST is ignored): `state` is
+  `off | unavailable | configured | stopped | starting | ready | stopping | backoff | failed`,
+  with `reason`/`laya.lastError` such as `disabled_by_env`, `model_not_configured`,
+  `network_blocked`, `ready_timeout`, `load_failed`, `spawn_failed`, `protocol_mismatch`,
+  `crashed`.
+- `shadowLog: true` appends labels, probabilities and latency (never text) to
+  `logs/classifier-shadow.jsonl` for calibration; it pauses at 5 MiB.
+- When enabled, Laya is also registered as the pi classifier provider `laya`
+  (model `multilingual`) on every runtime; chat model lists are unaffected.
+- Classifier output is advisory: it may raise Auto's tier or request the screenshot, never
+  lower a rule-derived tier, select an instant action or authorize anything.
 
 ### Resource compatibility settings
 
@@ -444,6 +700,39 @@ and coding tools; arbitrary trusted code can bypass native window restrictions. 
 must show this distinction and obtain explicit confirmation, not imply sandboxing.
 Project extensions/context are not trusted on Mac. Factory providers are registered
 before model choice; catalog-only loading does not invoke a model or session-start hooks.
+
+## Result cards
+
+Answers can carry a native card: a json-render flat spec restricted to a closed, static
+catalog (`format: "pi-os-ui/1"`; wire types `node-harness/src/contracts/cards.ts`, Zod
+catalog and validation `node-harness/src/ui`, Swift `CardContracts.swift` + `CardView.swift`,
+fixtures `shared/fixtures/cards/*.json`).
+
+```ts
+interface CardSpec { format: "pi-os-ui/1"; root: string; elements: Record<string, CardElement> }
+interface CardElement { type: CardComponent; props: Record<string, unknown>; children?: string[];
+                        on?: Record<string, { action: HostAction["type"]; params: Record<string, unknown> }> }
+```
+
+Components: `Answer {summary?}` (root only), `Markdown {source ≤ 4000}`, `ResultCard {kind:
+math|conversion|currency|time|date|fact, input?, value, detail?, freshness?}` (event `copy` →
+copyText only), `KeyValue {title?, items ≤ 24}`, `Table {title?, columns 1..6, rows ≤ 50}`,
+`ItemList {title?, total?}` (children: `Item` only), `Item {title, subtitle?, icon?, detail?}`
+(events `primary`/`secondary`/`tertiary`, e.g. openFile/revealFile/copyPath),
+`Notice {tone, text ≤ 500}`, `Status {state, text, progress?}`, `Suggestion {prompt 1..160}`
+(event `press` → askAgent with exactly that prompt).
+
+Node enforces before any host sees a card: at most 150 elements and 64 KiB of UTF-8 JSON;
+the root is `Answer` and `Answer` appears only there; `ItemList` holds only `Item`s and
+every other component is a leaf; no missing, shared or cyclic children, no orphans;
+unknown props/fields, `$`-keys and `visible`/`repeat`/`watch`/`state` are rejected; bindings
+use declared events only and are exactly `{action, params}` forming a valid HostAction.
+Model cards (`show_result`) bind only the model-card subset of Host actions, and their
+file tokens must be live in the thread's ledger (the model writes refs `f1…`, Node fills
+tokens). Instant cards pass the same strict check with the full action set. Element keys
+are stable across partial updates; partial cards (`cardComplete: false`) carry real
+bindings, so hosts keep their buttons disabled until the card is complete. Every card has a
+plain-text fallback in `responseText`; a host that cannot decode a card shows that text.
 
 ## Invocation flow (happy path)
 
@@ -469,6 +758,19 @@ Node agent loop --POST /tools/<any tool>-- repeated --------> C# host
 Node harness records steps; invocation completes/fails/is aborted/times out
 ```
 
+macOS push-to-talk / composer flow (voice magic):
+
+```text
+hotkey down ── pin context ── POST /invocations/prepare {contextId, takeId}   [202]
+  │  partial transcript / keystrokes ── POST /instant {phase: typing|partial} ── preview card
+  ▼
+release / Enter ── POST /instant {phase: final}
+  ├─ answer / list / refuse ── host renders the card (no agent)
+  ├─ act ── host LauncherService (LauncherPolicy) performs the HostAction
+  └─ fallthrough ── POST /invoke {contextId, prompt, takeId, input}   [202]
+                      └─ prepared session + Auto route ── GET /invocations/{id}/events (SSE)
+```
+
 Text fidelity/line breaks/no-default-clipboard and platform-specific typing mechanisms
 are documented in [`docs/desktop-input-semantics.md`](../../docs/desktop-input-semantics.md).
 
@@ -476,6 +778,8 @@ are documented in [`docs/desktop-input-semantics.md`](../../docs/desktop-input-s
 
 - No MCP wrapping yet. The tool surface above maps cleanly onto MCP later;
   revisit once primitives stabilize (research question RQ5).
-- No streaming/websockets. Polling `/invocations/{id}` is enough for the MVP.
+- No websockets and no steering/barge-in yet. Streaming is server-sent events on
+  `GET /invocations/{id}/events` (macOS); polling `/invocations/{id}` stays fully supported
+  (Windows polls; Mac falls back to it).
 - No multi-tenant auth, no TLS. Loopback + token is the whole security story
   for this phase; deeper policy/approval design comes separately.

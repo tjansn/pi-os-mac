@@ -21,9 +21,16 @@ export interface HarnessConfig {
   readOnly?: boolean;
   /** Explicit opt-out for isolated split development only. */
   insecureDev?: boolean;
+  /** Instant lane (POST /instant and instant answers in /invoke). PI_OS_INSTANT=0 turns it off. Default on. */
+  instantEnabled?: boolean;
+  /** On-demand ECB reference-rate download for currency answers (PI_OS_FX_RATES=0 disables). Default on. */
+  fxRatesEnabled?: boolean;
+  /** Default web search URL with `%s` (PI_OS_WEB_SEARCH, http/https only). Default DuckDuckGo. */
+  webSearchTemplate?: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): HarnessConfig {
+  const webSearchTemplate = parseSearchTemplate(env.PI_OS_WEB_SEARCH);
   return {
     port: Number.parseInt(env.PI_OS_NODE_PORT ?? "17832", 10),
     hostBaseUrl: env.PI_OS_HOST_URL ?? "http://127.0.0.1:17831",
@@ -33,7 +40,28 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): HarnessConfig 
     capturesDir: env.PI_OS_CAPTURES_DIR ?? join(supportDirectory(env), "captures"),
     readOnly: env.PI_OS_READ_ONLY === "1",
     insecureDev: env.PI_OS_INSECURE_DEV === "1" && env.PI_OS_SUPERVISED !== "1",
+    instantEnabled: parseFlag(env.PI_OS_INSTANT, true),
+    fxRatesEnabled: parseFlag(env.PI_OS_FX_RATES, true),
+    ...(webSearchTemplate ? { webSearchTemplate } : {}),
   };
+}
+
+/** Unset/blank -> fallback; explicit 0/false/off -> false; anything else -> true. */
+function parseFlag(raw: string | undefined, fallback: boolean): boolean {
+  if (raw === undefined || raw.trim() === "") return fallback;
+  return !["0", "false", "off"].includes(raw.trim().toLowerCase());
+}
+
+/** Only an http(s) template containing exactly one %s is accepted; anything else keeps the default. */
+function parseSearchTemplate(raw: string | undefined): string | undefined {
+  const value = raw?.trim();
+  if (!value || value.length > 512 || value.split("%s").length !== 2) return undefined;
+  try {
+    const url = new URL(value.replace("%s", "q"));
+    return url.protocol === "https:" || url.protocol === "http:" ? value : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function parseTimeoutMs(raw: string | undefined): number {

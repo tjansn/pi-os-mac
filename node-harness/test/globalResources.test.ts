@@ -3,8 +3,10 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { createAgentSession, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { createComputerUseExtension } from "../src/agent/computerUseExtension.js";
-import { loadAgentResources } from "../src/agent/agentRunner.js";
+import { createLiveSession, loadAgentResources, sessionExtensions } from "../src/agent/agentRunner.js";
+import { codemodeExtensionFactories } from "../src/agent/codemodePolicy.js";
 import type { HostClient } from "../src/hostClient.js";
+import { CAPTURES, fauxRuntimes, snapshot } from "./integrationFixtures.js";
 
 const fixtureAgentDir = join(process.cwd(), "test", "fixtures", "global-agent-dir");
 
@@ -37,4 +39,54 @@ test("global skill and extension tool are visible beside Computer Use", async ()
   } finally {
     session.dispose();
   }
+});
+
+test("trusted (Windows-style) sessions activate cards, instant tools and codemode without an allowlist; pi_os_escalate only on Auto", async () => {
+  const runtimes = fauxRuntimes();
+  for (const selection of [null, { provider: "fx", modelId: "fast", thinkingLevel: "off" }]) {
+    const live = await createLiveSession({
+      hostClient: { invokeTool: async () => ({ ok: true, result: {} }) } as unknown as HostClient,
+      contextId: "ctx-test", prompt: "", snapshot: snapshot("ctx-test"), capturesDir: CAPTURES, log: () => {},
+      readOnly: false, resourceSelection: { mode: "trustedGlobal" }, modelSelection: selection,
+      services: { agentDir: fixtureAgentDir, modelRuntime: runtimes.factory },
+    });
+    try {
+      const tools = live.controls.toolNames!;
+      for (const name of ["fixture_global_tool", "desktop_act", "instant_calc", "instant_convert_currency", "instant_time_in", "show_result", "codemode"]) {
+        assert.ok(tools.includes(name), `${name} is active on the trusted path`);
+      }
+      // No host launcher routes were negotiated: the host-backed tools do not register.
+      assert.ok(!tools.includes("find_files") && !tools.includes("open_item"));
+      assert.equal(tools.includes("pi_os_escalate"), selection === null, "the hand-off tool exists only where Auto acts on it");
+      assert.equal(Boolean(live.controls.auto), selection === null);
+    } finally { await live.close(); }
+  }
+});
+
+test("codemode advertises exactly the script-callable tools: trusted built-ins and global tools are never offered to scripts", async () => {
+  const declared = async (wrap: boolean) => {
+    const { extensions } = sessionExtensions({ contextId: "ctx-test", hostClient: {} as HostClient, capturesDir: CAPTURES, readOnly: false });
+    const list = wrap ? extensions : extensions.map(extension =>
+      typeof extension !== "function" && extension.name === "pi-os-codemode" ? codemodeExtensionFactories()[1]! : extension);
+    const loader = await loadAgentResources(list, process.cwd(), fixtureAgentDir, false);
+    const modelRuntime = await ModelRuntime.create({ authPath: join(fixtureAgentDir, "auth.json"), modelsPath: join(fixtureAgentDir, "missing-models.json") });
+    const { session } = await createAgentSession({ agentDir: fixtureAgentDir, modelRuntime, resourceLoader: loader,
+      sessionManager: SessionManager.inMemory(), settingsManager: SettingsManager.inMemory() });
+    try {
+      session.setActiveToolsByName([...session.getActiveToolNames(), "codemode"]);
+      return new Map(session.agent.state.tools.map(tool => [tool.name, tool.description]));
+    } finally { session.dispose(); }
+  };
+  const wrapped = await declared(true);
+  assert.match(wrapped.get("instant_calc")!, /Codemode: `tools\.instant_calc\(args\)`/);
+  assert.match(wrapped.get("desktop_get_context")!, /Codemode:/);
+  for (const blocked of ["bash", "read", "edit", "write", "fixture_global_tool"]) {
+    if (wrapped.has(blocked)) assert.doesNotMatch(wrapped.get(blocked)!, /Codemode:/, `${blocked} is not advertised to scripts`);
+  }
+  for (const modelOnly of ["desktop_act", "show_result", "pi_os_escalate"]) {
+    if (wrapped.has(modelOnly)) assert.doesNotMatch(wrapped.get(modelOnly)!, /Codemode:/, modelOnly);
+  }
+  // Without the pi-os narrowing, pi itself would tell the model that scripts may call bash.
+  const raw = await declared(false);
+  assert.match(raw.get("bash")!, /Codemode:/);
 });

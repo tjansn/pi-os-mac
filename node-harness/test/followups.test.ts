@@ -10,7 +10,7 @@ import { HarnessServer } from "../src/server.js";
 import { loadConfig } from "../src/config.js";
 import type { HostClient } from "../src/hostClient.js";
 import { LiveAgentSession, type SessionTransport } from "../src/agent/liveSession.js";
-import { promptFollowup } from "../src/agent/agentRunner.js";
+import { activeToolsFor, promptFollowup, spokenInputNote } from "../src/agent/agentRunner.js";
 
 class FixtureSession implements SessionTransport {
   listener?: (event: AgentSessionEvent) => void;
@@ -273,4 +273,72 @@ test("nested tool calls (parentToolCallId) are logged but neither counted nor al
   assert.deepEqual(steps, ["codemode", "desktop_get_context", "desktop_refresh_context", "desktop_capture_window"]);
   assert.deepEqual(logs.filter(line => line.includes("(nested)")), ["[agent] tool -> desktop_get_context (nested)", "[agent] tool -> desktop_refresh_context (nested)"]);
   await live.close();
+});
+
+test("observers: partial text accumulates per assistant message; responses report ids and timings only; escalation restores light-lane tools", async () => {
+  const partials: string[] = [], samples: unknown[] = [], ends: string[] = [];
+  const restored: string[][] = [];
+  const update = (type: "text_delta" | "thinking_delta", delta: string) =>
+    ({ type: "message_update", message: {}, assistantMessageEvent: { type, delta, contentIndex: 0, partial: {} } }) as unknown as AgentSessionEvent;
+  const tool = (type: "tool_execution_start" | "tool_execution_end", toolName: string, isError = false) =>
+    ({ type, toolCallId: `c-${toolName}`, toolName, ...(type === "tool_execution_start" ? { args: {} } : { result: {}, isError }) }) as AgentSessionEvent;
+  const assistant = (text: string) => ({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text }], provider: "fx", model: "fast",
+    thinkingLevel: "off", usage: { output: 20 }, stopReason: "stop" } }) as AgentSessionEvent;
+  const live = new LiveAgentSession(new ScriptedSession([
+    { type: "turn_start" } as AgentSessionEvent,
+    { type: "message_start", message: { role: "assistant" } } as AgentSessionEvent,
+    update("thinking_delta", "hmm"), update("text_delta", "Let me "), update("text_delta", "check."),
+    assistant("Let me check."),
+    tool("tool_execution_start", "pi_os_escalate"), tool("tool_execution_end", "pi_os_escalate"),
+    tool("tool_execution_start", "show_result"), tool("tool_execution_end", "show_result", true),
+    { type: "turn_start" } as AgentSessionEvent,
+    { type: "message_start", message: { role: "assistant" } } as AgentSessionEvent,
+    update("text_delta", "Done."),
+    assistant("Done."),
+  ]), new AbortController(), { log() {} }, undefined, undefined, {
+    toolNames: ["desktop_get_context", "codemode"], setActiveTools: names => restored.push(names),
+  });
+  live.observe({
+    log() {}, onPartialText: text => partials.push(text), onResponse: sample => samples.push(sample),
+    onToolEnd: (name, isError) => ends.push(`${name}:${isError}`),
+  });
+  assert.deepEqual(await live.prompt("hello"), { responseText: "Done.", toolCalls: 2 });
+  assert.deepEqual(partials, ["Let me ", "Let me check.", "Done."], "a new assistant message starts a new partial text");
+  assert.deepEqual(ends, ["pi_os_escalate:false", "show_result:true"]);
+  assert.deepEqual(restored, [["desktop_get_context", "codemode"]], "a successful hand-off re-activates every session tool");
+  assert.equal(samples.length, 2);
+  for (const sample of samples as { provider: string; model: string; thinkingLevel: string; ok: boolean; outputTokens: number; ttftMs: number }[]) {
+    assert.deepEqual([sample.provider, sample.model, sample.thinkingLevel, sample.ok, sample.outputTokens], ["fx", "fast", "off", true, 20]);
+    assert.equal(typeof sample.ttftMs, "number");
+    assert.ok(!JSON.stringify(sample).includes("Let me") && !JSON.stringify(sample).includes("Done"), "samples never carry content");
+  }
+  await live.close();
+});
+
+test("provider errors are classified for health penalties; a leftover Auto decision never outlives its prompt", async () => {
+  const samples: { ok: boolean; errorKind?: string }[] = [];
+  let cleared = 0;
+  const live = new LiveAgentSession(new ScriptedSession([
+    { type: "message_end", message: { role: "assistant", content: [], provider: "fx", model: "fast", stopReason: "error",
+      errorMessage: "You exceeded your current quota, please check your plan and billing details" } } as unknown as AgentSessionEvent,
+  ]), new AbortController(), { log() {} }, undefined, undefined, {
+    auto: { clearDecision: () => { cleared++; } } as never,
+  });
+  live.observe({ log() {}, onResponse: sample => samples.push(sample) });
+  await assert.rejects(live.prompt("hello"), /quota/);
+  assert.deepEqual(samples, [{ provider: "fx", model: "fast", ok: false, errorKind: "quota" }]);
+  assert.equal(cleared, 1);
+  await live.close();
+});
+
+test("light lanes leave codemode inactive unless hinted; standard and above get every session tool", () => {
+  const all = ["desktop_get_context", "instant_calc", "find_files", "show_result", "codemode", "pi_os_escalate"];
+  assert.deepEqual(activeToolsFor(all, { tier: "quick", toolsAdd: ["instant_calc"] }), all.filter(name => name !== "codemode"));
+  assert.deepEqual(activeToolsFor(all, { tier: "fast", toolsAdd: [] }), all.filter(name => name !== "codemode"));
+  assert.deepEqual(activeToolsFor(all, { tier: "fast", toolsAdd: ["codemode"] }), all);
+  assert.deepEqual(activeToolsFor(all, { tier: "standard", toolsAdd: [] }), all);
+  // Hints name tools by B5's names; anything not in the session's allowlist stays out.
+  assert.deepEqual(activeToolsFor(["desktop_get_context"], { tier: "deep", toolsAdd: ["open_item"] }), ["desktop_get_context"]);
+  assert.deepEqual(spokenInputNote({ mode: "text" }), []);
+  assert.match(spokenInputNote({ mode: "voice", locale: "de-DE", confidence: 0.4, engine: "x" }).join("\n"), /^## Input\n.*\(de-DE\)/);
 });

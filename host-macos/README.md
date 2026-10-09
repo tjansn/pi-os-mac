@@ -31,7 +31,7 @@ PATH. It still references the checkout's `node-harness/dist` and `node_modules`.
 This is not distribution packaging and must not be shipped as a self-contained app.
 
 Default hotkey: **Control–Option–Command–Space**. Press it over a window, type a
-question, then Return. **Shift–Return** adds a line; the composer grows as you type.
+question, then Return (or hold it and speak, once voice is on — see below). **Shift–Return** adds a line; the composer grows as you type.
 Escape dismisses the prompt; the working capsule has a Cancel button. Answers have
 native Markdown typography and size to their content, with scrolling for longer replies.
 **⌘⇧C** copies the original answer, with a brief “Copied” confirmation. Escape, Done,
@@ -93,6 +93,66 @@ Build 11 passed 17 installed signed-host reader/lifecycle checks. The real SDK h
 path also passed an in-memory stream-fixture test without contacting any provider.
 No model-driven follow-up validation was performed during the local-GPU reservation.
 
+## Voice, instant commands, Auto and result cards
+
+**Push-to-talk (off by default).** Turn on **Settings → Voice → Hold the shortcut to talk**
+(macOS 26+, on-device Apple SpeechAnalyzer/SpeechTranscriber; English (US) or Deutsch).
+Then *hold* the hotkey for at least 250 ms and speak: the bar shows a live transcript
+(finished words in normal ink, the still-changing tail in secondary ink) and an accent
+waveform in the send slot. Let go to run it. A short *tap* keeps today's text bar; typing
+while listening drops the audio and keeps the text; pressing the hotkey while the text bar
+is open still closes it. The microphone opens at key-down so no syllable is clipped, which
+means the orange menu-bar indicator can flash on a quick tap. Audio and transcripts stay in
+the signed host process and are never recorded, sent to Node as audio, or logged. With voice
+off, or on macOS 14–25, the hotkey behaves exactly as before.
+
+Voice needs **Microphone** and **Speech Recognition**. pi-os asks for them only from the
+**Request Access…** buttons in Settings → Voice; the hotkey never shows a permission prompt.
+If a grant is missing, a hold explains what to do and offers **Open Voice Settings…**.
+The German speech model downloads only from that page's **Download** button. While voice is
+on, the warm Node child stays ready for 600 s after use (instead of 120 s) so a hold rarely
+waits for a cold start; an explicit `PI_OS_NODE_WARM_TTL_SECONDS` still wins.
+
+**Instant commands.** Math, units, currencies, number bases, time zones, date math, opening
+apps/links, web searches, file search and volume/display sleep are parsed by Node's instant
+engine (no model) and **performed by this host** after `LauncherPolicy` (`LauncherService`).
+While you type (or speak) the bar previews the result after 150 ms of quiet: `= 51`, “Open
+github.com”, or a file/app list above the bar. Previews never act.
+
+| Key in the bar | Effect |
+|---|---|
+| Return | Run the instant action / open the selected result; otherwise ask pi |
+| ⌥ Return | Always ask pi |
+| ⌘ Return | Secondary: reveal the selected file in Finder, or type a computed value into the pinned window (needs computer control; otherwise copies it) |
+| ↑ / ↓ | Move through a result list |
+| ⌘⇧C | Copy the selected file's path while a list is focused or previewed; otherwise Copy Answer |
+
+Successful actions show a brief “✓ Opened Figma” and the bar goes away. Answers, lists and
+the file-deletion refusal appear as native cards in the reader; a follow-up there becomes a
+fresh agent turn that starts with “Earlier quick answer: question → answer”. File results
+use host-minted tokens bound to the take's context; they are revoked when the context is
+discarded and expire after 10 minutes. Nothing deletes, trashes or moves files. Executables,
+scripts and installers are revealed, never opened. Launcher actions are logged by kind and
+outcome only in `logs/launcher-actions.jsonl`. Instant commands work with no capturable
+window (Node warm-up and the window capture are separate; only agent questions wait for the
+capture). Currency conversions download the ECB daily reference rates on first use only.
+
+**Auto model.** Settings lists **Auto (recommended)** first. It is the `pi-os/auto` catalog
+entry: Node picks a fast adequate model and effort per request. Its levels appear as
+**Prefer speed / Balanced / Prefer quality**. Any explicit model choice still works.
+
+**Streaming and cards.** Agent answers stream into the reader over one long-lived SSE
+request (`GET /invocations/{id}/events`, ≤ 30 renders/s); if streaming is unavailable the
+host falls back to today's status polling. Agent cards render natively and may only bind
+copy/open/reveal/ask actions; recalled cards, and cards whose conversation closed, are read-only. Copy Answer always copies the
+agent's original text. Nothing streams over a window the agent is acting in.
+
+**Local classifier (Laya).** Settings → Classifier can turn on the optional local Laya
+classifier. It is advisory only (it may ask Auto for a stronger model or a screenshot,
+never choose or perform an action), runs on the CPU, needs about 5 GB of memory and ~18 s
+to load, and is off by default. Its Python and model folder come from `PI_OS_LAYA_PYTHON`
+and `PI_OS_LAYA_MODEL_DIR`.
+
 ## Text input
 
 Native typing preserves Unicode and normalizes LF/CRLF/CR to single line breaks,
@@ -145,7 +205,10 @@ relax file-deletion, ownership, target or focus safeguards.
 
 ## Permissions and signing
 
-Launch never requests Screen Recording, Accessibility, or Input Monitoring.
+Launch never requests Screen Recording, Accessibility, Input Monitoring, Microphone or
+Speech Recognition. Microphone and Speech Recognition are requested only from the buttons
+in Settings → Voice (Info.plist carries both usage strings; signed builds add the
+`audio-input` entitlement).
 Select **π → Permissions… → Allow Screen Recording** explicitly. macOS may require
 a quit/relaunch after granting access. **Enable Computer Control…** explicitly
 requests Accessibility; input-posting permission is checked separately. Control
@@ -251,7 +314,7 @@ remains a release gate; a successful build alone is not a distribution claim.
 | `PI_OS_HOTKEY` | Chord override; e.g. `Ctrl+Shift+F9`. Exclusive Carbon registration and known system-shortcut conflict diagnostics. Unknown third-party shortcut precedence still requires manual testing. |
 | `PI_OS_NODE_PATH` | Explicit absolute Node executable path; overrides bundled/build-time configuration. |
 | `PI_OS_NODE_ENTRY` | Explicit absolute built `node-harness/dist/index.js`. |
-| `PI_OS_NODE_WARM_TTL_SECONDS` | One-shot warm retention after result/normal cancellation; default 120, range 0–3600. Prompt cancellation stops an unused child immediately. |
+| `PI_OS_NODE_WARM_TTL_SECONDS` | One-shot warm retention after result/normal cancellation; default 120 (600 while push-to-talk is on), range 0–3600; an explicit value always wins. With voice off, prompt cancellation stops an unused child immediately; with voice on it keeps the TTL. |
 | `PI_OS_HOST_PORT` / `PI_OS_NODE_PORT` | Loopback ports; defaults 17831 / 17832. |
 | `PI_OS_TOKEN` | Optional explicit shared token for testing; normally 32 random bytes generated by the host. Never printed. |
 | `PI_OS_SUPPORT_DIR` | Default `~/Library/Application Support/pi-os`. Contains a lock, private agent cwd, captures, logs, and Node-owned settings. |
@@ -325,8 +388,24 @@ swift run --package-path host-macos pi-os-ui-preview prompt --light
 swift run --package-path host-macos pi-os-ui-preview multiline --dark
 swift run --package-path host-macos pi-os-ui-preview answer --dark
 swift run --package-path host-macos pi-os-ui-preview settings --light
-# Also: draft, working, short, long, error, failed. Settings uses a mock catalog.
+swift run --package-path host-macos pi-os-ui-preview listening --dark   # scripted FakeVoiceInput, no microphone
+# Also: draft, working, short, long, error, failed, instant-calc, instant-files, instant-answer,
+# instant-list, card, streaming, confirmation, voice-denied, auto-settings, voice-settings,
+# classifier-settings. Settings use a mock catalog and a scripted voice service (no TCC).
 ```
+
+**Offscreen snapshots** render every new state into PNGs without ever showing a window,
+taking focus or adding a Dock icon (System/Frost/Contrast/Graphite × light/dark, plus a
+contact sheet per variant):
+
+```sh
+swift build --package-path host-macos && \
+  host-macos/.build/debug/pi-os-ui-preview --snapshot /tmp/pi-os-shots [--states listening,card]
+```
+
+Native glass/vibrancy exists only in the window server, so snapshots paint an
+approximated material behind the real view tree; judge layout, type and contrast there,
+and glass refraction only on a real window.
 
 Typing and submitting in the preview shows a simulated working state and sample
 answer. Permission actions are simulated there, never system permission requests.
@@ -393,5 +472,5 @@ ps -p <verified-pi-os-pid> -o pid,%cpu,rss
 
 No polling or recurring timer runs at ordinary idle. Active requests have bounded
 read/write/capture deadlines; the Node retention timeout is one-shot. Model work
-has the existing configurable invocation timeout. Panel status polls run only
-while an invocation is active.
+has the existing configurable invocation timeout. Panel status streams (SSE, falling
+back to polling) only while an invocation is active.

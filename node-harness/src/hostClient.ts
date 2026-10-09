@@ -1,4 +1,7 @@
 import type { HarnessConfig } from "./config.js";
+import type {
+  AppIndexResult, FileSearchRequest, FileSearchResult, LauncherOpenRequest, LauncherOpenResult,
+} from "./contracts/launcher.js";
 
 /**
  * Client for the C# Windows host tool API (protocol.md: POST /tools/{name}).
@@ -17,6 +20,17 @@ export interface ToolError {
 }
 
 export type ToolOutcome<T> = ToolOk<T> | ToolError;
+
+/**
+ * A launcher read route failed (transport error or `ok:false`). The message carries the
+ * error code only: host messages can name apps or files (privacy, protocol.md).
+ */
+export class LauncherRouteError extends Error {
+  constructor(readonly code: string) {
+    super(`launcher_failed: ${code}`);
+    this.name = "LauncherRouteError";
+  }
+}
 
 // Mirrors shared/schemas/desktop-context.ts (canonical schema).
 export interface Point2D { x: number; y: number }
@@ -154,5 +168,32 @@ export class HostClient {
 
   getSnapshot(contextId: string, signal?: AbortSignal): Promise<ToolOutcome<DesktopContextSnapshot>> {
     return this.invokeTool<DesktopContextSnapshot>("desktop.getContext", { contextId }, signal);
+  }
+
+  /** POST /tools/launcher.searchFiles (macOS). Rejects on transport errors and `ok:false`. */
+  searchFiles(request: FileSearchRequest, signal?: AbortSignal): Promise<FileSearchResult> {
+    return this.launcherRead<FileSearchResult>("launcher.searchFiles", { ...request }, signal);
+  }
+
+  /** POST /tools/launcher.listApps (macOS); hosts version the index so callers can cache it. */
+  listApps(signal?: AbortSignal, contextId?: string): Promise<AppIndexResult> {
+    return this.launcherRead<AppIndexResult>("launcher.listApps", contextId ? { contextId } : {}, signal);
+  }
+
+  /** POST /tools/launcher.open (macOS effect). Refusals (policy_blocked, token_expired, …) are data. */
+  open(request: LauncherOpenRequest, signal?: AbortSignal): Promise<ToolOutcome<LauncherOpenResult>> {
+    return this.invokeTool<LauncherOpenResult>("launcher.open", { ...request }, signal);
+  }
+
+  private async launcherRead<T>(toolName: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
+    let outcome: ToolOutcome<T>;
+    try {
+      outcome = await this.invokeTool<T>(toolName, args, signal);
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      throw new LauncherRouteError("host_unavailable");
+    }
+    if (!outcome.ok) throw new LauncherRouteError(outcome.error.code);
+    return outcome.result;
   }
 }

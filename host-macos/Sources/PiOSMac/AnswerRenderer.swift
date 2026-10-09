@@ -107,6 +107,8 @@ struct PanelMetrics {
     static let width: CGFloat = 480
     static let inputMin: CGFloat = 24
     static let inputMax: CGFloat = 104
+    /// Typed list results above the bar: about five rows, then the card scrolls.
+    static let previewCardMaximum: CGFloat = 300
     static func promptHeight(inputHeight: CGFloat) -> CGFloat { max(50, min(inputMax, max(inputMin, inputHeight)) + 22) }
     static func answerHeight(textHeight: CGFloat, question: Bool, availableHeight: CGFloat) -> CGFloat {
         min(max(1, availableHeight - 106), max(152, min(500, textHeight + (question ? 118 : 89))))
@@ -114,14 +116,42 @@ struct PanelMetrics {
 }
 
 struct FailurePresentation {
+    /// The one recovery button a failure may offer. Presenting a failure never requests a grant.
+    enum Action: Equatable { case permissions, voiceSettings }
     let title: String
     let message: String
     let symbol: String
-    let offersPermissions: Bool
+    let action: Action?
+    var offersPermissions: Bool { action == .permissions }
+    var actionTitle: String? {
+        switch action {
+        case .permissions?: return "Open Permissions…"
+        case .voiceSettings?: return "Open Voice Settings…"
+        case nil: return nil
+        }
+    }
     init(_ error: Error) {
         let domain = error as? DomainError
-        offersPermissions = ["permission_denied", "accessibility_denied", "input_permission_denied", "control_disabled"].contains(domain?.code ?? "")
+        let code = domain?.code ?? ""
+        action = ["permission_denied", "accessibility_denied", "input_permission_denied", "control_disabled"].contains(code) ? .permissions
+            : VoiceErrorCode(rawValue: code) != nil ? .voiceSettings : nil
         switch domain?.code {
+        case VoiceErrorCode.microphoneDenied.rawValue:
+            title = "Let pi-os hear you"
+            message = domain?.message ?? "Allow microphone access in pi-os Settings → Voice, or tap the shortcut to type."
+            symbol = "mic.slash"
+        case VoiceErrorCode.speechDenied.rawValue:
+            title = "Allow speech recognition"
+            message = domain?.message ?? "Allow speech recognition in pi-os Settings → Voice, or tap the shortcut to type."
+            symbol = "waveform.slash"
+        case VoiceErrorCode.voiceUnavailable.rawValue:
+            title = "Voice input isn’t available"
+            message = domain?.message ?? "Tap the shortcut to type instead."
+            symbol = "waveform.slash"
+        case VoiceErrorCode.voiceAssetMissing.rawValue:
+            title = "Speech model needed"
+            message = domain?.message ?? "Download the speech model in pi-os Settings → Voice."
+            symbol = "arrow.down.circle"
         case "permission_denied":
             title = "Let pi-os see this window"
             message = "Allow Screen Recording to ask about what’s on screen. pi-os captures only the window you choose."

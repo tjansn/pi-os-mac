@@ -51,3 +51,16 @@ test("malformed or incomplete files degrade to no preference", () => {
     assert.equal(store.get(), null, name);
   }
 });
+
+test("saving a model is an atomic read-modify-write of the model key: routing and unknown keys survive", () => {
+  const path = tempStore();
+  writeFileSync(path, JSON.stringify({ routing: { bias: "speed", maxAutoTier: "deep", allowLocalModels: false }, future: [1, 2] }), "utf8");
+  const store = new AgentModelSettings(path, quietLog);
+  assert.equal(store.get(), null);
+  store.set({ provider: "pi-os", modelId: "auto", thinkingLevel: "low" });
+  const saved = JSON.parse(readFileSync(path, "utf8"));
+  assert.deepEqual(saved, {
+    routing: { bias: "speed", maxAutoTier: "deep", allowLocalModels: false }, future: [1, 2],
+    model: { provider: "pi-os", modelId: "auto", thinkingLevel: "low" },
+  });
+});

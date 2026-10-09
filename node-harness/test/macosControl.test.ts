@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createAgentSession, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { createComputerUseExtension, createDesktopActSchema, validateDesktopAction } from "../src/agent/computerUseExtension.js";
-import { loadAgentResources, READ_ONLY_TOOLS } from "../src/agent/agentRunner.js";
+import { loadAgentResources, READ_ONLY_TOOLS, sessionExtensions, sessionToolAllowlist } from "../src/agent/agentRunner.js";
 import type { HostClient } from "../src/hostClient.js";
 
 test("Mac supports Command/Space without expanding the Windows key contract", () => {
@@ -47,15 +47,22 @@ test("failed image ingestion cannot advance coordinate authority; mutations are 
 
 test("full Mac desktop control still excludes built-ins and global extension bypasses", async () => {
   const dir = resolve("test/fixtures/global-agent-dir");
-  const extension = createComputerUseExtension("ctx-fixed", {} as HostClient, "/captures", false, "darwin");
-  const loader = await loadAgentResources([extension], process.cwd(), dir, true);
-  const runtime = await ModelRuntime.create({ authPath: resolve(dir, "auth.json"), modelsPath: resolve(dir, "models.json") });
-  const names = [...READ_ONLY_TOOLS, "desktop_act"];
-  const { session } = await createAgentSession({ resourceLoader: loader, modelRuntime: runtime, agentDir: dir,
-    sessionManager: SessionManager.inMemory(), settingsManager: SettingsManager.inMemory(), tools: names });
-  try {
-    assert.deepEqual(session.getAllTools().map(t => t.name).sort(), [...names].sort());
-    assert.deepEqual(session.agent.state.tools.map(t => t.name).sort(), [...names].sort());
-    assert.equal(loader.getExtensions().extensions.length, 1);
-  } finally { session.dispose(); }
+  for (const launcher of [true, false]) {
+    const { extensions } = sessionExtensions({ contextId: "ctx-fixed", hostClient: {} as HostClient, capturesDir: "/captures",
+      readOnly: false, platform: "darwin", launcher });
+    const loader = await loadAgentResources(extensions, process.cwd(), dir, true);
+    const runtime = await ModelRuntime.create({ authPath: resolve(dir, "auth.json"), modelsPath: resolve(dir, "models.json") });
+    const { session } = await createAgentSession({ resourceLoader: loader, modelRuntime: runtime, agentDir: dir,
+      sessionManager: SessionManager.inMemory(), settingsManager: SettingsManager.inMemory(), tools: sessionToolAllowlist({ readOnly: false, auto: true }) });
+    // Deliberate exact set (C1): native input plus instant/launcher tools, cards, codemode and Auto's escalation.
+    // Without the host launcher routes, only the engine-only instant tools register.
+    const names = [...READ_ONLY_TOOLS, "desktop_act", "instant_calc", "instant_convert_currency", "instant_time_in",
+      ...(launcher ? ["find_files", "list_apps", "open_item"] : []), "show_result", "codemode", "pi_os_escalate"];
+    try {
+      assert.deepEqual(session.getAllTools().map(t => t.name).sort(), [...names].sort());
+      assert.deepEqual(session.agent.state.tools.map(t => t.name).sort(), [...names].sort());
+      assert.ok(!session.getAllTools().some(t => ["bash", "read", "edit", "write", "fixture_global_tool"].includes(t.name)));
+      assert.equal(loader.getExtensions().extensions.length, 6);
+    } finally { session.dispose(); }
+  }
 });

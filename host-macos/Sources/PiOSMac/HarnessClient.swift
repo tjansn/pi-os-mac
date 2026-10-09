@@ -11,7 +11,12 @@ public struct MacConfiguration {
     public let nodePort: UInt16
     public let nodePath: String?
     public let nodeEntry: String?
+    /// Explicit `PI_OS_NODE_WARM_TTL_SECONDS`, else 120 s. See `warmTTL(voiceEnabled:)`.
     public let warmTTL: Double
+    /// True when `PI_OS_NODE_WARM_TTL_SECONDS` was set; the explicit knob always wins.
+    public let warmTTLExplicit: Bool
+    /// Default idle TTL while push-to-talk is enabled, so a hold rarely pays a Node cold start.
+    public static let voiceWarmTTL: Double = 600
     public let echo: Bool
     public let forceReadOnly: Bool
     public var canControl: Bool { !forceReadOnly && ControlAvailability.ready }
@@ -22,6 +27,10 @@ public struct MacConfiguration {
               let data = try? Data(contentsOf: support.appendingPathComponent("resources.json")),
               let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return false }
         return value["mode"] as? String == "trustedGlobal" && value["trustAcknowledgement"] as? Int == 1
+    }
+    /// Idle time a warm Node child is kept: the explicit knob, else 600 s with voice on, else 120 s.
+    public func warmTTL(voiceEnabled: Bool) -> Double {
+        warmTTLExplicit || !voiceEnabled ? warmTTL : Self.voiceWarmTTL
     }
     public init(env: [String: String] = ProcessInfo.processInfo.environment) throws {
         support = URL(fileURLWithPath: env["PI_OS_SUPPORT_DIR"] ?? NSHomeDirectory() + "/Library/Application Support/pi-os", isDirectory: true)
@@ -48,8 +57,8 @@ public struct MacConfiguration {
             guard let value = Double(raw), value.isFinite, value >= 0, value <= 3600 else {
                 throw DomainError("configuration_error", "Warm TTL must be between 0 and 3600 seconds")
             }
-            warmTTL = value
-        } else { warmTTL = 120 }
+            warmTTL = value; warmTTLExplicit = true
+        } else { warmTTL = 120; warmTTLExplicit = false }
         echo = env["PI_OS_ECHO"] == "1"
         forceReadOnly = env["PI_OS_READ_ONLY"] == "1"
         for directory in [support, captures, support.appendingPathComponent("agent-cwd"), support.appendingPathComponent("logs")] {
@@ -143,6 +152,9 @@ private final class OwnedChild {
 @MainActor public final class HarnessClient {
     private let config: MacConfiguration
     private let session: URLSession
+    /// SSE only (GET /invocations/{id}/events): long-lived, so it never shares the 10 s resource
+    /// timeout of the request session. Pings arrive every 15 s; silence for 45 s fails over to polling.
+    private let streamSession: URLSession
     private var child: OwnedChild?
     private var starting: Task<Void, Error>?
     private var retention: Task<Void, Never>?
@@ -150,6 +162,8 @@ private final class OwnedChild {
     private var expectedExit = false
     private var reservations: Set<UUID> = []
     public var onUnexpectedExit: (() -> Void)?
+    /// Push-to-talk raises the default warm TTL (see MacConfiguration.warmTTL(voiceEnabled:)).
+    public var voiceEnabled: () -> Bool = { false }
     public var ownedPID: pid_t? { child?.exited == false ? child?.pid : nil }
 
     public init(config: MacConfiguration) {
@@ -158,6 +172,10 @@ private final class OwnedChild {
         c.timeoutIntervalForRequest = 5; c.timeoutIntervalForResource = 10
         c.connectionProxyDictionary = [:]
         session = URLSession(configuration: c)
+        let stream = URLSessionConfiguration.ephemeral
+        stream.timeoutIntervalForRequest = 45; stream.timeoutIntervalForResource = 7_200
+        stream.connectionProxyDictionary = [:]; stream.httpMaximumConnectionsPerHost = 2
+        streamSession = URLSession(configuration: stream)
     }
     public func warm() async throws {
         retention?.cancel(); retention = nil
@@ -241,7 +259,8 @@ private final class OwnedChild {
         guard reservations.isEmpty, child?.exited == false, !expectedExit else { return }
         retention = Task { [weak self] in
             guard let self else { return }
-            do { try await Task.sleep(nanoseconds: UInt64(self.config.warmTTL * 1_000_000_000)) }
+            let ttl = self.config.warmTTL(voiceEnabled: self.voiceEnabled())
+            do { try await Task.sleep(nanoseconds: UInt64(ttl * 1_000_000_000)) }
             catch { return }
             self.stop()
         }
@@ -254,8 +273,31 @@ private final class OwnedChild {
         // Keep ownership until waitpid completes; a new invocation must not attach to a stopping child.
     }
     public func submit(id: String, context: String, prompt: String) async throws {
-        _ = try await request("POST", "/invoke", payload: ["invocationId": id, "contextId": context, "prompt": prompt, "retainSession": true,
-                                                              "invokedAt": ISO8601DateFormatter().string(from: Date())])
+        try await submit(id: id, context: context, prompt: prompt, takeId: nil, input: nil)
+    }
+    /// POST /invoke. `takeId` lets Node reuse the session prepared at key-down; `input` is additive
+    /// (Windows never sends it) and tells the agent the prompt was spoken.
+    public func submit(id: String, context: String, prompt: String, takeId: String?, input: AgentInput?) async throws {
+        var payload: [String: Any] = ["invocationId": id, "contextId": context, "prompt": prompt, "retainSession": true,
+                                      "invokedAt": ISO8601DateFormatter().string(from: Date())]
+        if let takeId { payload["takeId"] = takeId }
+        if let input { payload["input"] = input.payload }
+        _ = try await request("POST", "/invoke", payload: payload)
+    }
+    /// POST /invocations/prepare at key-down: Node pre-builds the take's session. Best effort;
+    /// an older harness without the route (404) or a failure just means no reuse.
+    public func prepare(contextId: String, takeId: String) async {
+        _ = try? await request("POST", "/invocations/prepare", payload: ["contextId": contextId, "takeId": takeId])
+    }
+    /// The take ended without an /invoke: Node may drop its prepared session now instead of at
+    /// the 30 s expiry. Best effort; never starts or waits for a child.
+    public func cancelPrepared(takeId: String) async {
+        guard child?.exited == false, !expectedExit, starting == nil else { return }
+        _ = try? await request("POST", "/invocations/prepare", payload: ["takeId": takeId, "cancel": true])
+    }
+    /// POST /instant: synchronous, latest-wins by `seq`. Never acts; the host performs any action.
+    public func instant(_ instant: InstantRequest) async throws -> InstantResponse {
+        try JSONDecoder().decode(InstantResponse.self, from: await request("POST", "/instant", body: JSONEncoder().encode(instant)))
     }
     public func followup(_ id: String, prompt: String) async throws {
         _ = try await request("POST", "/invocations/\(id)/followup", payload: ["prompt": prompt])
@@ -295,26 +337,126 @@ private final class OwnedChild {
         try await warm()
         _ = try await request("POST", "/settings/resources", payload: ["mode": trusted ? "trustedGlobal" : "isolated", "acknowledgeUnpinnedAccess": trusted])
     }
+    /// GET /settings/classifier: the stored settings plus a read-only `status`. Kept as a raw
+    /// object so a POST preserves every field the user configured (paths stay in Node's file).
+    public func classifier() async throws -> ClassifierSettings {
+        try await warm()
+        return try ClassifierSettings(json: await request("GET", "/settings/classifier"))
+    }
+    public func setClassifier(_ settings: ClassifierSettings) async throws -> ClassifierSettings {
+        try await warm()
+        return try ClassifierSettings(json: await request("POST", "/settings/classifier", body: settings.body()))
+    }
+    /// One InvocationRecord as the host reads it. Fields after `followupAvailable` are additive
+    /// (protocol §3.5) and absent on older harnesses; a card that fails strict decoding is dropped
+    /// so the reader falls back to responseText instead of failing the invocation.
     public struct Status: Decodable {
         public let state: String
         public let activity: String?
         public let responseText: String?
         public let failureMessage: String?
         public let followupAvailable: Bool?
+        public let revision: Int?
+        public let partialText: String?
+        public let card: CardSpec?
+        public let cardComplete: Bool?
+        public let route: Route?
+        public struct Route: Decodable, Equatable {
+            public let tier: String?
+            public let model: String?
+            public let thinkingLevel: String?
+            public let auto: Bool?
+        }
+        private enum Keys: String, CodingKey {
+            case state, activity, responseText, failureMessage, followupAvailable, revision, partialText, card, cardComplete, route
+        }
+        public init(state: String, activity: String? = nil, responseText: String? = nil, failureMessage: String? = nil,
+                    followupAvailable: Bool? = nil, revision: Int? = nil, partialText: String? = nil, card: CardSpec? = nil,
+                    cardComplete: Bool? = nil) {
+            self.state = state; self.activity = activity; self.responseText = responseText; self.failureMessage = failureMessage
+            self.followupAvailable = followupAvailable; self.revision = revision; self.partialText = partialText
+            self.card = card; self.cardComplete = cardComplete; route = nil
+        }
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: Keys.self)
+            state = try c.decode(String.self, forKey: .state)
+            activity = try c.decodeIfPresent(String.self, forKey: .activity)
+            responseText = try c.decodeIfPresent(String.self, forKey: .responseText)
+            failureMessage = try c.decodeIfPresent(String.self, forKey: .failureMessage)
+            followupAvailable = try c.decodeIfPresent(Bool.self, forKey: .followupAvailable)
+            revision = (try? c.decodeIfPresent(Int.self, forKey: .revision)) ?? nil
+            partialText = (try? c.decodeIfPresent(String.self, forKey: .partialText)) ?? nil
+            card = (try? c.decodeIfPresent(CardSpec.self, forKey: .card)) ?? nil
+            cardComplete = (try? c.decodeIfPresent(Bool.self, forKey: .cardComplete)) ?? nil
+            route = (try? c.decodeIfPresent(Route.self, forKey: .route)) ?? nil
+        }
+        public var isTerminal: Bool { !["queued", "running"].contains(state) }
     }
     public func status(_ id: String) async throws -> Status {
         try JSONDecoder().decode(Status.self, from: await request("GET", "/invocations/" + id))
+    }
+    /// GET /invocations/{id}/events (SSE, macOS only): one full record per revision, the terminal
+    /// record last. Ends by throwing when the route is missing or the stream stops early, so the
+    /// caller falls back to `status` polling (the Windows-compatible path). Reading runs off the
+    /// main actor; records are decoded by the consumer.
+    public func events(_ id: String) -> AsyncThrowingStream<Status, Error> {
+        var req = URLRequest(url: URL(string: "http://127.0.0.1:\(config.nodePort)/invocations/\(id)/events")!)
+        req.setValue(config.token, forHTTPHeaderField: "X-Harness-Token")
+        req.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        let raw = Self.recordStream(session: streamSession, request: req)
+        return AsyncThrowingStream { continuation in
+            let task = Task { @MainActor in
+                do {
+                    for try await data in raw {
+                        let status = try JSONDecoder().decode(Status.self, from: data)
+                        continuation.yield(status)
+                        if status.isTerminal { continuation.finish(); return }
+                    }
+                    continuation.finish(throwing: DomainError("stream_ended", "The event stream ended before the task finished"))
+                } catch { continuation.finish(throwing: error) }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+    nonisolated private static func recordStream(session: URLSession, request: URLRequest) -> AsyncThrowingStream<Data, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task.detached {
+                do {
+                    let (bytes, response) = try await session.bytes(for: request)
+                    guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+                          (http.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased().hasPrefix("text/event-stream") else {
+                        throw DomainError("stream_unavailable", "The harness does not stream events")
+                    }
+                    var parser = ServerSentEventParser()
+                    var chunk: [UInt8] = []; chunk.reserveCapacity(8_192)
+                    func drain() throws {
+                        for event in try parser.feed(chunk) where event.name == "record" { continuation.yield(Data(event.data.utf8)) }
+                        chunk.removeAll(keepingCapacity: true)
+                    }
+                    for try await byte in bytes {
+                        chunk.append(byte)
+                        if byte == 10 || chunk.count >= 8_192 { try drain() }
+                    }
+                    try drain()
+                    continuation.finish()
+                } catch { continuation.finish(throwing: error) }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
     }
     public func cancel(_ id: String) async -> Bool {
         do { _ = try await request("POST", "/invocations/\(id)/cancel", payload: [:]); return true }
         catch { return false }
     }
     private func request(_ method: String, _ path: String, payload: [String: Any]? = nil, authenticated: Bool = true) async throws -> Data {
+        try await request(method, path, body: payload.map { try JSONSerialization.data(withJSONObject: $0) }, authenticated: authenticated)
+    }
+    private func request(_ method: String, _ path: String, body: Data?, authenticated: Bool = true) async throws -> Data {
         var req = URLRequest(url: URL(string: "http://127.0.0.1:\(config.nodePort)" + path)!)
         req.httpMethod = method
         if authenticated { req.setValue(config.token, forHTTPHeaderField: "X-Harness-Token") }
-        if let payload {
-            req.httpBody = try JSONSerialization.data(withJSONObject: payload)
+        if let body {
+            req.httpBody = body
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
         let (data, response) = try await session.data(for: req)
@@ -324,5 +466,101 @@ private final class OwnedChild {
             throw DomainError("harness_unreachable", "Harness rejected the request (\((response as? HTTPURLResponse)?.statusCode ?? 0))")
         }
         return data
+    }
+}
+
+/// `input` on POST /invoke (protocol §3.5). Additive: Windows never sends it.
+public struct AgentInput: Equatable, Sendable {
+    public var mode: String
+    public var locale: String?
+    public var durationMs: Int?
+    public var engine: String?
+    public init(mode: String, locale: String? = nil, durationMs: Int? = nil, engine: String? = nil) {
+        self.mode = mode; self.locale = locale; self.durationMs = durationMs; self.engine = engine
+    }
+    public static func voice(_ language: VoiceLanguage, durationMs: Int?) -> AgentInput {
+        AgentInput(mode: "voice", locale: language.identifier, durationMs: durationMs, engine: "apple-speech")
+    }
+    var payload: [String: Any] {
+        var value: [String: Any] = ["mode": mode]
+        if let locale { value["locale"] = locale }
+        if let durationMs { value["durationMs"] = durationMs }
+        if let engine { value["engine"] = engine }
+        return value
+    }
+}
+
+/// /settings/classifier (protocol §3.5). Only `kind` is edited here; every other stored field is
+/// echoed back unchanged, and the read-only `status` is never posted.
+public struct ClassifierSettings {
+    public var kind: String
+    public let statusState: String?
+    public let statusReason: String?
+    private var stored: [String: Any]
+    public init(json: Data) throws {
+        guard let object = try JSONSerialization.jsonObject(with: json) as? [String: Any], let kind = object["kind"] as? String else {
+            throw DomainError("invalid_response", "Classifier settings were not understood")
+        }
+        let status = object["status"] as? [String: Any]
+        self.kind = kind; statusState = status?["state"] as? String; statusReason = status?["reason"] as? String
+        stored = object; stored["status"] = nil
+    }
+    public init(kind: String, statusState: String? = nil, statusReason: String? = nil) {
+        self.kind = kind; self.statusState = statusState; self.statusReason = statusReason; stored = ["kind": kind]
+    }
+    public var shadowLog: Bool { stored["shadowLog"] as? Bool ?? false }
+    func body() throws -> Data {
+        var object = stored; object["kind"] = kind
+        return try JSONSerialization.data(withJSONObject: object)
+    }
+}
+
+/// Incremental `text/event-stream` decoder (WHATWG): `event:` and `data:` fields, `:` comment
+/// lines (pings), LF / CRLF / CR line ends, dispatch on a blank line. An event without data is
+/// dropped; an unfinished event at end of stream is discarded, as the spec requires.
+public struct ServerSentEventParser {
+    public struct Event: Equatable { public var name: String; public var data: String }
+    /// One record is ≤ ~100 KB (partialText ≤ 8000, card ≤ 64 KB); anything far larger is not ours.
+    public static let maximumEventBytes = 2_000_000
+    private var line: [UInt8] = []
+    private var afterCR = false
+    private var name = ""
+    private var data: [String] = []
+    private var size = 0
+    public init() {}
+
+    public mutating func feed<S: Sequence>(_ bytes: S) throws -> [Event] where S.Element == UInt8 {
+        var events: [Event] = []
+        for byte in bytes {
+            if afterCR { afterCR = false; if byte == 10 { continue } }
+            if byte == 10 || byte == 13 {
+                afterCR = byte == 13
+                if let event = try endLine() { events.append(event) }
+                continue
+            }
+            line.append(byte)
+            guard line.count + size <= Self.maximumEventBytes else { throw DomainError("stream_invalid", "An event exceeded the size limit") }
+        }
+        return events
+    }
+    private mutating func endLine() throws -> Event? {
+        defer { line.removeAll(keepingCapacity: true) }
+        guard !line.isEmpty else {
+            defer { name = ""; data = []; size = 0 }
+            return data.isEmpty ? nil : Event(name: name.isEmpty ? "message" : name, data: data.joined(separator: "\n"))
+        }
+        guard line.first != UInt8(ascii: ":") else { return nil }
+        let text = String(decoding: line, as: UTF8.self)
+        let field: Substring, rawValue: Substring
+        if let colon = text.firstIndex(of: ":") {
+            field = text[..<colon]; rawValue = text[text.index(after: colon)...]
+        } else { field = Substring(text); rawValue = "" }
+        let value = rawValue.hasPrefix(" ") ? String(rawValue.dropFirst()) : String(rawValue)
+        switch field {
+        case "event": name = value
+        case "data": data.append(value); size += value.utf8.count + 1
+        default: break // id/retry are not used by the harness
+        }
+        return nil
     }
 }

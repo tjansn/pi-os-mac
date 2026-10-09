@@ -3,6 +3,76 @@
 2026-09-15. Target machine: Apple Silicon, macOS 26.5.2, Xcode 26.6 / Swift 6.3.3,
 Node 24.15.0. Deployment target is macOS 14; that OS has not been exercised here.
 
+## 2026-10-02 voice magic — Mac wiring (C2), built and tested offline, NOT installed
+
+Branch `wp/c2-mac` (on `feat/voice-magic`). The Whisper bar/reader are extended, not
+replaced: same 480 × 50 pt bar, upward growth, separate reader, presets and no animations.
+
+Built:
+- **Hotkey → TalkGesture first.** Carbon press/release drive the B6 gesture before today's
+  toggle: hold ≥ 250 ms = voice, tap = today's composer, typing while listening abandons voice
+  and keeps the text, a press while the composer is open cancels, a press while working
+  reveals. Voice is **off by default**; off (or macOS 14–25) is exactly today's behaviour.
+- **Preparation split.** Key-down starts Node warm-up (then `POST /invocations/prepare
+  {contextId, takeId}`) and the window capture as separate tasks. Instant commands wait on
+  warm only and work with no capturable window; agent submits wait on both, as before.
+- **Voice.** One `VoiceInput` for the app's lifetime (mic first at key-down, contextual
+  strings = pinned app + window title), cached readiness refreshed at launch, on Settings
+  changes and after any voice failure, `prepare(language)` off the hotkey path. Live
+  transcript in the bar (finished/tentative ink), 150 ms debounced latest-wins
+  `/instant {phase:"partial"}` previews (never acting), release → `finish()` →
+  `/instant {phase:"final"}` → act / card / agent (`input:{mode:"voice",locale,durationMs,engine}`,
+  `takeId`). Utterances over 500 characters and any instant failure go straight to the agent.
+  `microphone_denied` / `speech_denied` / `voice_unavailable` / `voice_asset_missing` show
+  “Open Voice Settings…”; nothing on the hotkey path requests a permission.
+- **Typing.** Debounced `/instant {phase:"typing"}` previews (`= 51`, hints, a typed result
+  list above the bar). Return = instant action or selected result, else the agent;
+  ⌥Return = always the agent; ⌘Return = reveal / type the value into the pinned window
+  (copy without control); ↑/↓ move the list; ⌘⇧C copies a path only from a focused or
+  previewed list, otherwise Copy Answer. `confirm:true` acts need a second Return.
+- **Actions and cards.** `LauncherHost.standard()` is wired into `DesktopService`; instant
+  acts and card buttons call `LauncherService.perform` directly (after `LauncherPolicy`),
+  `typeIntoPinned` goes through `DesktopService.act(.typeText)` (InputPolicy, credential,
+  deletion and budget gates), `askAgent` becomes an agent turn (fresh `/invoke` prefixed
+  “Earlier quick answer: Q → A” after an instant answer; the thread's follow-up otherwise).
+  File tokens are revoked when a context is discarded; launcher actions are logged by kind
+  and outcome only (`logs/launcher-actions.jsonl`). One `CardView` lives in the reader;
+  agent cards must use only the model action subset or fall back to `responseText`.
+- **Streaming.** `GET /invocations/{id}/events` on a second, long-timeout `URLSession`;
+  partial text / cards render at ≤ 30 Hz into the reader (never over a window the agent is
+  acting in); any stream failure falls back to the existing 250 ms polling; Windows' polling
+  contract is untouched.
+- **Settings.** General / Voice / Classifier pages. Auto (recommended) first with
+  Prefer speed / Balanced / Prefer quality; Voice switch, language, Microphone and Speech
+  Recognition rows with explicit Request/Open System Settings buttons, speech model status
+  and Download; the Laya switch (advisory, CPU, ~5 GB) bound to `/settings/classifier`.
+  Every existing control keeps its behaviour; only loading the model catalog starts Node.
+- **Warm TTL** defaults to 600 s while voice is on (explicit `PI_OS_NODE_WARM_TTL_SECONDS` wins).
+
+Verified offline (no microphone, no speech model, no provider, no window shown):
+`npm run check`, `npm run build`, guarded `npm test` 324/324, `swift build` 0 warnings,
+`PI_OFFLINE=1 PI_OS_AGENT=0 swift test` 227/227 (180 earlier + 47 new: controller flow with
+FakeVoiceInput and a scripted harness, final decisions from the shared instant fixtures,
+preparation split, SSE parser/client/fallback triggers, settings view model, offscreen render
+smoke tests), `npm run test:macos` conformance 1/1. Under XCTest the panel now lays out
+without ordering on screen. Offscreen PNGs of every new state (System/Frost/Contrast/Graphite,
+light and dark) were rendered by `pi-os-ui-preview --snapshot` and inspected.
+
+Review fixes (same day): typed requests send the Mac locale as a plain language tag
+(`en-US`, not `en-US-u-rg-dezzzz`, which the harness rejects with `invalid_arguments` and which
+failed every typed `/invoke` whenever Region differs from Language); the 500-character instant
+limit counts UTF-16 units like Node; a prepared session is cancelled (`POST /invocations/prepare
+{takeId, cancel:true}`) when its take ends without `/invoke`; agent cards whose thread closed are
+read-only; an installed speech model is also reserved on a language change. `swift test` 231/231.
+
+Still needs a signed build and a live window (coordinated with the DRACO benchmark owner):
+microphone/Speech Recognition TCC on the signed `dev.pi-os.mac`; whether SpeechTranscriber
+truly needs Speech Recognition; key-down-to-text latency; Carbon key-up/auto-repeat on real
+keyboards; German model download size/UX; Spotlight results in TCC-protected folders for the
+signed app; real Codex latency per Auto tier; glass/vibrancy legibility over real wallpapers;
+VoiceOver and the physical-keyboard matrix. `CFBundleVersion` is still 12 (Info.plist is not
+owned by this package). The installed copy is stale relative to this branch.
+
 ## 2026-10-01 Whisper native UI — build 12 installed
 
 Tom selected Whisper from the disposable HTML studies. The production UI is now

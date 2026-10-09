@@ -9,6 +9,8 @@ import PiOSCore
     private var server: LoopbackServer?
     private var desktop: DesktopService!
     private var harness: HarnessClient!
+    private var launcher: LauncherHost!
+    private var controller: CommandController!
     private var hotkey: GlobalHotkey?
     private var status: NSStatusItem!
     private var diagnostic: NSMenuItem!
@@ -17,6 +19,10 @@ import PiOSCore
     private var cancelItem: NSMenuItem!
     private let panel = PromptPanel()
     private let notifier = ResultNotifier()
+    /// One engine for the app's lifetime (B6): Apple's on-device speech on macOS 26+, else unavailable.
+    private let voice: VoiceInput = VoiceInputs.system()
+    private let voiceSystem = SystemVoice()
+    private var readinessTask: Task<Void, Never>?
     private var settingsWindow: SettingsWindow?
     private var appearanceWindow: AppearanceWindow?
     private var invocationReservation: UUID?
@@ -28,10 +34,14 @@ import PiOSCore
     private var thread: String?
     private var submitted = false
     private var cancelRequested = false
-    private var preparation: Task<Void, Error>?
+    private var preparation: TakePreparation?
+    /// The take whose session Node may have prepared and no /invoke has used yet.
+    private var preparedTake: String?
     private var running: Task<Void, Never>?
+    private var streamThrottle: StreamThrottle<RunningPresentation>?
     private var failure: String?
     private var shutdownPending = false
+    private let perf = ProcessInfo.processInfo.environment["PI_OS_PERF"] == "1"
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
         signal(SIGPIPE, SIG_IGN)
@@ -39,6 +49,7 @@ import PiOSCore
             config = try MacConfiguration()
             lock = try InstanceLock(directory: config.support)
             let configuration = config!
+            launcher = LauncherHost.standard()
             desktop = DesktopService(captures: config.captures, token: config.token,
                 controlEnabled: { configuration.canControl }, traceFile: config.support.appendingPathComponent("logs/host-actions.jsonl"),
                 beforeInput: { [weak self] in
@@ -47,7 +58,15 @@ import PiOSCore
                         self.nativeInputStarted = true
                         return self.panel.suspendForInput()
                     }
-                })
+                }, launcher: launcher)
+            let service = desktop!
+            // Instant "type into window" goes through the same InputPolicy, credential-field,
+            // deletion and budget gates as the agent's typing.
+            launcher.service.typeIntoPinned = { contextId, text in
+                _ = try await service.act(.typeText, arguments: InputArguments(contextId: contextId, text: text))
+            }
+            let launcherLog = config.support.appendingPathComponent("logs/launcher-actions.jsonl")
+            launcher.service.trace = { event in Self.appendTrace(event, to: launcherLog) }
             // Keep the floating UI out of the way once input starts; do not restore it
             // between asynchronous WindowServer events. The result/notification ends this phase.
             notifier.onOpen = { [weak self] id in
@@ -55,21 +74,29 @@ import PiOSCore
                 self.panel.reopenLatestResult()
             }
             harness = HarnessClient(config: config)
+            harness.voiceEnabled = { VoiceSettings.shared.enabled }
             harness.onUnexpectedExit = { [weak self] in
                 guard let self, self.context != nil else { return }
+                self.controller.interrupt()
                 self.discardContext()
                 self.releaseInvocationReservation()
                 self.showError(DomainError("harness_unreachable", "The agent process exited. Check logs/harness.log, then try again."))
             }
+            controller = CommandController(voice: voice, harness: harness, host: self, surface: panel)
+            controller.refreshReadiness = { [weak self] in self?.refreshVoiceReadiness() }
             createMenu()
-            panel.onSubmit = { [weak self] in self?.submit($0) }
-            panel.onFollowup = { [weak self] in self?.submit($0, followup: true) }
+            panel.onSubmit = { [weak self] in self?.controller.composerSubmitted($0, intent: .plain) }
+            panel.onCommand = { [weak self] in self?.controller.composerSubmitted($0, intent: $1) }
+            panel.onEdit = { [weak self] in self?.controller.composerEdited($0) }
+            panel.onFollowup = { [weak self] in self?.followup($0) }
+            panel.onCardAction = { [weak self] action, fromAgent in self?.controller.cardAction(action, fromAgent: fromAgent) }
             panel.onCancel = { [weak self] in self?.cancel() }
             panel.onPermissions = { [weak self] in self?.permissions() }
+            panel.onVoiceSettings = { [weak self] in self?.showSettings(page: .voice) }
             panel.onDismissWork = { [weak self] in
                 self?.workDismissed = true; self?.panel.dismissWorking()
             }
-            let service = desktop!
+            NotificationCenter.default.addObserver(self, selector: #selector(voiceSettingsChanged), name: VoiceSettings.changed, object: nil)
             server = try LoopbackServer(port: config.hostPort) { await service.handle($0) }
             server?.onFailure = { [weak self] message in
                 Task { @MainActor in self?.fatal(message) }
@@ -86,13 +113,16 @@ import PiOSCore
         guard failure == nil else { return }
         do {
             let raw = ProcessInfo.processInfo.environment["PI_OS_HOTKEY"] ?? HotkeyChord.defaultValue
-            hotkey = try GlobalHotkey(chord: HotkeyChord(raw)) { [weak self] in self?.invoke() }
+            // Press and release: TalkGesture decides tap (text) vs hold (voice) before today's toggle.
+            hotkey = try GlobalHotkey(chord: HotkeyChord(raw), onPress: { [weak self] in self?.hotkeyPressed() },
+                                      onRelease: { [weak self] in self?.hotkeyReleased() })
             diagnostic.title = hotkey?.systemConflict == true
                 ? "Hotkey conflicts with a macOS shortcut — change PI_OS_HOTKEY"
                 : "Ready · \(raw)"
             // Pay the first public CG enumeration cost at launch, never enumerate SCK here.
             _ = DesktopIdentity.windows()
             panel.prewarm()
+            refreshVoiceReadiness(prepare: true)
             setStatus("Ready when you are")
         } catch { diagnostic.title = error.localizedDescription; showError(error) }
     }
@@ -115,7 +145,7 @@ import PiOSCore
         menu.addItem(lastAnswerItem)
         cancelItem = menuItem("Cancel Task", #selector(cancelFromMenu), symbol: "stop.circle")
         menu.addItem(cancelItem); menu.addItem(.separator())
-        let settings = menuItem("Settings…", #selector(showSettings), symbol: "slider.horizontal.3")
+        let settings = menuItem("Settings…", #selector(showSettingsFromMenu), symbol: "slider.horizontal.3")
         settings.keyEquivalent = ","; menu.addItem(settings)
         menu.addItem(menuItem("Appearance…", #selector(showAppearance), symbol: "paintpalette"))
         menu.addItem(menuItem("Brave Connection…", #selector(browserSetup), symbol: "globe"))
@@ -153,14 +183,47 @@ import PiOSCore
         status?.button?.setAccessibilityLabel("pi-os — " + text)
         availability?.title = text
     }
-    private func invoke() {
+
+    // MARK: Hotkey and takes
+
+    private func hotkeyPressed() {
+        // Startup failure first: a ready voice must not open the mic for a take beginTake would refuse.
         guard failure == nil else { showError(DomainError("startup_failed", failure!)); return }
-        if invocation != nil { if !nativeInputStarted { workDismissed = false; panel.reveal() }; return }
-        if panel.mode == .prompt { cancel(); return }
+        controller.hotkeyPressed()
+    }
+    private func hotkeyReleased() {
+        guard failure == nil else { return }
+        controller.hotkeyReleased()
+    }
+    /// Cached off the hotkey path (B6): launch, Settings changes and after a voice failure. Voice
+    /// that is off, or an OS without on-device speech, keeps today's tap-only behaviour exactly.
+    private func refreshVoiceReadiness(prepare: Bool = false) {
+        let settings = VoiceSettings.shared
+        let enabled = settings.enabled && voiceSystem.engineAvailable, language = settings.language
+        controller.language = language
+        if !enabled { controller.readiness = .disabled }
+        readinessTask?.cancel()
+        readinessTask = Task { [weak self] in
+            guard let self else { return }
+            let readiness = await self.voiceSystem.readiness(enabled: enabled, language: language)
+            guard !Task.isCancelled else { return }
+            self.controller.readiness = readiness
+            if prepare && enabled { await self.voice.prepare(language) }
+        }
+    }
+    @objc private func voiceSettingsChanged() {
+        refreshVoiceReadiness(prepare: true)
+        // A new TTL applies from the next idle period.
+        if invocationReservation == nil { harness.retainWarm() }
+    }
+    private func beginTakeInternal() -> CommandTake? {
+        guard failure == nil else { return nil }
+        if invocation != nil { return nil }
         panel.hide()
+        preparation?.cancel(); preparation = nil
+        cancelPreparedTake()
         discardContext()
         let start = DispatchTime.now().uptimeNanoseconds
-        let perf = ProcessInfo.processInfo.environment["PI_OS_PERF"] == "1"
         if perf { panel.measureNextVisibility(from: start) }
         let frontPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
         var snapshot = DesktopIdentity.pin()
@@ -168,69 +231,79 @@ import PiOSCore
         let browserPin = BrowserPin.capture(&snapshot)
         context = snapshot.id
         workDismissed = false; nativeInputStarted = false; latestResultID = nil
-        panel.prompt(snapshot: snapshot, appName: NSWorkspace.shared.frontmostApplication?.localizedName ?? "Desktop", canControl: config.canControl, trustedCompatibility: config.trustedCompatibility)
+        let appName = NSWorkspace.shared.frontmostApplication?.localizedName ?? "Desktop"
+        panel.prompt(snapshot: snapshot, appName: appName, canControl: config.canControl, trustedCompatibility: config.trustedCompatibility)
         if perf {
             let ms = Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000
             // CPU-side proxy only; not a claim about first compositor frame.
             print("[perf] pin-to-panel-order ms=\(ms) frontmost-preserved=\(NSWorkspace.shared.frontmostApplication?.processIdentifier == frontPID)")
             fflush(stdout)
         }
-        guard !config.echo else { return }
+        let takeId = "take-" + UUID().uuidString
+        let strings = [snapshot.targetWindow?.processName ?? appName, snapshot.targetWindow?.title ?? ""]
+        guard !config.echo else { return CommandTake(contextId: snapshot.id, takeId: takeId, contextualStrings: strings, preparation: nil) }
         let id = snapshot.id, desktop = desktop!, harness = harness!
         invocationReservation = harness.reserve()
-        preparation = Task {
+        // Preparation split: Node warm-up (+ prepare) and the window capture run side by side.
+        let inserted = Task { await desktop.insert(snapshot, browserPin: browserPin) }
+        let warm = Task {
             try Task.checkCancellation()
-            await desktop.insert(snapshot, browserPin: browserPin)
+            try await harness.warm()
+            await inserted.value
             try Task.checkCancellation()
-            async let warm: Void = harness.warm()
-            async let shot = desktop.capture(id)
-            _ = try await (warm, shot)
+            Task { await harness.prepare(contextId: id, takeId: takeId) }
+        }
+        let capture = Task {
+            await inserted.value
+            try Task.checkCancellation()
+            _ = try await desktop.capture(id)
             try Task.checkCancellation()
         }
+        let prepared = TakePreparation(warm: warm, capture: capture)
+        preparation = prepared; preparedTake = takeId
+        return CommandTake(contextId: id, takeId: takeId, contextualStrings: strings, preparation: prepared)
     }
-    private func submit(_ prompt: String, followup: Bool = false) {
+    private func followup(_ text: String) {
+        if thread != nil { submit(AgentRequest(prompt: text, question: text, kind: .followup)); return }
+        // No agent thread: a follow-up under a quick answer becomes a fresh invocation.
+        _ = controller.followup(text)
+    }
+
+    // MARK: Agent invocations
+
+    private func submit(_ request: AgentRequest) {
+        let followup = request.kind == .followup
         guard let id = context, invocation == nil, !followup || thread != nil else { return }
-        if config.echo { panel.reader(prompt); return }
+        panel.setQuestion(request.question)
+        if config.echo { panel.reader(request.prompt); return }
         let invocationID = followup ? thread! : "inv-" + UUID().uuidString
+        // This /invoke adopts (or supersedes) the prepared session; nothing is left to cancel.
+        if !followup { preparedTake = nil }
         workDismissed = false; nativeInputStarted = false; cancelRequested = false
         invocation = invocationID
         setStatus("Working on your question")
         panel.pill(followup ? "Continuing your conversation…" : "Preparing the pinned window…")
+        let throttle = StreamThrottle<RunningPresentation>(scheduler: TaskScheduler()) { [weak self] presentation in
+            self?.presentRunning(presentation)
+        }
+        streamThrottle = throttle
         running = Task { [weak self] in
             guard let self else { return }
             do {
-                if !followup { try await self.preparation?.value }
+                if !followup { try await self.preparation?.readyForAgent() }
                 try Task.checkCancellation()
-                if followup { try await self.harness.followup(invocationID, prompt: prompt) }
-                else { try await self.harness.submit(id: invocationID, context: id, prompt: prompt) }
+                if followup { try await self.harness.followup(invocationID, prompt: request.prompt) }
+                else {
+                    try await self.harness.submit(id: invocationID, context: id, prompt: request.prompt,
+                                                  takeId: request.takeId, input: request.input)
+                }
                 try Task.checkCancellation()
                 self.submitted = true
                 self.thread = invocationID
-                while true {
-                    try Task.checkCancellation()
-                    let state = try await self.harness.status(invocationID)
-                    guard self.invocation == invocationID else { return }
-                    switch state.state {
-                    case "queued", "running":
-                        if !self.cancelRequested { self.panel.updateActivity(state.activity == "thinking" ? "Thinking…" : Self.activityLabel(state.activity)) }
-                    case "completed":
-                        self.thread = state.followupAvailable == true ? invocationID : nil
-                        self.panel.setFollowupEnabled(self.thread != nil)
-                        self.panel.reader(state.responseText?.isEmpty == false ? state.responseText! : "The agent returned no answer.", present: !self.workDismissed)
-                        await self.backgroundResult(invocationID, failed: false)
-                        guard self.invocation == invocationID else { return }
-                        self.finish(); return
-                    case "aborted":
-                        self.panel.hide(); self.finish(cancelled: true); return
-                    default:
-                        self.thread = state.followupAvailable == true ? invocationID : nil
-                        throw DomainError(state.state, state.failureMessage ?? "The task did not complete")
-                    }
-                    // No status polling exists outside this active invocation task.
-                    try await Task.sleep(nanoseconds: 250_000_000)
-                }
-            } catch is CancellationError { /* explicit cancel owns UI and child teardown */ }
+                try await self.follow(invocationID, throttle: throttle)
+            } catch is CancellationError { throttle.cancel() /* explicit cancel owns UI and child teardown */ }
             catch {
+                throttle.cancel()
                 guard self.invocation == invocationID else { return }
                 if (error as? DomainError)?.code == "harness_unreachable" { self.harness.stop() }
                 let code = (error as? DomainError)?.code
@@ -247,6 +320,69 @@ import PiOSCore
             }
         }
     }
+    /// SSE first (progressive text/cards over a second, long-lived URLSession); on any stream
+    /// failure, today's 250 ms polling takes over. Nothing polls outside an active invocation.
+    private func follow(_ invocationID: String, throttle: StreamThrottle<RunningPresentation>) async throws {
+        var stream = harness.events(invocationID).makeAsyncIterator()
+        while true {
+            let next: HarnessClient.Status?
+            // Only transport/stream failures fall back; a terminal failure record still throws below.
+            do { next = try await stream.next() } catch {
+                try Task.checkCancellation()
+                if perf { print("[perf] stream fallback=polling"); fflush(stdout) }
+                break
+            }
+            guard let state = next else { break }
+            guard invocation == invocationID else { return }
+            if try await apply(state, invocationID, throttle: throttle) { return }
+        }
+        while true {
+            try Task.checkCancellation()
+            let state = try await harness.status(invocationID)
+            guard invocation == invocationID else { return }
+            if try await apply(state, invocationID, throttle: throttle) { return }
+            try await Task.sleep(nanoseconds: 250_000_000)
+        }
+    }
+    /// One record (streamed or polled). True once a terminal record was handled.
+    private func apply(_ state: HarnessClient.Status, _ invocationID: String, throttle: StreamThrottle<RunningPresentation>) async throws -> Bool {
+        switch state.state {
+        case "queued", "running":
+            guard !cancelRequested else { return false }
+            let label = state.activity == "thinking" ? "Thinking…" : Self.activityLabel(state.activity)
+            throttle.submit(RunningPresentation.make(state, label: label, visible: !workDismissed && !nativeInputStarted))
+            return false
+        case "completed":
+            throttle.cancel()
+            thread = state.followupAvailable == true ? invocationID : nil
+            panel.setFollowupEnabled(thread != nil)
+            // Agent cards: strict decode already happened; only the model action subset is shown.
+            let card = state.card.flatMap { state.cardComplete == true && $0.usesOnly(CardSpec.modelActionTypes) ? $0 : nil }
+            let text = state.responseText?.isEmpty == false ? state.responseText! : card?.plainText ?? "The agent returned no answer."
+            // Without a retained thread, finish() discards the context and its file tokens: read-only card.
+            panel.presentAgentAnswer(text, card: card, cardActions: thread != nil, present: !workDismissed)
+            await backgroundResult(invocationID, failed: false)
+            guard invocation == invocationID else { return true }
+            finish(); return true
+        case "aborted":
+            throttle.cancel()
+            panel.hide(); finish(cancelled: true); return true
+        default:
+            throttle.cancel()
+            thread = state.followupAvailable == true ? invocationID : nil
+            throw DomainError(state.state, state.failureMessage ?? "The task did not complete")
+        }
+    }
+    private func presentRunning(_ presentation: RunningPresentation) {
+        guard invocation != nil, !cancelRequested else { return }
+        let visible = !workDismissed && !nativeInputStarted
+        switch presentation {
+        case .activity(let label): panel.updateActivity(label)
+        case .text(let text, let status): if visible { panel.streamAnswer(text, status: status) }
+        case .card(let spec, let complete, let fallback, let status):
+            if visible { panel.streamCard(spec, complete: complete, fallbackText: fallback, status: status) }
+        }
+    }
     private static func activityLabel(_ name: String?) -> String {
         switch name {
         case "desktop_capture_window": return "Looking at the window…"
@@ -254,6 +390,10 @@ import PiOSCore
         case "desktop_act": return "Working in your window…"
         case "browser_snapshot": return "Reading your Brave tab…"
         case "browser_act": return "Working in your Brave tab…"
+        case "show_result": return "Preparing result…"
+        case "find_files": return "Searching files…"
+        case "open_item": return "Opening…"
+        case nil: return "Answering…"
         default: return "Working on your request…"
         }
     }
@@ -268,7 +408,7 @@ import PiOSCore
         if let invocationReservation { harness.release(invocationReservation); self.invocationReservation = nil }
     }
     private func finish(cancelled: Bool = false, failed: Bool = false) {
-        invocation = nil; submitted = false; cancelRequested = false; running = nil; preparation = nil
+        invocation = nil; submitted = false; cancelRequested = false; running = nil; preparation = nil; streamThrottle = nil
         setStatus(cancelled ? "Task cancelled" : failed ? "Your request needs attention" : "Your answer is ready", attention: !cancelled)
         if cancelled || thread == nil {
             discardContext(); releaseInvocationReservation()
@@ -284,6 +424,7 @@ import PiOSCore
         if let id = invocation, submitted {
             guard !cancelRequested else { return }
             cancelRequested = true
+            streamThrottle?.cancel()
             panel.updateActivity("Cancelling…")
             Task { [weak self] in
                 guard let self else { return }
@@ -301,8 +442,11 @@ import PiOSCore
     private func hardCancel() {
         let wasPrompt = panel.mode == .prompt
         let active = invocation
+        controller.interrupt()
         invocation = nil; submitted = false; cancelRequested = false; running?.cancel(); running = nil
+        streamThrottle?.cancel(); streamThrottle = nil
         preparation?.cancel(); preparation = nil
+        cancelPreparedTake()
         panel.hide(); setStatus("Ready when you are")
         discardContext()
         releaseInvocationReservation()
@@ -310,13 +454,23 @@ import PiOSCore
             // Teardown is a hard cancellation backstop; never leave an orphan request running.
             // Close only the owned group, never node processes by executable name.
             if active != nil { harness.stop() }
-            else { harness.stopIfUnused() }
+            // With voice on, a cancelled prompt keeps Node warm for the TTL (next hold is instant).
+            else if !VoiceSettings.shared.enabled { harness.stopIfUnused() }
         }
+    }
+    /// DESIGN §3.5: a prepared session is discarded on cancel, not only at its 30 s expiry.
+    /// Best effort and never starts Node.
+    private func cancelPreparedTake() {
+        guard let takeId = preparedTake else { return }
+        preparedTake = nil
+        if let harness { Task { await harness.cancelPrepared(takeId: takeId) } }
     }
     private func discardContext() {
         let oldContext = context, oldThread = thread, reservation = invocationReservation
         context = nil; thread = nil; invocationReservation = nil
         panel.setFollowupEnabled(false)
+        // Host file tokens die with their context lease (CRITIC C12), not only at their 10-minute expiry.
+        if let oldContext { launcher?.service.revokeTokens(contextId: oldContext) }
         if let desktop, let harness {
             Task {
                 // Native lease removal precedes asynchronous harness closure.
@@ -324,6 +478,28 @@ import PiOSCore
                 if let oldThread { await harness.closeThread(oldThread) }
                 if let reservation { harness.release(reservation) }
             }
+        }
+    }
+    /// Kind, outcome and duration only: never a path, URL, app name, token or text.
+    private static func appendTrace(_ event: LauncherTraceEvent, to file: URL) {
+        if ProcessInfo.processInfo.environment["PI_OS_PERF"] == "1" {
+            print("[launcher] route=\(event.route) action=\(event.action) performed=\(event.performed ?? "-") outcome=\(event.outcome) ms=\(event.durationMs)")
+            fflush(stdout)
+        }
+        var row: [String: Any] = ["at": ISO8601DateFormatter().string(from: Date()), "route": event.route, "action": event.action,
+                                  "outcome": event.outcome, "durationMs": event.durationMs]
+        if let performed = event.performed { row["performed"] = performed }
+        guard var bytes = try? JSONSerialization.data(withJSONObject: row) else { return }
+        bytes.append(10)
+        let fm = FileManager.default
+        if let size = (try? fm.attributesOfItem(atPath: file.path)[.size]) as? Int, size > 2_000_000 {
+            try? fm.removeItem(at: file.appendingPathExtension("previous"))
+            try? fm.moveItem(at: file, to: file.appendingPathExtension("previous"))
+        }
+        if !fm.fileExists(atPath: file.path) { fm.createFile(atPath: file.path, contents: nil, attributes: [.posixPermissions: 0o600]) }
+        if let handle = try? FileHandle(forWritingTo: file) {
+            defer { try? handle.close() }
+            _ = try? handle.seekToEnd(); try? handle.write(contentsOf: bytes)
         }
     }
     private func fatal(_ message: String) {
@@ -335,22 +511,26 @@ import PiOSCore
         alert.runModal()
         NSApp.terminate(nil)
     }
-    @objc private func invokeFromMenu() { invoke() }
+    @objc private func invokeFromMenu() {
+        guard failure == nil else { showError(DomainError("startup_failed", failure!)); return }
+        controller.menuInvoke()
+    }
     @objc private func showCurrent() {
         if invocation != nil { if !nativeInputStarted { workDismissed = false; panel.reveal() } }
         else if panel.mode == .prompt { panel.reveal() }
         else { panel.reopenLastAnswer() }
     }
-    @objc private func showSettings() {
-        if let settingsWindow { settingsWindow.present(); return }
-        let controller = SettingsWindow(harness: harness, notifier: notifier)
+    @objc private func showSettingsFromMenu() { showSettings(page: .general) }
+    private func showSettings(page: SettingsWindow.Page) {
+        if let settingsWindow { settingsWindow.show(page); settingsWindow.present(); return }
+        let controller = SettingsWindow(harness: harness, notifier: notifier, voice: voiceSystem)
         controller.onClosed = { [weak self] in self?.settingsWindow = nil }
         controller.onPermissions = { [weak self] in self?.permissions() }
         controller.onControlDisabled = { [weak self] in
             guard let self else { return }
             if self.invocation != nil || self.panel.mode == .prompt || self.thread != nil { self.cancel() }
         }
-        settingsWindow = controller; controller.present()
+        settingsWindow = controller; controller.show(page); controller.present()
     }
     @objc private func browserSetup() {
         BrowserSetup.present { if invocation != nil || panel.mode == .prompt || thread != nil { cancel() } }
@@ -367,9 +547,14 @@ import PiOSCore
     @objc private func quit() { NSApp.terminate(nil) }
     @objc private func permissions() {
         let allowed = CGPreflightScreenCaptureAccess()
+        // Status only: microphone and speech prompts come from Settings → Voice, never from here.
+        let voicePermissions = voiceSystem.permissions()
+        let voiceLine = voiceSystem.engineAvailable
+            ? "Microphone: \(VoiceSettingsText.permission(voicePermissions.microphone).lowercased()) · Speech Recognition: \(VoiceSettingsText.permission(voicePermissions.speechRecognition).lowercased())"
+            : "Voice input: needs macOS 26 or later"
         let alert = NSAlert()
         alert.messageText = "pi-os Permissions"
-        alert.informativeText = "Screen Recording: \(allowed ? "allowed" : "not allowed")\n\n\(ControlAvailability.explanation)\n\nScreen Recording reads your chosen window. Accessibility allows verified clicks, typing and shortcuts in that same window. Input Monitoring is not required. Quit/reopen if macOS requests it."
+        alert.informativeText = "Screen Recording: \(allowed ? "allowed" : "not allowed")\n\(voiceLine)\n\n\(ControlAvailability.explanation)\n\nScreen Recording reads your chosen window. Accessibility allows verified clicks, typing and shortcuts in that same window. Microphone and Speech Recognition are used only while you hold the shortcut with voice turned on in Settings. Input Monitoring is not required. Quit/reopen if macOS requests it."
         alert.addButton(withTitle: allowed ? "Screen Recording Settings…" : "Allow Screen Recording")
         alert.addButton(withTitle: ControlAvailability.ready ? "Accessibility Settings…" : "Enable Computer Control…")
         alert.buttons[1].isEnabled = ControlAvailability.stableSignature
@@ -389,6 +574,7 @@ import PiOSCore
     public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard !shutdownPending, let desktop else { return .terminateNow }
         shutdownPending = true
+        controller?.interrupt()
         running?.cancel(); preparation?.cancel(); harness?.stop(); server?.stop()
         Task {
             await desktop.removeAll()
@@ -397,5 +583,28 @@ import PiOSCore
             NSApp.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
+    }
+}
+
+extension Application: CommandHost {
+    public var isWorking: Bool { invocation != nil }
+    public var hasThread: Bool { thread != nil }
+    public var canTypeIntoPinned: Bool { config.canControl }
+    public func beginTake() -> CommandTake? { beginTakeInternal() }
+    public func cancelTake() { cancel() }
+    public func revealWork() { if invocation != nil && !nativeInputStarted { workDismissed = false; panel.reveal() } }
+    public func submitToAgent(_ request: AgentRequest) { submit(request) }
+    public func perform(_ action: HostAction, contextId: String?, confirmed: Bool) async throws -> String {
+        // Typing needs the pinned window in front, not the bar.
+        if case .typeIntoPinned = action { panel.hide() }
+        return try await launcher.service.perform(action, contextId: contextId, confirmed: confirmed)
+    }
+    public func finishInstant() {
+        panel.hide(); setStatus("Ready when you are")
+        preparation?.cancel(); preparation = nil
+        cancelPreparedTake()
+        discardContext()
+        // Release (not stop): the warm TTL keeps the next command fast.
+        releaseInvocationReservation()
     }
 }

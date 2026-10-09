@@ -1,5 +1,31 @@
 # Native UI polish
 
+## 2026-10-02 voice, instant previews, cards and streaming (offscreen-verified only)
+
+New states extend Whisper; nothing replaces the bar, reader, presets or materials.
+
+| Severity | Location | Before | After | Why |
+| --- | --- | --- | --- | --- |
+| MEDIUM | `PromptPanel.swift` (listening) | No voice state | Same bar; transcript in the editor (finished words label ink, tentative tail secondary ink); accent waveform disc in the send slot whose opacity follows the input level (static under Reduce Motion); “Listening…” placeholder; dimmed ellipsis while transcribing | Voice feedback without new chrome or motion |
+| MEDIUM | `PromptPanel.swift` (inline preview) | None | Right-aligned `= 51` (accent, monospaced digits), action hints in secondary ink, refusal with an orange symbol and readable ink; label ink in Contrast / Increase Contrast | Raycast-style answer before Return; WCAG-safe colours |
+| MEDIUM | `PromptPanel.swift` (typed lists) | None | File/app results on the reader material above the bar (bar stays anchored, grows upward); the composer keeps focus; ↑/↓/Return/⌘Return/⌘⇧C act on the list | Keyboard-first results without moving focus |
+| MEDIUM | `PromptPanel.swift` (reader cards) | Markdown only | One `CardView` in the reader for instant and agent cards; lists take focus, typing redirects to the follow-up composer; recalled cards read-only | B8 integration notes; first-responder/scroll preservation (HIGH rule kept: the focused card is never hidden during layout) |
+| LOW | `PromptPanel.swift` (confirmation) | None | Small non-key capsule “✓ Opened Figma”, gone after 1.2 s | Confirms an action without stealing focus |
+| LOW | `PromptPanel.swift` (streaming) | Working capsule until done | Reader fills progressively (≤ 30 Hz), scroll kept; status lives in the bar (“Answering… · Escape stops”) | Faster perceived answers, one status location |
+| LOW | `AnswerRenderer.swift` | Permission CTA only | Voice failures (`microphone_denied`, `speech_denied`, `voice_unavailable`, `voice_asset_missing`) with “Open Voice Settings…”; presenting never prompts | Recoverable failures |
+| LOW | `SettingsWindow.swift` | One tall page | General / Voice / Classifier segmented pages, original General controls and order kept, Auto first with bias labels | Room for voice/classifier without a taller window |
+
+Verified: `pi-os-ui-preview --snapshot` rendered every new state offscreen (never a window)
+for System, Frost, Contrast and Graphite in light and dark; contact sheets were inspected and
+two issues fixed (duplicated streaming status; low-contrast orange refusal text, now a
+coloured symbol + readable ink). Frost/Contrast are light presets by design, so their dark
+renders match the light ones. Snapshot materials are approximations: native glass and
+vibrancy only exist in the window server. 47 new CPU tests cover the flows and layouts.
+
+Not verified: any live window, real glass over busy wallpapers, VoiceOver announcements,
+physical keyboard/IME during listening, Carbon key-up timing, live microphone. No custom
+animation was added; the level meter only changes opacity.
+
 ## 2026-10-01 Whisper — build 12 installed
 
 Tom selected Whisper from the disposable prototypes. Native implementation uses

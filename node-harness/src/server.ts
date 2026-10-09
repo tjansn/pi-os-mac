@@ -1,22 +1,53 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
+import { dirname, join } from "node:path";
 import { loadConfig, type HarnessConfig } from "./config.js";
 import { HostClient, type DesktopContextSnapshot, type ScreenshotRef } from "./hostClient.js";
-import { InvocationStore, type InvocationRecord } from "./invocations.js";
-import { abortError, createLiveSession, promptFirst, promptFollowup, type AgentRunOptions, type LiveAgentSession } from "./agent/agentRunner.js";
+import { InvocationStore, TERMINAL_STATES, type InvocationRecord } from "./invocations.js";
+import {
+  abortError, attachesScreenshot, createLiveSession, planTurn, promptFirst, promptFollowup, sessionSetupKey, toolEnginesFrom,
+  type AgentRunOptions, type AgentServices, type InvokeInput, type LiveAgentSession, type SessionObserver, type TurnPlan,
+} from "./agent/agentRunner.js";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { createModelCatalogContext, listAvailableModels } from "./agent/modelCatalog.js";
 import { AgentModelSettings, type ModelSelection } from "./agent/modelSettings.js";
 import { AgentResourceSettings, TRUST_WARNING } from "./agent/resourceSettings.js";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+import {
+  AUTO_MODEL_ID, AUTO_PROVIDER, AUTO_THINKING_LEVELS, biasForThinkingLevel, buildRoutingCatalog, classifyUtterance, DEFAULT_STATS_FILE, HEALTH_PENALTY_MS,
+  isAutoSelection, LatencyStats, RoutingSettingsStore, thinkingLevelForBias, validateRoutingPatch, validateTierOverrides,
+  type RouteEvent,
+} from "./agent/routing/index.js";
+import {
+  createClassifier, type ClassifierFactoryDeps, type ManagedClassifier,
+} from "./classifier/factory.js";
+import { ClassifierSettingsStore, parseClassifierSettings } from "./classifier/settings.js";
+import {
+  AppIndexCache, createFendLoader, createInstantDispatcher, EcbRateStore, MAX_INSTANT_TEXT,
+  type InstantDispatcher, type InstantDispatcherDeps,
+} from "./instant/index.js";
+import type { ClassifierHints, InstantPhase, InstantRequest, InstantResponse } from "./contracts/instant.js";
+import { HOST_ACTION_TYPES } from "./contracts/actions.js";
+import type { CardSpec } from "./contracts/cards.js";
+import { cardToText } from "./ui/text.js";
+import { validateCard } from "./ui/validate.js";
+import { SHOW_RESULT_TOOL } from "./ui/showResult.js";
+import { perfLog, Stopwatch } from "./telemetry.js";
+import { supportDirectory } from "./platformPaths.js";
 
 /**
  * Node agent harness HTTP surface per shared/protocol/protocol.md:
  * - GET  /health
- * - POST /invoke            (202, async processing)
- * - GET  /invocations/{id}  (execution status)
+ * - POST /instant                   (deterministic instant lane; synchronous)
+ * - POST /invocations/prepare       (202; pre-builds the agent session for a take)
+ * - POST /invoke                    (202, async processing)
+ * - GET  /invocations/{id}          (execution status; polling)
+ * - GET  /invocations/{id}/events   (SSE: the record on every change)
+ * - settings: /models, /settings/{model,resources,routing,classifier}
  *
  * Bound to loopback only. All non-health routes require X-Harness-Token.
+ * Logs carry ids, kinds, counts, durations and model ids only: never prompts,
+ * transcripts, typed text, file names or classifier inputs.
  */
 
 class RequestError extends Error {
@@ -29,6 +60,8 @@ interface InvokeBody {
   prompt?: unknown;
   invokedAt?: unknown;
   retainSession?: unknown;
+  takeId?: unknown;
+  input?: unknown;
 }
 
 export interface HarnessServerOptions {
@@ -40,6 +73,22 @@ export interface HarnessServerOptions {
   modelRuntimeFactory?: (trustedResources: boolean) => Promise<ModelRuntime>;
   /** Deterministic expiry clock for fixture tests. */
   now?: () => number;
+  /** Where routing stats, classifier settings, logs and the rate cache live (default: next to settings.json). */
+  supportDir?: string;
+  routingSettings?: RoutingSettingsStore;
+  classifierSettings?: ClassifierSettingsStore;
+  /** Classifier factory overrides (tests: the fake Laya engine). Nothing starts unless enabled. */
+  classifierDeps?: ClassifierFactoryDeps;
+  latencyStats?: LatencyStats;
+  /** Instant engine overrides (tests: rate fetcher, clock, app index …). */
+  instant?: Partial<InstantDispatcherDeps>;
+  /** Agent session collaborators (tests: in-process provider runtime, fixture agent dir). */
+  agentServices?: Partial<AgentServices>;
+  /** SSE keep-alive comment interval (default 15 s) and coalescing window (default 33 ms). */
+  sseKeepAliveMs?: number;
+  sseCoalesceMs?: number;
+  /** Prepared-session lifetime (default 30 s). */
+  prepareTtlMs?: number;
 }
 
 /** Bookkeeping for one in-flight invocation (A.3: cancel + timeout). */
@@ -49,19 +98,117 @@ interface RunningInvocation {
   timer?: NodeJS.Timeout;
 }
 
+/** Per-turn request metadata that is not part of the record. */
+interface TurnMeta { takeId?: string; input?: InvokeInput }
+
+/** A session pre-built at key-down for one take (POST /invocations/prepare). */
+interface PreparedTake {
+  takeId: string;
+  contextId: string;
+  controller: AbortController;
+  timer: NodeJS.Timeout;
+  session?: Promise<LiveAgentSession | undefined>;
+}
+
 interface ThreadEntry { live?: LiveAgentSession; expires: number; readOnly?: boolean }
 const MAX_THREADS = 20;
 const THREAD_TTL_MS = 30 * 60_000;
+const MAX_PREPARED = 3;
+const MAX_INSTANT_KEYS = 64;
+const MAX_TAKE_HINTS = 32;
+const HINTS_TTL_MS = 60_000;
+const MAX_INSTANT_BODY = 4_096;
+const MAX_SETTINGS_BODY = 16_384;
+const ID = /^[\w-]{1,128}$/;
+const LOCALE = /^[A-Za-z]{2,3}(?:[-_][A-Za-z0-9]{1,8}){0,3}$/;
+const ENGINE = /^[\w.-]{1,64}$/;
+const INPUT_TOOLS = ["window.focus", "input.click", "input.typeText", "input.pressKey", "input.keyChord", "input.scroll"];
+const LAUNCHER_READ_ROUTES = ["launcher.searchFiles", "launcher.listApps"];
+const PHASES: readonly InstantPhase[] = ["typing", "partial", "final"];
+
+/** Strict validation of POST /invoke `input`; never echoes values. */
+function parseInvokeInput(value: unknown): { ok: true; input?: InvokeInput } | { ok: false; error: string } {
+  if (value === undefined || value === null) return { ok: true };
+  if (typeof value !== "object" || Array.isArray(value)) return { ok: false, error: "input must be an object" };
+  const v = value as Record<string, unknown>;
+  if (v.mode !== "text" && v.mode !== "voice") return { ok: false, error: "input.mode must be text or voice" };
+  const input: InvokeInput = { mode: v.mode };
+  if (v.confidence !== undefined) {
+    if (typeof v.confidence !== "number" || !Number.isFinite(v.confidence) || v.confidence < 0 || v.confidence > 1) return { ok: false, error: "input.confidence must be 0..1" };
+    input.confidence = v.confidence;
+  }
+  if (v.locale !== undefined) {
+    if (typeof v.locale !== "string" || !LOCALE.test(v.locale)) return { ok: false, error: "input.locale must be a BCP 47 tag" };
+    input.locale = v.locale;
+  }
+  if (v.durationMs !== undefined) {
+    if (typeof v.durationMs !== "number" || !Number.isFinite(v.durationMs) || v.durationMs < 0 || v.durationMs > 3_600_000) return { ok: false, error: "input.durationMs must be 0..3600000" };
+    input.durationMs = v.durationMs;
+  }
+  if (v.engine !== undefined) {
+    if (typeof v.engine !== "string" || !ENGINE.test(v.engine)) return { ok: false, error: "input.engine must be a short identifier" };
+    input.engine = v.engine;
+  }
+  return { ok: true, input };
+}
+
+/** Strict validation of POST /instant bodies (protocol.md "Instant lane"). */
+function parseInstantBody(value: unknown): { ok: true; request: InstantRequest } | { ok: false; error: string } {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return { ok: false, error: "Body must be a JSON object" };
+  const v = value as Record<string, unknown>;
+  if (typeof v.text !== "string" || v.text.length > MAX_INSTANT_TEXT) return { ok: false, error: `text (string, at most ${MAX_INSTANT_TEXT} characters) is required` };
+  if (!PHASES.includes(v.phase as InstantPhase)) return { ok: false, error: "phase must be typing, partial or final" };
+  if (typeof v.seq !== "number" || !Number.isSafeInteger(v.seq) || v.seq < 0) return { ok: false, error: "seq must be a non-negative integer" };
+  const request: InstantRequest = { text: v.text, phase: v.phase as InstantPhase, seq: v.seq };
+  for (const key of ["takeId", "contextId"] as const) {
+    if (v[key] === undefined) continue;
+    if (typeof v[key] !== "string" || !ID.test(v[key])) return { ok: false, error: `Invalid ${key}` };
+    request[key] = v[key];
+  }
+  if (v.locale !== undefined) {
+    if (typeof v.locale !== "string" || !LOCALE.test(v.locale)) return { ok: false, error: "locale must be a BCP 47 tag" };
+    request.locale = v.locale;
+  }
+  if (v.inputMode !== undefined) {
+    if (v.inputMode !== "text" && v.inputMode !== "voice") return { ok: false, error: "inputMode must be text or voice" };
+    request.inputMode = v.inputMode;
+  }
+  if (v.silenceMs !== undefined) {
+    if (typeof v.silenceMs !== "number" || !Number.isFinite(v.silenceMs) || v.silenceMs < 0) return { ok: false, error: "silenceMs must be a non-negative number" };
+    request.silenceMs = v.silenceMs;
+  }
+  return { ok: true, request };
+}
 
 export class HarnessServer {
   private readonly threads = new Map<string, ThreadEntry>();
   private stopping = false;
   readonly invocations = new InvocationStore();
   private readonly running = new Map<string, RunningInvocation>();
+  private readonly turns = new Map<string, TurnMeta>();
+  private readonly prepared = new Map<string, PreparedTake>();
+  /** Takes an invocation already used: a prepare that arrives late must not build an orphan session. */
+  private readonly usedTakes = new Set<string>();
+  /** Latest /instant request per take: its seq, the in-flight dispatch, and the seq of the take's final (if any). */
+  private readonly instantLatest = new Map<string, { seq: number; finalSeq?: number; controller?: AbortController }>();
+  private readonly hints = new Map<string, { hints: ClassifierHints; at: number }>();
   private readonly server: Server;
   /** Settings-page model choice applied to every new invocation. */
   private readonly modelSettings: AgentModelSettings;
   private readonly resourceSettings: AgentResourceSettings;
+  private readonly routing: RoutingSettingsStore;
+  private readonly stats: LatencyStats;
+  private statsDirty = false;
+  private readonly classifierSettings: ClassifierSettingsStore;
+  private classifier: ManagedClassifier;
+  private classifierRuntime?: Promise<ModelRuntime>;
+  private readonly instantDeps: InstantDispatcherDeps;
+  /** /instant: may consult the advisory classifier on a grammar miss (≤ 250 ms). */
+  private readonly instant: InstantDispatcher;
+  /** /invoke: same engines, never waits on a classifier (agent hot path). */
+  private readonly instantDirect: InstantDispatcher;
+  private readonly services: AgentServices;
+  private readonly supportDir: string;
 
   constructor(
     private readonly config: HarnessConfig = loadConfig(),
@@ -70,6 +217,42 @@ export class HarnessServer {
     this.modelSettings = options.modelSettings ?? new AgentModelSettings();
     this.resourceSettings = options.resourceSettings ?? new AgentResourceSettings();
     this.options.hostClient ??= new HostClient(config);
+    // Every pi-os store lives next to settings.json (the support dir), also when tests inject it.
+    this.supportDir = options.supportDir ?? (options.modelSettings ? dirname(this.modelSettings.filePath) : supportDirectory());
+    this.routing = options.routingSettings ?? new RoutingSettingsStore(this.modelSettings.filePath);
+    this.stats = options.latencyStats ?? new LatencyStats({ path: join(this.supportDir, DEFAULT_STATS_FILE) });
+    this.classifierSettings = options.classifierSettings ?? new ClassifierSettingsStore(join(this.supportDir, "classifier.json"));
+    this.classifier = this.buildClassifier();
+
+    const host = () => this.options.hostClient;
+    this.instantDeps = {
+      fend: createFendLoader(),
+      fx: new EcbRateStore({ file: join(this.supportDir, "cache", "fx-ecb.json"), enabled: () => this.config.fxRatesEnabled !== false }),
+      apps: new AppIndexCache((signal) => {
+        const client = host();
+        return typeof client?.listApps === "function" ? client.listApps(signal) : Promise.reject(new Error("unavailable"));
+      }),
+      searchFiles: (request, signal) => {
+        const client = host();
+        return typeof client?.searchFiles === "function" ? client.searchFiles(request, signal) : Promise.reject(new Error("unavailable"));
+      },
+      perf: (stage, ms, fields) => perfLog(stage, ms, fields),
+      enabled: () => this.config.instantEnabled !== false,
+      ...(config.webSearchTemplate ? { webSearchTemplate: () => config.webSearchTemplate! } : {}),
+      ...options.instant,
+    };
+    // The managed classifier is replaced on settings changes; the dispatcher always asks the current one.
+    const advisory = { name: "advisory", classify: (text: string, signal: AbortSignal) => this.classifier.classify(text, signal) };
+    this.instant = createInstantDispatcher({ ...this.instantDeps, classifier: advisory });
+    this.instantDirect = createInstantDispatcher(this.instantDeps);
+    this.services = {
+      routing: () => this.routing.get(),
+      stats: this.stats,
+      engines: toolEnginesFrom(this.instant.engines),
+      laya: () => this.classifier.sidecar,
+      ...options.agentServices,
+    };
+
     this.server = createServer({ maxHeaderSize: 8192, requestTimeout: 10_000, headersTimeout: 5000 }, (request, response) => {
       void this.handle(request, response);
     });
@@ -80,6 +263,10 @@ export class HarnessServer {
       this.server.once("error", reject);
       // Loopback only; never bind 0.0.0.0 (protocol.md).
       this.server.listen(this.config.port, "127.0.0.1", () => {
+        // Compile the calculator and read the rate cache now (no network), so the first keystroke is warm;
+        // the router's ~40 heuristic regexes compile once here instead of on the first prompt.
+        if (this.config.instantEnabled !== false) void this.instant.warm();
+        classifyUtterance("warm");
         resolve((this.server.address() as { port: number }).port);
       });
     });
@@ -88,14 +275,20 @@ export class HarnessServer {
   close(): Promise<void> {
     this.stopping = true;
     for (const id of this.threads.keys()) void this.closeThread(id);
+    for (const takeId of [...this.prepared.keys()]) this.discardPrepared(takeId, "shutdown");
     for (const entry of this.running.values()) {
       entry.controller.abort();
       if (entry.timer) clearTimeout(entry.timer);
     }
-    return new Promise((resolve, reject) => {
+    for (const latest of this.instantLatest.values()) latest.controller?.abort();
+    if (this.statsDirty) this.stats.flush();
+    // stdin EOF for a Laya sidecar before the process exits (its exit hook is only the fallback).
+    const classifier = this.classifier.dispose().catch(() => {});
+    const server = new Promise<void>((resolve, reject) => {
       this.server.close((error) => (error ? reject(error) : resolve()));
       this.server.closeAllConnections();
     });
+    return Promise.all([server, classifier]).then(() => {});
   }
 
   private async handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
@@ -119,6 +312,16 @@ export class HarnessServer {
         });
       }
 
+      if (route === "POST /instant") {
+        await this.handleInstant(request, response);
+        return;
+      }
+
+      if (route === "POST /invocations/prepare") {
+        await this.handlePrepare(request, response);
+        return;
+      }
+
       if (route === "POST /invoke") {
         await this.handleInvoke(request, response);
         return;
@@ -126,10 +329,13 @@ export class HarnessServer {
 
       if (route === "GET /models") {
         // Catalog for the host settings page; 500s flow through handle().
-        return this.json(response, 200, {
-          models: await this.withModelRuntime(runtime => listAvailableModels(runtime)),
-          current: this.modelSettings.get(),
-        });
+        const models = await this.withModelRuntime(runtime => listAvailableModels(runtime));
+        const stored = this.modelSettings.get();
+        // No stored choice means Auto; report it as the effective selection while Auto is offered.
+        const current = stored ?? (models.length
+          ? { provider: AUTO_PROVIDER, modelId: AUTO_MODEL_ID, thinkingLevel: thinkingLevelForBias(this.routing.get().bias) }
+          : null);
+        return this.json(response, 200, { models, current, ...(!stored && current ? { currentIsDefault: true } : {}) });
       }
 
       if (route === "GET /settings/resources") {
@@ -151,6 +357,27 @@ export class HarnessServer {
       if (route === "POST /settings/model") {
         await this.handleSetModel(request, response);
         return;
+      }
+
+      if (route === "GET /settings/routing") {
+        return this.json(response, 200, this.routing.get());
+      }
+      if (route === "POST /settings/routing") {
+        await this.handleSetRouting(request, response);
+        return;
+      }
+
+      if (route === "GET /settings/classifier") {
+        return this.json(response, 200, { ...this.classifierSettings.get(), status: this.classifier.status() });
+      }
+      if (route === "POST /settings/classifier") {
+        await this.handleSetClassifier(request, response);
+        return;
+      }
+
+      const eventsMatch = /^\/invocations\/([\w-]+)\/events$/.exec(url.pathname);
+      if (request.method === "GET" && eventsMatch) {
+        return this.streamEvents(eventsMatch[1]!, response);
       }
 
       const invocationMatch = /^\/invocations\/([\w-]+)$/.exec(url.pathname);
@@ -182,12 +409,195 @@ export class HarnessServer {
       }
       this.json(response, 404, { error: { code: "not_found", message: `No route: ${route}` } });
     } catch (error) {
+      if (response.headersSent) { response.end(); return; }
       const status = error instanceof RequestError ? error.status : error instanceof SyntaxError ? 400 : 500;
       this.json(response, status, {
         error: { code: status < 500 ? "invalid_arguments" : "internal_error", message: error instanceof Error ? error.message : String(error) },
       });
     }
   }
+
+  // ------------------------------------------------------------------ instant lane
+
+  /**
+   * POST /instant: synchronous, latest-wins per take (or context). A newer seq aborts the
+   * older dispatch (it answers fallthrough "timeout"); a request older than the newest seen
+   * answers that immediately. The final wins: once a take's final arrived, a late typing/partial
+   * request for it (debounce timer, reordered connection) is stale and never aborts it.
+   * Requests with neither takeId nor contextId are independent. Node never performs effects:
+   * `act` carries a HostAction.
+   */
+  private async handleInstant(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const parsed = parseInstantBody(await this.readJson(request, MAX_INSTANT_BODY));
+    if (!parsed.ok) return this.json(response, 400, { error: { code: "invalid_arguments", message: parsed.error } });
+    const body = parsed.request;
+    const key = body.takeId ?? body.contextId;
+    const latest = key === undefined ? undefined : this.instantLatest.get(key);
+    const final = body.phase === "final";
+    const stale = latest && (final
+      ? latest.finalSeq !== undefined && body.seq < latest.finalSeq
+      : latest.finalSeq !== undefined || body.seq < latest.seq);
+    if (stale) {
+      return this.json(response, 200, { seq: body.seq, elapsedMs: 0, source: "grammar", decision: "fallthrough", reason: "timeout" });
+    }
+    latest?.controller?.abort();
+    const controller = new AbortController();
+    if (key !== undefined) {
+      this.instantLatest.delete(key);
+      this.instantLatest.set(key, {
+        seq: Math.max(body.seq, latest?.seq ?? 0), controller,
+        ...(final ? { finalSeq: body.seq } : latest?.finalSeq !== undefined ? { finalSeq: latest.finalSeq } : {}),
+      });
+      if (this.instantLatest.size > MAX_INSTANT_KEYS) {
+        const oldest = this.instantLatest.keys().next().value;
+        if (oldest !== undefined) this.instantLatest.delete(oldest);
+      }
+    }
+    response.once("close", () => { if (!response.writableFinished) controller.abort(); });
+    const result = this.checkInstantCard(await this.instant.dispatch(body, controller.signal));
+    const entry = key === undefined ? undefined : this.instantLatest.get(key);
+    if (entry?.controller === controller) delete entry.controller;
+    // Advisory hints that arrived for this take; /invoke may fuse them (never waits for them).
+    if (result.decision === "fallthrough" && result.hints && body.takeId) this.rememberHints(body.takeId, result.hints);
+    this.json(response, 200, result);
+  }
+
+  /** Defense in depth: every instant card must pass the strict catalog check before a host sees it. */
+  private checkInstantCard(response: InstantResponse): InstantResponse {
+    const card = "card" in response ? response.card : undefined;
+    if (!card) return response;
+    const checked = validateCard(card, { mode: "strict", allowedActions: HOST_ACTION_TYPES });
+    if (checked.ok) return response;
+    console.warn(`[instant] dropped an invalid card issues=${checked.issues.length} first=${checked.issues[0]?.code ?? "?"}`);
+    if (response.decision === "act") {
+      const { card: _dropped, ...rest } = response;
+      return rest;
+    }
+    return { seq: response.seq, elapsedMs: response.elapsedMs, source: response.source, decision: "fallthrough", reason: "no_match" };
+  }
+
+  private rememberHints(takeId: string, hints: ClassifierHints): void {
+    this.hints.delete(takeId);
+    this.hints.set(takeId, { hints, at: this.now() });
+    if (this.hints.size > MAX_TAKE_HINTS) {
+      const oldest = this.hints.keys().next().value;
+      if (oldest !== undefined) this.hints.delete(oldest);
+    }
+  }
+
+  private takeHints(takeId: string | undefined): ClassifierHints | undefined {
+    if (!takeId) return undefined;
+    const entry = this.hints.get(takeId);
+    this.hints.delete(takeId);
+    if (!entry || this.now() - entry.at > HINTS_TTL_MS) return undefined;
+    // Zero-shot Laya is uncalibrated (≈ 50 % intent accuracy): until a fine-tune passes the
+    // promotion gates it may only ask for the screenshot, never raise the tier by label.
+    if (entry.hints.source === "laya" && this.classifier.status().laya?.model?.calibrated !== true) {
+      const { intent: _intent, intentP: _intentP, tier: _tier, tierP: _tierP, ...screenOnly } = entry.hints;
+      return screenOnly;
+    }
+    return entry.hints;
+  }
+
+  // ------------------------------------------------------------------ prepared sessions
+
+  /**
+   * POST /invocations/prepare {contextId, takeId[, cancel]}: warm the instant engines and,
+   * in agent mode, pre-build the take's session (runtime, resources, Auto). Best effort:
+   * always 202; /invoke with the same takeId + contextId adopts it if nothing changed.
+   */
+  private async handlePrepare(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const body = await this.readJson(request, MAX_INSTANT_BODY) as { contextId?: unknown; takeId?: unknown; cancel?: unknown } | null;
+    if (typeof body?.takeId !== "string" || !ID.test(body.takeId)) {
+      return this.json(response, 400, { error: { code: "invalid_arguments", message: "takeId is required" } });
+    }
+    if (body.cancel === true) {
+      this.discardPrepared(body.takeId, "cancel");
+      return this.json(response, 200, { cancelled: true, takeId: body.takeId });
+    }
+    if (typeof body.contextId !== "string" || !ID.test(body.contextId)) {
+      return this.json(response, 400, { error: { code: "invalid_arguments", message: "contextId and takeId are required" } });
+    }
+    this.json(response, 202, { accepted: true, takeId: body.takeId });
+    this.prepareTake(body.contextId, body.takeId);
+  }
+
+  private prepareTake(contextId: string, takeId: string): void {
+    const existing = this.prepared.get(takeId);
+    if (existing?.contextId === contextId || this.stopping || this.usedTakes.has(takeId)) return;
+    if (existing) this.discardPrepared(takeId, "replaced");
+    // No network: fend compile + rate cache; the host app index makes the first "open X" warm.
+    if (this.config.instantEnabled !== false) {
+      void this.instant.warm();
+      void this.instantDeps.apps?.refresh();
+    }
+    if (this.classifier.kind === "laya") this.classifier.warm();
+    while (this.prepared.size >= MAX_PREPARED) {
+      const oldest = this.prepared.keys().next().value;
+      if (oldest === undefined) break;
+      this.discardPrepared(oldest, "evicted");
+    }
+    const take: PreparedTake = {
+      takeId, contextId, controller: new AbortController(),
+      timer: setTimeout(() => this.discardPrepared(takeId, "expired"), this.options.prepareTtlMs ?? 30_000),
+    };
+    take.timer.unref();
+    this.prepared.set(takeId, take);
+    if (this.config.agentEnabled && !this.options.onInvocation) take.session = this.buildPrepared(take).catch(() => undefined);
+  }
+
+  private async buildPrepared(take: PreparedTake): Promise<LiveAgentSession | undefined> {
+    const watch = new Stopwatch();
+    const signal = take.controller.signal;
+    const host = this.options.hostClient!;
+    const outcome = await host.getSnapshot(take.contextId, signal);
+    if (!outcome.ok) {
+      console.log(`[prepare] no session: context ${outcome.error.code}`);
+      return undefined;
+    }
+    const { readOnly, launcher } = await this.negotiate(signal);
+    const options = this.runOptions({ contextId: take.contextId, prompt: "" }, outcome.result, readOnly, launcher, signal, undefined, {});
+    const live = await (this.options.createSession ?? createLiveSession)(options);
+    // Discarded (expiry, cancel, replacement, shutdown) while building. Adoption does not abort.
+    if (signal.aborted || this.stopping) {
+      await live.close();
+      return undefined;
+    }
+    perfLog("prepare.session", watch.elapsed(), {});
+    return live;
+  }
+
+  private discardPrepared(takeId: string, reason: string): void {
+    const take = this.prepared.get(takeId);
+    if (!take) return;
+    this.prepared.delete(takeId);
+    clearTimeout(take.timer);
+    take.controller.abort();
+    void take.session?.then(live => live?.close());
+    console.log(`[prepare] discarded reason=${reason}`);
+  }
+
+  /** The take's prepared session when it was built for exactly this context and setup; otherwise none. */
+  private async adoptPrepared(takeId: string | undefined, options: AgentRunOptions): Promise<LiveAgentSession | undefined> {
+    if (!takeId) return undefined;
+    this.usedTakes.add(takeId);
+    if (this.usedTakes.size > MAX_INSTANT_KEYS) {
+      const oldest = this.usedTakes.values().next().value;
+      if (oldest !== undefined) this.usedTakes.delete(oldest);
+    }
+    const take = this.prepared.get(takeId);
+    if (!take) return undefined;
+    this.prepared.delete(take.takeId);
+    clearTimeout(take.timer);
+    const live = take.contextId === options.contextId ? await take.session : undefined;
+    if (live && !live.isClosed && live.controls.setupKey === sessionSetupKey(options)) return live;
+    take.controller.abort();
+    void take.session?.then(stale => stale?.close());
+    console.log(`[prepare] discarded reason=${live ? "mismatch" : "unavailable"}`);
+    return undefined;
+  }
+
+  // ------------------------------------------------------------------ invocations
 
   private async handleInvoke(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const body = (await this.readJson(request)) as InvokeBody | null;
@@ -209,6 +619,11 @@ export class HarnessServer {
       || !/^[\w-]{1,128}$/.test(body.invocationId))) {
       return this.json(response, 400, { error: { code: "invalid_arguments", message: "Invalid invocationId" } });
     }
+    if (body.takeId !== undefined && (typeof body.takeId !== "string" || !ID.test(body.takeId))) {
+      return this.json(response, 400, { error: { code: "invalid_arguments", message: "Invalid takeId" } });
+    }
+    const input = parseInvokeInput(body.input);
+    if (!input.ok) return this.json(response, 400, { error: { code: "invalid_arguments", message: input.error } });
     if (typeof body.invocationId === "string" && this.invocations.get(body.invocationId)) {
       return this.json(response, 409, { error: { code: "duplicate_invocation", message: "Invocation already exists; it was not re-executed" } });
     }
@@ -223,8 +638,13 @@ export class HarnessServer {
       typeof body.invokedAt === "string" ? body.invokedAt : new Date().toISOString(),
       typeof body.invocationId === "string" ? body.invocationId : undefined,
     );
+    if (input.input) this.invocations.setInput(record.invocationId, { mode: input.input.mode });
+    this.turns.set(record.invocationId, {
+      ...(typeof body.takeId === "string" ? { takeId: body.takeId } : {}),
+      ...(input.input ? { input: input.input } : {}),
+    });
 
-    if (body.retainSession === true) this.threads.set(record.invocationId, { expires: (this.options.now?.() ?? Date.now()) + THREAD_TTL_MS });
+    if (body.retainSession === true) this.threads.set(record.invocationId, { expires: this.now() + THREAD_TTL_MS });
     console.log(`[invoke] id=${record.invocationId}`);
     console.log(`[invoke] invokedAt=${record.invokedAt}`);
 
@@ -236,7 +656,7 @@ export class HarnessServer {
 
   /** POST /settings/model — validate + store the settings-page model choice.
    *  Validation uses the live pi catalog so unauthenticated/unknown models are
-   *  rejected here instead of failing an invocation later. */
+   *  rejected here instead of failing an invocation later. Auto is always valid. */
   private async handleSetModel(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const body = (await this.readJson(request)) as Partial<ModelSelection> | null;
     const { provider, modelId, thinkingLevel } = body ?? {};
@@ -247,15 +667,20 @@ export class HarnessServer {
       });
     }
 
-    const available = await this.withModelRuntime(runtime => runtime.getAvailable());
-    const model = available.find(model => model.provider === provider && model.id === modelId);
-    if (!model) {
+    const selection = { provider, modelId, thinkingLevel };
+    const auto = isAutoSelection(selection);
+    const supported = auto
+      ? [...AUTO_THINKING_LEVELS] as string[]
+      : await (async () => {
+        const available = await this.withModelRuntime(runtime => runtime.getAvailable());
+        const model = available.find(model => model.provider === provider && model.id === modelId);
+        return model ? getSupportedThinkingLevels(model) as string[] : undefined;
+      })();
+    if (!supported) {
       return void this.json(response, 400, {
         error: { code: "invalid_arguments", message: `model ${provider}/${modelId} is not available in the pi catalog` },
       });
     }
-    const selection = { provider, modelId, thinkingLevel };
-    const supported = getSupportedThinkingLevels(model) as string[];
     if (!supported.includes(thinkingLevel)) {
       return void this.json(response, 400, {
         error: {
@@ -266,21 +691,81 @@ export class HarnessServer {
     }
 
     const previous = this.modelSettings.set(selection);
+    // Auto's level IS the routing bias; keep GET /settings/routing in step with the picker.
+    if (auto) this.routing.set({ bias: biasForThinkingLevel(thinkingLevel) });
     const describe = (s: ModelSelection | null) =>
-      s ? `${s.provider}/${s.modelId} effort=${s.thinkingLevel}` : "pi automatic default";
+      s ? `${s.provider}/${s.modelId} effort=${s.thinkingLevel}` : "Auto (default)";
     console.log(`[settings] model switched: ${describe(previous)} -> ${describe(selection)}`);
 
     return this.json(response, 200, { current: selection });
   }
 
+  /** POST /settings/routing — strict patch; tier overrides must name available models. */
+  private async handleSetRouting(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const checked = validateRoutingPatch(await this.readJson(request, MAX_SETTINGS_BODY));
+    if (!checked.ok) return this.json(response, 400, { error: { code: "invalid_arguments", message: checked.error } });
+    const overrides = checked.patch.tierOverrides;
+    if (overrides && Object.values(overrides).some(Boolean)) {
+      const available = await this.withModelRuntime(runtime => runtime.getAvailable());
+      const problem = validateTierOverrides(overrides, buildRoutingCatalog(available).candidates);
+      if (problem) return this.json(response, 400, { error: { code: "invalid_arguments", message: problem } });
+    }
+    const next = this.routing.set(checked.patch);
+    const stored = this.modelSettings.get();
+    if (checked.patch.bias && stored && isAutoSelection(stored)) {
+      this.modelSettings.set({ ...stored, thinkingLevel: thinkingLevelForBias(checked.patch.bias) });
+    }
+    return this.json(response, 200, next);
+  }
+
+  /** POST /settings/classifier — strict body; the classifier is rebuilt (nothing starts until used). */
+  private async handleSetClassifier(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const parsed = parseClassifierSettings(await this.readJson(request, MAX_SETTINGS_BODY));
+    if (!parsed.ok) return this.json(response, 400, { error: { code: "invalid_arguments", message: parsed.error } });
+    const saved = this.classifierSettings.set(parsed.settings);
+    const previous = this.classifier;
+    this.classifier = this.buildClassifier();
+    await previous.dispose().catch(() => {});
+    return this.json(response, 200, { ...saved, status: this.classifier.status() });
+  }
+
+  private buildClassifier(): ManagedClassifier {
+    return createClassifier(this.classifierSettings.get(), {
+      supportDir: this.supportDir,
+      // Kind "pi" only: one lazily created runtime per process.
+      modelRuntime: () => (this.classifierRuntime ??= createModelCatalogContext(false).then(context => context.runtime)),
+      ...this.options.classifierDeps,
+    });
+  }
+
   private async hostAllowsInput(signal?: AbortSignal): Promise<boolean> {
     const tools = await this.options.hostClient!.getToolNames(signal);
-    return ["window.focus", "input.click", "input.typeText", "input.pressKey", "input.keyChord", "input.scroll"].every(name => tools.includes(name));
+    return INPUT_TOOLS.every(name => tools.includes(name));
   }
+
+  /**
+   * A warm Mac child may outlive permission/settings changes, so each session negotiates the
+   * host's actual catalog: native input (else read-only) and the launcher read routes. Windows
+   * keeps its fixed contract (no discovery, no launcher routes).
+   */
+  private async negotiate(signal?: AbortSignal): Promise<{ readOnly: boolean; launcher: boolean }> {
+    let readOnly = this.config.readOnly ?? false;
+    if (process.platform !== "darwin") return { readOnly, launcher: false };
+    let names: string[] = [];
+    try {
+      names = await this.options.hostClient!.getToolNames(signal);
+    } catch (error) {
+      if (!readOnly) throw error;
+    }
+    if (!readOnly) readOnly = !INPUT_TOOLS.every(name => names.includes(name));
+    return { readOnly, launcher: LAUNCHER_READ_ROUTES.every(name => names.includes(name)) };
+  }
+
   private async withModelRuntime<T>(use: (runtime: ModelRuntime) => Promise<T>): Promise<T> {
     const trusted = this.resourceSettings.get().mode === "trustedGlobal" && !this.config.readOnly && await this.hostAllowsInput();
     if (this.options.modelRuntimeFactory) return use(await this.options.modelRuntimeFactory(trusted));
-    const context = await createModelCatalogContext(trusted);
+    const sidecar = this.classifier.sidecar;
+    const context = await createModelCatalogContext(trusted, sidecar ? { laya: sidecar } : {});
     try { return await use(context.runtime); } finally { context.dispose(); }
   }
 
@@ -307,20 +792,21 @@ export class HarnessServer {
   private async closeThread(id: string): Promise<void> {
     const thread = this.threads.get(id);
     this.threads.delete(id); // Revoke before awaiting cleanup; startup cannot resurrect it.
-    const record = this.invocations.get(id);
-    if (record) record.followupAvailable = false;
+    this.invocations.setFollowupAvailable(id, false);
     await thread?.live?.close();
   }
   private expireThreads(): void {
     for (const [id, thread] of this.threads) {
-      if (thread.expires <= (this.options.now?.() ?? Date.now()) && !this.running.has(id)) void this.closeThread(id);
+      if (thread.expires <= this.now() && !this.running.has(id)) void this.closeThread(id);
     }
   }
   private async handleFollowup(id: string, request: IncomingMessage, response: ServerResponse): Promise<void> {
-    const body = await this.readJson(request) as { prompt?: unknown } | null;
+    const body = await this.readJson(request) as { prompt?: unknown; input?: unknown } | null;
     if (typeof body?.prompt !== "string" || !body.prompt.trim() || body.prompt.length > 20_000) {
       return this.json(response, 400, { error: { code: "invalid_arguments", message: "A nonempty prompt of at most 20,000 characters is required" } });
     }
+    const input = parseInvokeInput(body.input);
+    if (!input.ok) return this.json(response, 400, { error: { code: "invalid_arguments", message: input.error } });
     this.expireThreads();
     const record = this.invocations.get(id);
     if (!record) return this.json(response, 404, { error: { code: "not_found", message: "Unknown invocation" } });
@@ -329,7 +815,9 @@ export class HarnessServer {
     }
     if (!this.threads.has(id)) return this.json(response, 404, { error: { code: "session_closed", message: "The thread ended or expired. Start a new task" } });
     if (!this.invocations.requeueForFollowup(id, body.prompt.trim())) return;
-    record.followupAvailable = false;
+    if (input.input) this.invocations.setInput(id, { mode: input.input.mode });
+    this.turns.set(id, input.input ? { input: input.input } : {});
+    this.invocations.setFollowupAvailable(id, false);
     this.json(response, 202, { accepted: true, invocationId: id });
     void this.processInvocation(record, true);
   }
@@ -337,6 +825,7 @@ export class HarnessServer {
   private async processInvocation(record: InvocationRecord, followup = false): Promise<void> {
     // A.3: one AbortController per invocation; timeout fires it when configured.
     const entry: RunningInvocation = { controller: new AbortController(), timedOut: false };
+    const watch = new Stopwatch();
     if (this.config.invokeTimeoutMs > 0) {
       entry.timer = setTimeout(() => {
         entry.timedOut = true;
@@ -347,9 +836,10 @@ export class HarnessServer {
     }
     this.running.set(record.invocationId, entry);
     const signal = entry.controller.signal;
+    const id = record.invocationId;
 
     try {
-      this.invocations.start(record.invocationId);
+      this.invocations.start(id);
       if (this.options.onInvocation) {
         await this.options.onInvocation(record);
       }
@@ -359,50 +849,67 @@ export class HarnessServer {
       if (signal.aborted) {
         throw abortError(signal);
       }
-      record.followupAvailable = this.threads.has(record.invocationId);
-      this.invocations.finish(record.invocationId, "completed");
+      this.invocations.setFollowupAvailable(id, this.threads.has(id));
+      this.invocations.setTimings(id, { totalMs: watch.elapsed() });
+      this.invocations.finish(id, "completed");
     } catch (error) {
       const aborted = signal.aborted;
       const message = error instanceof Error ? error.message : String(error);
-      if (aborted || !followup) await this.closeThread(record.invocationId);
-      record.followupAvailable = this.threads.has(record.invocationId);
+      if (aborted || !followup) await this.closeThread(id);
+      this.invocations.setFollowupAvailable(id, this.threads.has(id));
+      // A partial card from an interrupted show_result must never outlive the turn.
+      if (!record.cardComplete) this.invocations.clearCard(id);
+      this.invocations.setTimings(id, { totalMs: watch.elapsed() });
       if (aborted) {
         console.warn(`[invoke] ${entry.timedOut ? "timed out" : "aborted"}: ${message}`);
-        this.invocations.addStep(record.invocationId,
+        this.invocations.addStep(id,
           entry.timedOut ? "timeout" : "cancel", false, message);
-        this.invocations.finish(record.invocationId, entry.timedOut ? "timed_out" : "aborted", message);
+        this.invocations.finish(id, entry.timedOut ? "timed_out" : "aborted", message);
       } else {
         console.error(`[invoke] failed: ${message}`);
-        this.invocations.addStep(record.invocationId, "process", false, message);
-        this.invocations.finish(record.invocationId, "failed", message);
+        this.invocations.addStep(id, "process", false, message);
+        this.invocations.finish(id, "failed", message);
       }
     } finally {
       if (entry.timer) {
         clearTimeout(entry.timer);
       }
-      this.running.delete(record.invocationId);
+      this.running.delete(id);
+      this.turns.delete(id);
+      perfLog("invoke.total", watch.elapsed(), { state: record.state, followup, tools: record.steps.length });
     }
   }
 
   /**
-   * Slice processor: log the complete request and fetch the pinned context
-   * snapshot. The agent loop and round-trip tool call arrive in 1.9.
+   * Instant lane (hosts without their own /instant use, e.g. Windows), pinned context,
+   * then the agent: prepared or fresh session, Auto routing before the prompt, streaming
+   * observers, and the final answer (lead text + card text).
    */
-  private async defaultProcessor(record: InvocationRecord, signal?: AbortSignal, followup = false): Promise<void> {
+  private async defaultProcessor(record: InvocationRecord, signal: AbortSignal, followup = false): Promise<void> {
     const hostClient = this.options.hostClient;
     if (!hostClient) {
       throw new Error("No host client configured");
     }
+    const id = record.invocationId;
+    const turn = this.turns.get(id) ?? {};
+    const watch = new Stopwatch();
+
+    // A host that sends a takeId ran POST /instant itself (or bypassed it on purpose, ⌥↵).
+    if (!followup && !turn.takeId && this.config.instantEnabled !== false && await this.answerInstantly(record, turn, signal)) {
+      return;
+    }
+    if (!followup && !turn.takeId) this.invocations.setTimings(id, { instantMs: watch.lap() });
 
     console.log("[context] fetching pinned context from host");
     const outcome = await hostClient.getSnapshot(record.contextId, signal);
 
     if (!outcome.ok) {
-      // Domain outcome as data (protocol.md): e.g. target_gone / expired.
-      console.warn(`[context] unavailable: ${outcome.error.code}: ${outcome.error.message}`);
-      this.invocations.addStep(record.invocationId, "desktop.getContext", false,
+      // Domain outcome as data (protocol.md): e.g. target_gone / expired. Host messages can name
+      // windows or files, so the log carries the code only; the record step keeps the message.
+      console.warn(`[context] unavailable: ${outcome.error.code}`);
+      this.invocations.addStep(id, "desktop.getContext", false,
         `${outcome.error.code}: ${outcome.error.message}`);
-      await this.closeThread(record.invocationId);
+      await this.closeThread(id);
       throw new Error(`Pinned context unavailable (${outcome.error.code})`);
     }
 
@@ -411,61 +918,283 @@ export class HarnessServer {
 
     const target = snapshot.targetWindow ?? snapshot.foregroundWindow;
     console.log(`[context] target=${target?.processName ?? "?"}`);
-    this.invocations.addStep(record.invocationId, "desktop.getContext", true,
+    this.invocations.addStep(id, "desktop.getContext", true,
       `target=${target?.processName ?? "?"}`);
+    this.invocations.setTimings(id, { contextMs: watch.lap() });
 
     if (!this.config.agentEnabled) {
       // Deterministic slice mode (default): prove the round trip without an LLM.
       await this.roundTripCapture(record, record.contextId, signal);
-      this.invocations.setResponse(record.invocationId,
+      this.invocations.setResponse(id,
         "[slice] round-trip capture ok (PI_OS_AGENT=0)");
       return;
     }
 
-    // A warm Mac child may outlive permission/settings changes. Negotiate the host's
-    // actual input catalog for EACH session; never infer input authority from the OS alone.
-    let readOnly = this.config.readOnly ?? false;
-    if (process.platform === "darwin" && !readOnly) {
-      readOnly = !(await this.hostAllowsInput(signal));
-    }
-    const thread = this.threads.get(record.invocationId);
+    const { readOnly, launcher } = await this.negotiate(signal);
+    const thread = this.threads.get(id);
     if (followup && thread?.readOnly === false && readOnly) {
-      await this.closeThread(record.invocationId);
+      await this.closeThread(id);
       throw new Error("control_disabled: Permissions changed. Start a new task");
     }
     // Original model/resources/tool scope remain fixed for the entire thread.
-    const runOptions: AgentRunOptions = {
-      hostClient,
+    const runOptions = this.runOptions(record, snapshot, readOnly, launcher, signal, turn.input, {
+      onToolCall: (toolName) => this.invocations.addStep(id, `agent.${toolName}`, true),
+      onActivity: (activity) => this.invocations.setActivity(id, activity),
+    });
+    // Auto: heuristics (+ advisory hints that already arrived) → decide() → decision slot,
+    // active tools and screenshot gating. Never waits on a classifier.
+    const hints = this.takeHints(turn.takeId);
+    const plan = (session: LiveAgentSession) => planTurn(session, {
+      text: record.prompt, snapshot, followup, hints, settings: this.routing.get(), stats: this.stats,
+    });
+    let live = thread?.live;
+    let prepared = false;
+    let turnPlan: TurnPlan | undefined;
+    if (!live) {
+      if (followup) throw new Error("session_closed: Start a new task");
+      live = await this.adoptPrepared(turn.takeId, runOptions);
+      if (live) {
+        // A take is usually prepared before the host's capture lands, so its session holds no (or an
+        // older) screenshot seed. Reuse it unless this turn attaches an image the seed does not match:
+        // that image would carry no coordinate authority, costing the model a capture before clicking.
+        turnPlan = plan(live);
+        if (attachesScreenshot(snapshot, turnPlan) && live.controls.initialScreenshotId !== snapshot.screenshot?.imageId) {
+          await live.close();
+          console.log("[prepare] discarded reason=screenshot");
+          live = turnPlan = undefined;
+        }
+      }
+      prepared = live !== undefined;
+      live ??= await (this.options.createSession ?? createLiveSession)(runOptions);
+      if (signal?.aborted || this.stopping || (thread && this.threads.get(id) !== thread)) {
+        await live.close();
+        throw signal?.aborted ? abortError(signal) : new Error("session_closed: Reader closed during startup");
+      }
+      if (thread) { thread.live = live; thread.readOnly = readOnly; }
+    } else if (turn.takeId) {
+      this.discardPrepared(turn.takeId, "unused");
+    }
+    const sessionMs = watch.lap();
+    this.invocations.setTimings(id, { sessionMs });
+    perfLog("invoke.session", sessionMs, { prepared, followup });
+
+    turnPlan ??= plan(live);
+    this.recordPlan(record, live, turnPlan);
+    this.invocations.setTimings(id, { routeMs: watch.lap() });
+
+    live.observe(this.observerFor(record, runOptions, watch));
+    let result;
+    try {
+      result = followup
+        ? await promptFollowup(live, record.prompt, signal, turn.input)
+        : await promptFirst(live, { ...runOptions, attachScreenshot: turnPlan.attachScreenshot });
+    } finally { if (!thread) await live.close(); }
+    console.log(`[agent] finished (${result.toolCalls} tool calls)`);
+    // show_result: the card is the answer; responseText = lead sentence + its text form.
+    const current = this.invocations.get(id);
+    const card = current?.cardComplete ? current.card : undefined;
+    if (!card) this.invocations.clearCard(id);
+    this.invocations.setResponse(id, [result.responseText, card ? cardToText(card) : ""].filter(Boolean).join("\n\n"));
+    this.invocations.addStep(id, "agent.run", true,
+      `${result.toolCalls} tool calls; ${result.responseText.length} chars${card ? "; card" : ""}`);
+  }
+
+  /**
+   * Windows-compatible instant answers: a pure `answer` (calc, units, currency, time, dates) completes
+   * the invocation; everything else goes to the agent. `act`/`list` need host effects. `refuse` does
+   * too: the deletion grammar also matches ordinary edits ("delete this message", "delete everything
+   * I typed"), which the agent (bound by the same file-deletion prohibition, with the host's native
+   * checks) handles as before.
+   */
+  private async answerInstantly(record: InvocationRecord, turn: TurnMeta, signal: AbortSignal): Promise<boolean> {
+    const watch = new Stopwatch();
+    const quick = this.checkInstantCard(await this.instantDirect.dispatch({
+      text: record.prompt, phase: "final", seq: 0, contextId: record.contextId,
+      ...(turn.input?.locale ? { locale: turn.input.locale } : {}), ...(turn.input ? { inputMode: turn.input.mode } : {}),
+    }, signal));
+    if (quick.decision !== "answer") return false;
+    // Only a real result replaces the agent: a Notice-only answer ("Downloading ECB reference rates.
+    // Try again in a moment.", an unknown currency) is a preview hint, not an answer to this request.
+    if (!Object.values(quick.card.elements).some(element => element.type === "ResultCard")) return false;
+    const id = record.invocationId;
+    this.invocations.setCard(id, quick.card, true);
+    this.invocations.setResponse(id, cardToText(quick.card) || quick.title);
+    this.invocations.addStep(id, "instant", true, `answer intent=${quick.intent}`);
+    this.invocations.setTimings(id, { instantMs: watch.elapsed() });
+    perfLog("invoke.instant", watch.elapsed(), { decision: quick.decision, kind: quick.intent });
+    // No agent session exists; a follow-up starts a fresh /invoke ("Earlier quick answer: Q → A").
+    await this.closeThread(id);
+    return true;
+  }
+
+  private runOptions(
+    record: Pick<InvocationRecord, "contextId" | "prompt">, snapshot: DesktopContextSnapshot, readOnly: boolean, launcher: boolean,
+    signal: AbortSignal, input: InvokeInput | undefined, callbacks: Pick<AgentRunOptions, "onToolCall" | "onActivity">,
+  ): AgentRunOptions {
+    return {
+      hostClient: this.options.hostClient!,
       contextId: record.contextId,
       prompt: record.prompt,
       snapshot: snapshot as DesktopContextSnapshot & { screenshot?: ScreenshotRef | null },
       capturesDir: this.config.capturesDir,
       readOnly,
+      launcher,
       resourceSelection: this.resourceSettings.get(),
       log: (line) => console.log(line),
       modelSelection: this.modelSettings.get(),
       signal,
-      onToolCall: (toolName) =>
-        this.invocations.addStep(record.invocationId, `agent.${toolName}`, true),
-      onActivity: (activity) => this.invocations.setActivity(record.invocationId, activity),
+      services: this.services,
+      ...(input ? { input } : {}),
+      ...callbacks,
     };
-    let live = thread?.live;
-    if (!live) {
-      if (followup) throw new Error("session_closed: Start a new task");
-      live = await (this.options.createSession ?? createLiveSession)(runOptions);
-      if (signal?.aborted || this.stopping || (thread && this.threads.get(record.invocationId) !== thread)) {
-        await live.close();
-        throw signal?.aborted ? abortError(signal) : new Error("session_closed: Reader closed during startup");
-      }
-      if (thread) { thread.live = live; thread.readOnly = readOnly; }
+  }
+
+  /** Route preview on the record (updated by onRoute), plus the optional label-only shadow log. */
+  private recordPlan(record: InvocationRecord, live: LiveAgentSession, plan: TurnPlan): void {
+    const id = record.invocationId;
+    const decision = plan.decision;
+    if (decision?.model) {
+      this.invocations.setRoute(id, {
+        tier: decision.tier, provider: decision.model.provider, model: decision.model.id,
+        thinkingLevel: decision.model.thinkingLevel, reasons: decision.reasons, auto: true,
+      });
+      perfLog("invoke.route", 0, { tier: decision.tier, model: `${decision.model.provider}/${decision.model.id}@${decision.model.thinkingLevel}`,
+        screenshot: plan.attachScreenshot, tools: plan.activeTools?.length ?? 0 });
+    } else if (!decision && live.controls.manual) {
+      const manual = live.controls.manual;
+      this.invocations.setRoute(id, { provider: manual.provider, model: manual.model, thinkingLevel: live.controls.thinkingLevel?.() ?? manual.thinkingLevel, reasons: ["manual"], auto: false });
     }
-    let result;
-    try { result = followup ? await promptFollowup(live, record.prompt, signal) : await promptFirst(live, runOptions); }
-    finally { if (!thread) await live.close(); }
-    console.log(`[agent] finished (${result.toolCalls} tool calls)`);
-    this.invocations.setResponse(record.invocationId, result.responseText);
-    this.invocations.addStep(record.invocationId, "agent.run", true,
-      `${result.toolCalls} tool calls; ${result.responseText.length} chars`);
+    if (decision && plan.routeInput) {
+      this.classifier.shadow?.record({
+        classifier: "heuristic", latencyMs: 0, hints: null,
+        reference: { intent: plan.routeInput.classification.intent, tier: decision.tier },
+      });
+    }
+  }
+
+  /** Per-invocation stream sink: steps, activity, partial text, cards, route, latency stats. */
+  private observerFor(record: InvocationRecord, options: AgentRunOptions, watch: Stopwatch): SessionObserver {
+    const id = record.invocationId;
+    let lastComplete: CardSpec | undefined;
+    let firstResponse = true;
+    return {
+      log: options.log,
+      ...(options.onToolCall ? { onToolCall: options.onToolCall } : {}),
+      ...(options.onActivity ? { onActivity: options.onActivity } : {}),
+      onPartialText: (text) => this.invocations.setPartialText(id, text),
+      onCard: (spec, complete) => {
+        if (complete) lastComplete = spec;
+        this.invocations.setCard(id, spec, complete);
+      },
+      onToolEnd: (name, isError) => {
+        // A rejected show_result attempt must not leave its partial card on screen.
+        if (name !== SHOW_RESULT_TOOL || !isError) return;
+        if (lastComplete) this.invocations.setCard(id, lastComplete, true);
+        else this.invocations.clearCard(id);
+      },
+      onRoute: (event: RouteEvent) => {
+        if (event.cause === "sticky") return;
+        this.invocations.setRoute(id, {
+          tier: event.tier, provider: event.target.provider, model: event.target.id, thinkingLevel: event.target.thinkingLevel,
+          reasons: [...(event.reasons.length ? event.reasons : this.invocations.get(id)?.route?.reasons ?? []), `cause=${event.cause}`], auto: true,
+        });
+      },
+      onResponse: (sample) => {
+        const level = sample.thinkingLevel ?? "off";
+        const model = `${sample.provider}/${sample.model}@${level}`;
+        this.statsDirty = true;
+        if (!sample.ok) {
+          this.stats.recordError({ provider: sample.provider, model: sample.model, thinkingLevel: level });
+          // Quota errors are not retried by pi, so route() never sees them: keep Auto off that provider.
+          if (sample.errorKind === "quota") this.stats.block(sample.provider, HEALTH_PENALTY_MS.quota, "quota");
+          perfLog("agent.error", 0, { model, kind: sample.errorKind ?? "other" });
+          return;
+        }
+        this.stats.record({
+          provider: sample.provider, model: sample.model, thinkingLevel: level,
+          ...(sample.ttftMs !== undefined ? { ttftMs: sample.ttftMs } : {}),
+          ...(sample.outputTokens !== undefined ? { outputTokens: sample.outputTokens } : {}),
+          ...(sample.streamMs !== undefined ? { streamMs: sample.streamMs } : {}),
+        });
+        if (firstResponse && sample.ttftMs !== undefined) {
+          firstResponse = false;
+          this.invocations.setTimings(id, { ttftMs: sample.ttftMs, firstTokenMs: watch.elapsed() - (sample.streamMs ?? 0) });
+        }
+        perfLog("agent.response", sample.ttftMs ?? 0, {
+          model, outTokens: sample.outputTokens ?? 0, streamMs: Math.round(sample.streamMs ?? 0),
+        });
+      },
+    };
+  }
+
+  // ------------------------------------------------------------------ SSE
+
+  /**
+   * GET /invocations/{id}/events: `event: record` with the full record on every change,
+   * coalesced to one write per window; the terminal record ends the stream. Comment pings
+   * keep idle proxies and clients alive. Polling GET /invocations/{id} is unchanged.
+   */
+  private streamEvents(id: string, response: ServerResponse): void {
+    if (!this.invocations.get(id)) {
+      return this.json(response, 404, { error: { code: "not_found", message: `Unknown invocation '${id}'` } });
+    }
+    response.writeHead(200, {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    const coalesceMs = this.options.sseCoalesceMs ?? 33;
+    let sent = -1;
+    let lastWrite = Number.NEGATIVE_INFINITY;
+    let timer: NodeJS.Timeout | undefined;
+    let closed = false;
+    let draining = false;
+    const finish = () => {
+      if (closed) return;
+      closed = true;
+      unsubscribe();
+      clearInterval(ping);
+      if (timer) clearTimeout(timer);
+      response.end();
+    };
+    const flush = () => {
+      timer = undefined;
+      if (closed) return;
+      const record = this.invocations.get(id);
+      if (!record) return finish(); // Evicted.
+      // A reader that stopped reading gets the latest record once it drains, not a growing backlog.
+      if (response.writableNeedDrain) {
+        if (!draining) {
+          draining = true;
+          response.once("drain", () => { draining = false; schedule(); });
+        }
+        return;
+      }
+      if (record.revision !== sent) {
+        response.write(`event: record\ndata: ${JSON.stringify(record)}\n\n`);
+        sent = record.revision;
+        lastWrite = performance.now();
+      }
+      if (TERMINAL_STATES.has(record.state)) finish();
+    };
+    const schedule = () => {
+      if (closed || timer || draining) return;
+      const wait = lastWrite + coalesceMs - performance.now();
+      if (wait <= 0) flush();
+      else timer = setTimeout(flush, wait);
+    };
+    const unsubscribe = this.invocations.subscribe(id, schedule);
+    const ping = setInterval(() => { if (!closed && !response.writableNeedDrain) response.write(": ping\n\n"); }, this.options.sseKeepAliveMs ?? 15_000);
+    ping.unref();
+    // Client went away (or the server is closing): drop the subscription and timers.
+    response.once("close", () => {
+      closed = true;
+      unsubscribe();
+      clearInterval(ping);
+      if (timer) clearTimeout(timer);
+    });
+    flush();
   }
 
   /** Round-trip test (handoff section 23, item 9): call back into the C#
@@ -487,7 +1216,7 @@ export class HarnessServer {
     );
 
     if (!capture.ok) {
-      console.warn(`[roundtrip] capture failed: ${capture.error.code}: ${capture.error.message}`);
+      console.warn(`[roundtrip] capture failed: ${capture.error.code}`);
       this.invocations.addStep(record.invocationId, "desktop.captureWindow", false,
         `${capture.error.code}: ${capture.error.message}`);
       throw new Error(`Round-trip capture failed (${capture.error.code})`);
@@ -496,6 +1225,10 @@ export class HarnessServer {
     console.log(`[roundtrip] fresh screenshot: imageId=${capture.result.imageId} file=${capture.result.filePath}`);
     this.invocations.addStep(record.invocationId, "desktop.captureWindow", true,
       `imageId=${capture.result.imageId}`);
+  }
+
+  private now(): number {
+    return this.options.now?.() ?? Date.now();
   }
 
   private authorized(request: IncomingMessage): boolean {
@@ -507,12 +1240,12 @@ export class HarnessServer {
     return a.length === b.length && timingSafeEqual(a, b);
   }
 
-  private async readJson(request: IncomingMessage): Promise<unknown> {
+  private async readJson(request: IncomingMessage, maxBytes = 1_000_000): Promise<unknown> {
     const chunks: Buffer[] = [];
     let total = 0;
     for await (const chunk of request) {
       total += (chunk as Buffer).length;
-      if (total > 1_000_000) {
+      if (total > maxBytes) {
         throw new RequestError(413, "Request body too large");
       }
       chunks.push(chunk as Buffer);
