@@ -806,7 +806,9 @@ test("perf: with a warm cache of 200 visible items the visible step adds < 2 ms 
   const b = await time(withVisible, spotify, 200);
   const radfotos = await time(withVisible, take("Radfotos"), 200);
   t.diagnostic(`visible step: app take p50 ${a.p50.toFixed(2)} → ${b.p50.toFixed(2)} ms, p95 ${a.p95.toFixed(2)} → ${b.p95.toFixed(2)} ms; visible act p50 ${radfotos.p50.toFixed(2)} ms, p95 ${radfotos.p95.toFixed(2)} ms`);
-  assert.ok(b.p50 - a.p50 < 2, `p50 +${(b.p50 - a.p50).toFixed(2)} ms`);
-  assert.ok(b.p95 - a.p95 < 2, `p95 +${(b.p95 - a.p95).toFixed(2)} ms`);
-  assert.ok(radfotos.p95 < 5, `visible act p95 ${radfotos.p95.toFixed(2)} ms`);
+  // As instantPerf.test.ts: PI_OS_PERF_SLACK (e.g. 3) widens the latency bounds on slower or loaded machines.
+  const slack = Number(process.env.PI_OS_PERF_SLACK ?? "1") || 1;
+  assert.ok(b.p50 - a.p50 < 2 * slack, `p50 +${(b.p50 - a.p50).toFixed(2)} ms`);
+  assert.ok(b.p95 - a.p95 < 2 * slack, `p95 +${(b.p95 - a.p95).toFixed(2)} ms`);
+  assert.ok(radfotos.p95 < 5 * slack, `visible act p95 ${radfotos.p95.toFixed(2)} ms`);
 });

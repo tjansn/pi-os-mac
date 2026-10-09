@@ -12,6 +12,7 @@ import {
 } from "../src/instant/dictionary.js";
 import { aliasGuardPasses, displayName } from "../src/instant/learned.js";
 import { attachTakeDetails, InMemoryTakeMemo, offeredBundleIds, takeDetailsOf, takeRecordFor, type TakeRecord } from "../src/instant/takeMemo.js";
+import { assertOwnerOnly } from "./ownerOnly.js";
 
 const fixtures = join(import.meta.dirname, "..", "..", "shared", "fixtures");
 const readJson = (path: string): any => JSON.parse(readFileSync(path, "utf8"));
@@ -48,8 +49,9 @@ test("store: a missing file is empty; the first write creates 0600 in a 0700 dir
   const outcome = store.bind({ list: "appNames", heard: "recast", bundleId: "com.raycast.macos", display: "Raycast" }, { recognizer: "parakeet-v3", source: "did-you-mean" });
   assert.ok(outcome.ok);
   assert.equal(outcome.revision, 1);
-  assert.equal(statSync(path).mode & 0o777, 0o600);
-  assert.equal(statSync(dir).mode & 0o777, 0o700);
+  // POSIX modes only (Windows reports the write bit alone); the atomic write is checked everywhere.
+  assertOwnerOnly(path, 0o600);
+  assertOwnerOnly(dir, 0o700);
   assert.deepEqual(readdirSync(dir), ["dictionary.json"], "no temp file is left behind");
   const written = onDisk(path);
   assert.equal(written.revision, 1);
@@ -60,7 +62,8 @@ test("store: a missing file is empty; the first write creates 0600 in a 0700 dir
   assert.equal(store.revision(), 2);
 });
 
-test("store: a loose support directory is tightened to 0700 on the first write", () => {
+test("store: a loose support directory is tightened to 0700 on the first write",
+  { skip: process.platform === "win32" && "POSIX directory modes: NTFS uses ACLs and the store leaves the directory mode alone on Windows" }, () => {
   const dir = tempDir();
   chmodSync(dir, 0o755);
   const { store } = storeAt(undefined, { dir });
@@ -94,12 +97,13 @@ test("store: corrupt, oversized and wrong-shape files start empty and are kept a
     assert.equal(store.revision(), 0, label);
     assert.ok(store.bind({ list: "fixes", heard: "clod", intended: "Claude" }, { recognizer: "any", source: "manual" }).ok, label);
     assert.equal(readFileSync(`${path}.corrupt`, "utf8"), bytes, `${label}: the unusable bytes are recoverable`);
-    assert.equal(statSync(`${path}.corrupt`).mode & 0o777, 0o600);
+    assertOwnerOnly(`${path}.corrupt`, 0o600);
     assert.equal(onDisk(path).fixes.length, 1, label);
   }
 });
 
-test("store: a file it cannot read is never replaced; changes stay in memory", (t) => {
+test("store: a file it cannot read is never replaced; changes stay in memory",
+  { skip: process.platform === "win32" && "chmod 000 cannot make a file unreadable on NTFS (POSIX permission bits only)" }, (t) => {
   if (process.getuid?.() === 0) return t.skip("root reads everything");
   const dir = tempDir();
   const path = join(dir, "dictionary.json");

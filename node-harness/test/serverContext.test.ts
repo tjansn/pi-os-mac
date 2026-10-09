@@ -13,7 +13,7 @@ import type { ContextWire } from "../src/contracts/context.js";
 import type { DesktopContextSnapshot, ScreenshotRef } from "../src/hostClient.js";
 import { WINDOW_TOOLS } from "../src/agent/agentRunner.js";
 import {
-  agentHost, captureLogs, fakeHost, fauxRuntimes, pngFile, seen, start, tempCaptures, type HostRoute, type SeenRequest,
+  agentHost, captureLogs, fakeHost, fauxRuntimes, pngFile, seen, SHELF_IMAGES_MACOS_ONLY, start, tempCaptures, type HostRoute, type SeenRequest,
 } from "./integrationFixtures.js";
 
 /**
@@ -109,7 +109,9 @@ test("context and attachments are strict on /invoke and /followup: 400 with fiel
       assert.match(error.message, message);
       assert(!raw.includes("everything-secret"), "the value is never echoed");
     }
-    const secretPath = join(s.captures.dir, "..", "secret-folder", "shelf-x.png");
+    // A sibling of the captures dir. Shelf image paths are POSIX host paths (the shelf is macOS-only); on a
+    // Windows runner the captures dir is a D:\… path, so a POSIX path stands in and is just as far outside it.
+    const secretPath = process.platform === "win32" ? "/fixture/secret-folder/shelf-x.png" : join(s.captures.dir, "..", "secret-folder", "shelf-x.png");
     const outside = await bad("/invoke", { ...base, invocationId: "bad-attachments",
       attachments: [{ kind: "text", text: "fixture-secret-text" }, { kind: "image", path: secretPath, width: 10, height: 10 }] });
     assert.deepEqual(outside.error.issues, [{ path: "attachments[1].path", code: "outside_captures" }]);
@@ -264,7 +266,7 @@ test("a general turn survives a lost window (named by the app it was pinned on);
   } finally { await s.close(); }
 });
 
-test("attachments end to end: fenced text, a shelf image after the request, the pointed-at element; the record keeps summaries only", async () => {
+test("attachments end to end: fenced text, a shelf image after the request, the pointed-at element; the record keeps summaries only", { skip: SHELF_IMAGES_MACOS_ONLY }, async () => {
   const s = await harness();
   const shelf = join(s.captures.dir, "shelf-a1.png");
   pngFile(shelf, 640, 400);
@@ -717,7 +719,7 @@ test("prepared sessions serve every scope, and a take prepared before its captur
   } finally { await s.close(); }
 });
 
-test("telemetry is content-free: no prompt, attachment, page or path text in any log line; scope, page and totals as codes and counts", async () => {
+test("telemetry is content-free: no prompt, attachment, page or path text in any log line; scope, page and totals as codes and counts", { skip: SHELF_IMAGES_MACOS_ONLY }, async () => {
   const s = await harness({ pinned: brave, routes: { "browser.page": async () => ({ ok: true, result: page }) } });
   const shelf = join(s.captures.dir, "shelf-t1.png");
   pngFile(shelf, 320, 200);

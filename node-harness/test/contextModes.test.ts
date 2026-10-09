@@ -24,7 +24,9 @@ import {
   DEFAULT_DICTIONARY_SETTINGS, recognizerApplies, type DictionaryLookup, type TakeMemo, type TakeMemoRecord,
 } from "../src/contracts/dictionary.js";
 import type { DesktopContextSnapshot } from "../src/hostClient.js";
-import { agentHost, agentRun, captureLogs, fauxRuntimes, pngFile, seen, tempCaptures, type HostRoute, type SeenRequest } from "./integrationFixtures.js";
+import {
+  agentHost, agentRun, captureLogs, fauxRuntimes, pngFile, seen, SHELF_IMAGES_MACOS_ONLY, tempCaptures, type HostRoute, type SeenRequest,
+} from "./integrationFixtures.js";
 
 /**
  * Context scopes through real pi 1.0 sessions on the in-process faux provider (DESIGN2 §5.2/§5.3,
@@ -424,7 +426,7 @@ function textOnlyQuickRuntimes() {
   } as unknown as ReturnType<typeof fauxRuntimes>;
 }
 
-test("Auto: a general turn routes without the window image, an explicit window turn always shows it, an attached image forces a vision model", async () => {
+test("Auto: a general turn routes without the window image, an explicit window turn always shows it, an attached image forces a vision model", { skip: SHELF_IMAGES_MACOS_ONLY }, async () => {
   const auto = (context: ContextWire | undefined, prompt: string, attachments?: (dir: string) => Attachment[]) =>
     scenario({ ...(context ? { context } : {}), prompt, runtimes: textOnlyQuickRuntimes(), overrides: { modelSelection: null } }).then(s => {
       if (attachments) s.run.attachments = attachments(s.captures.dir);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { test } from "node:test";
 import { HOST_ACTION_TYPES, parseHostAction } from "../src/contracts/actions.js";
 import { bindingToHostAction, buildCard, type CardSpec, ui } from "../src/contracts/cards.js";
@@ -367,7 +367,8 @@ test("continuity target: strict parse, unknown keys dropped, credential never ha
     assert.equal(parseInstantTarget({ app: "browser", anchor: { takeId } }).ok, false, JSON.stringify(takeId));
   }
   // Invalid request fixtures: rejected with an error that names the member and never the value.
-  const invalid = jsonFiles("instant/requests/invalid").filter((file) => file.includes("/target-"));
+  // By file name: the joined path uses the host's separator (`\` on Windows).
+  const invalid = jsonFiles("instant/requests/invalid").filter((file) => basename(file).startsWith("target-"));
   assert.ok(invalid.length >= 12, String(invalid.length));
   for (const file of invalid) {
     const parsed = parseInstantRequest(readJson(file));

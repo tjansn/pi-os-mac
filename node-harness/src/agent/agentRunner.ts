@@ -100,8 +100,11 @@ export interface AgentServices {
   agentDir?: string;
   cwd?: string;
   /**
-   * Host platform for per-host model defaults (default process.platform): macOS defaults to Auto;
-   * elsewhere Auto is opt-in and pi resolves its own default model. Tests inject it.
+   * Host platform (default process.platform) for every per-host session choice: the read-only default,
+   * isolated vs trusted resources, scope-aware prompts and tools, and the model default (macOS defaults
+   * to Auto; elsewhere Auto is opt-in and pi resolves its own default model). In production it always
+   * equals process.platform (the server passes its own, which is process.platform unless injected);
+   * tests inject another so a macOS or Windows session is built alike on every CI OS.
    */
   platform?: NodeJS.Platform;
 }
@@ -477,7 +480,7 @@ export function resolveSessionModel(
 export function sessionSetupKey(options: AgentRunOptions): string {
   const routing = options.services?.routing?.() ?? DEFAULT_ROUTING_SETTINGS;
   return JSON.stringify([
-    process.platform, options.contextId, options.readOnly ?? null, options.launcher === true,
+    options.services?.platform ?? process.platform, options.contextId, options.readOnly ?? null, options.launcher === true,
     options.resourceSelection?.mode ?? "isolated", options.modelSelection ?? null, routing.bias,
     browserSetup(options.snapshot.browser),
   ]);
@@ -827,16 +830,16 @@ export async function createLiveSession(options: AgentRunOptions): Promise<LiveA
   const agentDir = services.agentDir ?? getAgentDir();
   const routing = services.routing ?? (() => DEFAULT_ROUTING_SETTINGS);
   const lifetime = new AbortController();
-  const mac = process.platform === "darwin";
-  const readOnly = options.readOnly ?? mac;
   const platform = services.platform ?? process.platform;
+  const mac = platform === "darwin";
+  const readOnly = options.readOnly ?? mac;
   // The pinned Brave tab (DESIGN2 §7): Accessibility by default (host browser.page / browser.axAct, no
   // DevTools socket, no dialog); DevTools only for an explicit "cdp" hint with control; macOS only.
   const browser = createBrowserTransport(snapshot.browser, hostClient, contextId, { readOnly, signal: lifetime.signal, platform });
   const ax = browser?.mode === "ax" ? browser : undefined;
 
   if (signal?.aborted) throw abortError(signal);
-  const isolated = effectiveResourceMode(process.platform, readOnly, options.resourceSelection) === "isolated";
+  const isolated = effectiveResourceMode(platform, readOnly, options.resourceSelection) === "isolated";
   // Hooks created here outlive a prepared session's build: they reach the CURRENT observer through `live`.
   let live: LiveAgentSession | undefined;
   // The user's raw requests (promptFirst/promptFollowup add them); a prepared session reads them at execute time.
@@ -868,7 +871,7 @@ export async function createLiveSession(options: AgentRunOptions): Promise<LiveA
     ...(hooks ? { context: hooks } : {}),
     leanPrompt: lean,
   });
-  const loader = await loadAgentResources(extensions, cwd, agentDir, isolated, lean ? { systemPrompt: PI_OS_SYSTEM_PROMPT } : {});
+  const loader = await loadAgentResources(extensions, cwd, agentDir, isolated, { platform, ...(lean ? { systemPrompt: PI_OS_SYSTEM_PROMPT } : {}) });
 
   const modelRuntime = await (services.modelRuntime ?? (() => ModelRuntime.create()))();
   // Every invocation runtime knows Auto; the handle is this session's decision slot.
@@ -897,7 +900,7 @@ export async function createLiveSession(options: AgentRunOptions): Promise<LiveA
     sessionManager: SessionManager.inMemory(),
     ...(isolated ? { tools: sessionToolAllowlist({ readOnly, ...(browser ? { browser } : {}), auto: resolved.auto, activeWindow: scoped }) } : {}),
     // Always explicit (also Windows trusted mode) so the image override applies to every session.
-    settingsManager: createSessionSettings(isolated, cwd, agentDir),
+    settingsManager: createSessionSettings(isolated, cwd, agentDir, platform),
   };
   if (resolved.model) {
     sessionOptions.model = resolved.model;
@@ -1281,8 +1284,10 @@ export async function promptFirst(live: LiveAgentSession, options: AgentRunOptio
     thread.sync();
   }
   const general = thread?.general ?? false;
-  const mac = (thread?.platform ?? process.platform) === "darwin";
-  const isolated = effectiveResourceMode(process.platform, options.readOnly ?? process.platform === "darwin", options.resourceSelection) === "isolated";
+  // The session's host platform (createLiveSession: services.platform, else process.platform).
+  const platform = thread?.platform ?? options.services?.platform ?? process.platform;
+  const mac = platform === "darwin";
+  const isolated = effectiveResourceMode(platform, options.readOnly ?? mac, options.resourceSelection) === "isolated";
   const available = Boolean(snapshot.screenshot?.filePath);
   const attach = !general && attachesScreenshot(snapshot, { attachScreenshot: options.attachScreenshot !== false });
   // Coordinate authority follows delivered images only (computerUseExtension): no image, no authority,
@@ -1310,7 +1315,7 @@ export async function promptFirst(live: LiveAgentSession, options: AgentRunOptio
       ...(page ? [page.text, ""] : []),
     ]),
     ...shelf.lines,
-    ...(!isolated && process.platform === "darwin" ? ["## Trusted pi compatibility", TRUST_WARNING,
+    ...(!isolated && mac ? ["## Trusted pi compatibility", TRUST_WARNING,
       "Desktop tool refusals must not be bypassed through another input path.", ""] : []),
     ...spokenInputNote(options.input, options.voice),
     ...(general && thread ? activeAppLines(snapshot, thread.pull, options.context?.target) : []),

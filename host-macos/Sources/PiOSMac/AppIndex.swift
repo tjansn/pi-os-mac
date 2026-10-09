@@ -61,7 +61,8 @@ public final class AppIndex: @unchecked Sendable {
     /// Cached seeds; a stale list is still served while one background rebuild runs.
     private func cachedSeeds() -> [AppSeed]? {
         let (seeds, refresh) = lock.withLock { () -> ([AppSeed]?, Bool) in
-            guard let seeds else { return (nil, false) }
+            // The property, explicitly: Swift 6.3 (Xcode 26) binds a bare `seeds` to the constant declared above.
+            guard let seeds = self.seeds else { return (nil, false) }
             let refresh = (stale || Date().timeIntervalSince(builtAt) > maxAge) && !refreshing
             if refresh { refreshing = true }
             return (seeds, refresh)

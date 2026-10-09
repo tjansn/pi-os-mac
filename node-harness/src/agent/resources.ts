@@ -10,8 +10,9 @@ export const PI_OS_SETTINGS_OVERRIDES = { images: { autoResize: false } } as con
 /** Settings for every pi-os prompting session. Overrides live in memory only: they are never
  * written to the user's settings.json, and a settings reload/save inside pi would drop them, so
  * each session gets its own manager (never the resource loader's, which reload() resets). */
-export function createSessionSettings(isolated: boolean, cwd = process.cwd(), agentDir = getAgentDir()): SettingsManager {
-  const settings = process.platform === "darwin" || isolated
+export function createSessionSettings(isolated: boolean, cwd = process.cwd(), agentDir = getAgentDir(),
+  platform: NodeJS.Platform = process.platform): SettingsManager {
+  const settings = platform === "darwin" || isolated
     ? SettingsManager.create(cwd, agentDir, { projectTrusted: false })
     // Windows trusted mode: identical to createAgentSession's own default manager.
     : SettingsManager.create(cwd, agentDir);
@@ -37,6 +38,8 @@ export const PI_OS_SYSTEM_PROMPT = [
 export interface AgentResourceOptions {
   /** Replaces pi's default base prompt (isolated macOS sessions pass PI_OS_SYSTEM_PROMPT). */
   systemPrompt?: string;
+  /** The session's host platform (default process.platform; createLiveSession passes the session's). */
+  platform?: NodeJS.Platform;
 }
 
 export async function loadAgentResources(
@@ -46,15 +49,16 @@ export async function loadAgentResources(
   isolated = false,
   options: AgentResourceOptions = {},
 ): Promise<DefaultResourceLoader> {
+  const mac = (options.platform ?? process.platform) === "darwin";
   const loader = new DefaultResourceLoader({
     cwd, agentDir, extensionFactories: [...extensions],
     // pi 1.0: a custom base prompt replaces the preamble, tool list, rules and docs sections
     // (buildSystemPromptSections); a SYSTEM.md is then never discovered.
     ...(options.systemPrompt !== undefined ? { systemPrompt: options.systemPrompt } : {}),
     // Project resources are never trusted on Mac, even with explicit GLOBAL compatibility.
-    settingsManager: SettingsManager.create(cwd, agentDir, { projectTrusted: process.platform === "darwin" ? false : !isolated }),
+    settingsManager: SettingsManager.create(cwd, agentDir, { projectTrusted: mac ? false : !isolated }),
     ...(isolated ? { noExtensions: true, noSkills: true, noPromptTemplates: true, noContextFiles: true } : {}),
-    ...(process.platform === "darwin" && !isolated ? {
+    ...(mac && !isolated ? {
       agentsFilesOverride: (base: { agentsFiles: { path: string; content: string }[] }) => ({
         agentsFiles: base.agentsFiles.filter(file => ["AGENTS.md", "CLAUDE.md"].some(name => resolve(file.path) === resolve(join(agentDir, name)))),
       }),

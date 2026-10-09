@@ -27,12 +27,15 @@ final class VoiceCaptureTests: XCTestCase {
         let result = await AppleSpeechVoiceInput.within(3) { () async -> (Int, [AVAudioFormat]) in
             var frames = 0, formats: [AVAudioFormat] = []
             for await input in stream {
+                // `bufferDuration`/`bufferFormat` exist only in the macOS 27 SDK (Swift 6.4, Xcode 27).
+                #if compiler(>=6.4)
                 if #available(macOS 27, *) {
                     frames += Int((input.bufferDuration.seconds * input.bufferFormat.sampleRate).rounded())
                     formats.append(input.bufferFormat)
-                } else {
-                    frames += Int(input.buffer.frameLength); formats.append(input.buffer.format)
+                    continue
                 }
+                #endif
+                frames += Int(input.buffer.frameLength); formats.append(input.buffer.format)
             }
             return (frames, formats)
         }

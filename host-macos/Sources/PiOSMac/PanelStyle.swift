@@ -71,8 +71,8 @@ final class PanelSurface: NSView {
         addSubview(visual)
         if #available(macOS 26.0, *) {
             let view = NSGlassEffectView(); view.style = .regular
-            // High-frequency input does not need decorative interactive distortion.
-            if #available(macOS 27.0, *) { view.effectIsInteractive = false }
+            // High-frequency input does not need decorative interactive distortion, and none is set up:
+            // `effectIsInteractive` (macOS 27 SDK only) defaults to NO, so the macOS 26 SDK builds the same view.
             glass = view; addSubview(view)
         }
         wash.wantsLayer = true
@@ -226,4 +226,3 @@ final class PanelButton: NSButton {
     }
     override var focusRingMaskBounds: NSRect { bounds }
 }
-

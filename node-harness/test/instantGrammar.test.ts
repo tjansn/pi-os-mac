@@ -419,7 +419,9 @@ test("grammar parse is microseconds per utterance", () => {
   const started = performance.now();
   for (let round = 0; round < 20; round++) for (const input of inputs) parseInstant(normalize(input), ctx);
   const perUtterance = ((performance.now() - started) * 1_000) / (20 * inputs.length);
-  assert.ok(perUtterance < 500, `${perUtterance.toFixed(1)} µs per utterance`);
+  // As instantPerf.test.ts: PI_OS_PERF_SLACK (e.g. 3) widens the latency bound on slower or loaded machines.
+  const slack = Number(process.env.PI_OS_PERF_SLACK ?? "1") || 1;
+  assert.ok(perUtterance < 500 * slack, `${perUtterance.toFixed(1)} µs per utterance`);
 });
 
 // ---------------------------------------------------------------- voice grammar (DESIGN4 §5.1)

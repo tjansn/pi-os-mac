@@ -311,7 +311,9 @@ test("decide is fast (< 1 ms per call) and carries no request text in its reason
   const start = performance.now();
   let d = pick(text, TOM);
   for (let i = 0; i < 500; i++) d = pick(text, TOM);
-  assert.ok((performance.now() - start) / 501 < 1);
+  // As instantPerf.test.ts: PI_OS_PERF_SLACK (e.g. 3) widens the latency bound on slower or loaded machines.
+  const slack = Number(process.env.PI_OS_PERF_SLACK ?? "1") || 1;
+  assert.ok((performance.now() - start) / 501 < 1 * slack);
   assert.doesNotMatch(JSON.stringify(d), /copper|robin|secret/);
 });
 

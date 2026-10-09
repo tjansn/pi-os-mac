@@ -249,15 +249,20 @@ final class LauncherServiceTests: XCTestCase {
         XCTAssertFalse(LoopbackServer.launcherReads(request("/tools/launcher.open")), "Effects are never cancelled by a disconnect")
         XCTAssertFalse(LoopbackServer.launcherReads(request("/tools/desktop.act")))
         let started = Box<[String]>([]), cancelled = Box<[String]>([])
-        let port = UInt16.random(in: 49_200...59_000)
-        let server = try LoopbackServer(port: port, cancelsOnDisconnect: LoopbackServer.launcherReads) { request in
-            started.value.append(request.path)
-            do { try await Task.sleep(nanoseconds: 2_000_000_000) } catch { cancelled.value.append(request.path) }
-            return .json(["ok": true])
+        // A random port can be taken (or the listener slow) under a loaded full run: try a fresh port instead of failing.
+        var listening: (server: LoopbackServer, port: UInt16)?
+        for _ in 0..<5 where listening == nil {
+            let port = UInt16.random(in: 49_200...59_000)
+            let candidate = try LoopbackServer(port: port, cancelsOnDisconnect: LoopbackServer.launcherReads) { request in
+                started.value.append(request.path)
+                do { try await Task.sleep(nanoseconds: 2_000_000_000) } catch { cancelled.value.append(request.path) }
+                return .json(["ok": true])
+            }
+            let ready = expectation(description: "listening on \(port)")
+            candidate.start { ready.fulfill() }
+            if await XCTWaiter().fulfillment(of: [ready], timeout: 3) == .completed { listening = (candidate, port) } else { candidate.stop() }
         }
-        let ready = expectation(description: "listening")
-        server.start { ready.fulfill() }
-        await fulfillment(of: [ready], timeout: 3)
+        let (server, port) = try XCTUnwrap(listening, "no loopback port started listening")
         defer { server.stop() }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.connectionProxyDictionary = [:]

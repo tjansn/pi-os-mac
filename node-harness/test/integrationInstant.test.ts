@@ -208,7 +208,9 @@ test("POST /instant typing: per-keystroke requests; only the query that survives
     const started = performance.now();
     const calc = await (await f.post("/instant", { text: "15% of 340", phase: "typing", seq: 4, takeId: "take-typing-2" })).json() as any;
     assert.equal(calc.decision, "answer");
-    assert.ok(calc.elapsedMs < 50 && performance.now() - started < 500);
+    // As instantPerf.test.ts: PI_OS_PERF_SLACK (e.g. 3) widens the latency bounds on slower or loaded machines.
+    const slack = Number(process.env.PI_OS_PERF_SLACK ?? "1") || 1;
+    assert.ok(calc.elapsedMs < 50 * slack && performance.now() - started < 500 * slack);
   } finally { await f.close(); }
 });
 

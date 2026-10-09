@@ -12,9 +12,16 @@ See [PARITY.md](PARITY.md) for implemented features, evidence and remaining gaps
 
 ## Build and launch
 
-Requires Xcode/Command Line Tools, Swift 5.9+, Node 22.19+, and pi authentication
-(`pi /login` or your normal provider environment). No shell profiles are evaluated
-by the app. The checked-in lockfile pins pi SDK 1.0.0.
+Requires Xcode 26 or later (swift-tools-version 6.1 and the macOS 26 SDK), Node 22.19+,
+and pi authentication (`pi /login` or your normal provider environment). No shell profiles
+are evaluated by the app. The checked-in lockfile pins pi SDK 1.0.0.
+
+Installed builds use Xcode 27. The few calls that exist only in the macOS 27 SDK sit behind
+`#if compiler(>=6.4)`: Swift 6.4 first ships with Xcode 27, while every Xcode 26.x ships
+Swift 6.2 or 6.3 with a macOS 26 SDK (`compiler(>=6.3)` is not enough: Xcode 26.4 has Swift
+6.3 and the macOS 26.4 SDK). CI builds and tests with Xcode 26.6 on the `macos-26` runner, so
+an unguarded macOS 27 SDK symbol fails CI. Command Line Tools 26.x build the app, not the
+XCTest suite.
 
 From the repository root:
 

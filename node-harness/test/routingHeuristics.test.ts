@@ -243,7 +243,9 @@ test("classification is fast (p99 < 1 ms) and deterministic", () => {
   }
   samples.sort((a, b) => a - b);
   const p99 = samples[Math.floor(samples.length * 0.99)]!;
-  assert.ok(p99 < 1, `p99 ${p99.toFixed(3)} ms`);
+  // As instantPerf.test.ts: PI_OS_PERF_SLACK (e.g. 3) widens the latency bound on slower or loaded machines.
+  const slack = Number(process.env.PI_OS_PERF_SLACK ?? "1") || 1;
+  assert.ok(p99 < 1 * slack, `p99 ${p99.toFixed(3)} ms`);
   assert.deepEqual(classify(CORPUS[0]!), classify(CORPUS[0]!));
 });
 

@@ -1056,15 +1056,19 @@ final class MicrophoneCapture: @unchecked Sendable {
 
     private func installTap(on input: AVAudioInputNode, format: AVAudioFormat) throws {
         let frames = AVAudioFrameCount(max(1024, format.sampleRate / 10))   // ~100 ms, the documented minimum
+        // `installAudioTap` and `AVAudioPCMBuffer(copying:)` exist only in the macOS 27 SDK. Swift 6.4 ships with
+        // Xcode 27 (the first macOS 27 SDK); Xcode 26.x ships Swift 6.2/6.3 and the macOS 26 SDK (CI, see README).
+        #if compiler(>=6.4)
         if #available(macOS 27, *) {
             try input.installAudioTap(onBus: 0, bufferSize: frames, format: format) { [weak self] buffer, _ in
                 self?.ingest(AVAudioPCMBuffer(copying: buffer), owned: true)
             }
-        } else {
-            // Deprecated from macOS 27 only; this branch never runs there.
-            input.installTap(onBus: 0, bufferSize: frames, format: format) { [weak self] buffer, _ in
-                self?.ingest(buffer, owned: false)
-            }
+            return
+        }
+        #endif
+        // Deprecated from macOS 27 only; a macOS 27 SDK build never runs this there.
+        input.installTap(onBus: 0, bufferSize: frames, format: format) { [weak self] buffer, _ in
+            self?.ingest(buffer, owned: false)
         }
     }
 

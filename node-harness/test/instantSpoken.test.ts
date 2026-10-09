@@ -760,5 +760,7 @@ test("a voice open decision stays well inside the 60 ms instant budget", () => {
   }
   times.sort((a, b) => a - b);
   const p95 = times[Math.floor(times.length * 0.95)]!;
-  assert.ok(p95 < 5, `p95 ${p95.toFixed(2)} ms`);
+  // As instantPerf.test.ts: PI_OS_PERF_SLACK (e.g. 3) widens the latency bound on slower or loaded machines.
+  const slack = Number(process.env.PI_OS_PERF_SLACK ?? "1") || 1;
+  assert.ok(p95 < 5 * slack, `p95 ${p95.toFixed(2)} ms`);
 });

@@ -75,8 +75,8 @@ appearance presets.
 on the Neural Engine/GPU, a window coordinated with the DRACO benchmark owner): Microphone and
 Speech Recognition TCC on the signed app, Carbon key-up timing on hardware, German speech
 asset download, Spotlight results inside protected folders, real Codex time-to-first-token
-per Auto tier, Bluetooth headset route changes, VoiceOver end to end. The macOS CI job cannot
-build this host on the macOS 26.5 SDK (the Whisper UI already needed the macOS 27 SDK).
+per Auto tier, Bluetooth headset route changes, VoiceOver end to end. The macOS CI job builds
+this host on the `macos-26` image with Xcode 26.6 (macOS 26.5 SDK); macOS 27 SDK code sits behind `#if compiler(>=6.4)`.
 
 ## Pass 2 (2026-10-05): general by default, the context shelf, pointing, dialog-free Brave
 

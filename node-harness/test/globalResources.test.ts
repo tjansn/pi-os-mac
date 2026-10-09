@@ -44,11 +44,13 @@ test("global skill and extension tool are visible beside Computer Use", async ()
 test("trusted (Windows-style) sessions activate cards, instant tools and codemode without an allowlist; pi_os_escalate only on Auto", async () => {
   const runtimes = fauxRuntimes();
   for (const selection of [null, { provider: "fx", modelId: "fast", thinkingLevel: "off" }]) {
+    // A macOS session with trusted globals: nothing stored means Auto on macOS only (a Windows host keeps
+    // pi's own default model, so there is no Auto to hand off to; integrationAgent pins that path).
     const live = await createLiveSession({
       hostClient: { invokeTool: async () => ({ ok: true, result: {} }) } as unknown as HostClient,
       contextId: "ctx-test", prompt: "", snapshot: snapshot("ctx-test"), capturesDir: CAPTURES, log: () => {},
       readOnly: false, resourceSelection: { mode: "trustedGlobal" }, modelSelection: selection,
-      services: { agentDir: fixtureAgentDir, modelRuntime: runtimes.factory },
+      services: { agentDir: fixtureAgentDir, modelRuntime: runtimes.factory, platform: "darwin" },
     });
     try {
       const tools = live.controls.toolNames!;

@@ -25,6 +25,15 @@ export const CAPTURES = resolve("../shared/fixtures/captures");
 export const AGENT_DIR = resolve("test/fixtures/global-agent-dir");
 export const INPUT_TOOLS = ["window.focus", "input.click", "input.typeText", "input.pressKey", "input.keyChord", "input.scroll"];
 
+/**
+ * Skip reason for tests that load context-shelf images from disk. The shelf is macOS-only: an image
+ * attachment's path is an absolute POSIX host path by contract (attachments.ts isAbsoluteHostPath,
+ * protocol.md "Attachments"), and Windows hosts send no attachments, so a real file on a Windows runner
+ * (D:\…) can never be a shelf image.
+ */
+export const SHELF_IMAGES_MACOS_ONLY = process.platform === "win32"
+  && "context-shelf images are macOS-only: their paths are POSIX host paths and Windows hosts send no attachments";
+
 export function snapshot(contextId = "ctx-pinned", withScreenshot = true): DesktopContextSnapshot {
   return {
     id: contextId, capturedAt: "2026-10-02T12:00:00Z", cursor: { x: 10, y: 10 },

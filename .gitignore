@@ -37,3 +37,7 @@ DerivedData/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Python bytecode
+__pycache__/
+*.pyc

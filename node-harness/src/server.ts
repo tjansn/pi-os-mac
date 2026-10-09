@@ -150,7 +150,10 @@ export interface HarnessServerOptions {
   sseCoalesceMs?: number;
   /** Prepared-session lifetime (default 30 s). */
   prepareTtlMs?: number;
-  /** Host platform for per-host defaults (default process.platform; tests inject it): Auto is the default on macOS only. */
+  /**
+   * Host platform for per-host defaults (default process.platform; tests inject it): Auto is the default
+   * on macOS only, only a macOS host's tool catalog is negotiated, and agent sessions get it as theirs.
+   */
   platform?: NodeJS.Platform;
   /** The personal dictionary (default `<support>/dictionary.json`, loaded at construction). */
   dictionary?: DictionaryStore;
@@ -1179,7 +1182,7 @@ export class HarnessServer {
    */
   private async negotiate(signal?: AbortSignal): Promise<{ readOnly: boolean; launcher: boolean }> {
     let readOnly = this.config.readOnly ?? false;
-    if (process.platform !== "darwin") return { readOnly, launcher: false };
+    if ((this.options.platform ?? process.platform) !== "darwin") return { readOnly, launcher: false };
     let names: string[] = [];
     try {
       names = await this.options.hostClient!.getToolNames(signal);

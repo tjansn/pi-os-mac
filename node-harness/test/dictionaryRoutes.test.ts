@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test, type TestContext } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
+import { pathToFileURL } from "node:url";
 import { loadConfig } from "../src/config.js";
 import { parseRecognizerTerms, parseWriteResponse, type DictionaryDocument } from "../src/contracts/dictionary.js";
 import type { AppRecord } from "../src/contracts/launcher.js";
@@ -389,6 +390,8 @@ test("server.ts imports neither pi-coding-agent nor pi-ai; /health answers first
   const dir = mkdtempSync(join(tmpdir(), "pi-os-lazy-"));
   const script = join(dir, "probe.mjs");
   const root = resolve(import.meta.dirname, "..");
+  // ESM specifiers (`import()`, `--import`) must be file: URLs; a Windows path such as D:\… would parse as scheme "d:".
+  const moduleUrl = (...parts: string[]) => pathToFileURL(join(root, ...parts)).href;
   writeFileSync(script, `
 import { registerHooks } from "node:module";
 const seen = new Set();
@@ -398,8 +401,8 @@ registerHooks({ resolve(specifier, context, next) {
   if (match) seen.add(match[1]);
   return result;
 } });
-const { HarnessServer } = await import(${JSON.stringify(join(root, "src", "server.ts"))});
-const { loadConfig } = await import(${JSON.stringify(join(root, "src", "config.ts"))});
+const { HarnessServer } = await import(${JSON.stringify(moduleUrl("src", "server.ts"))});
+const { loadConfig } = await import(${JSON.stringify(moduleUrl("src", "config.ts"))});
 const afterImport = [...seen];
 const server = new HarnessServer({ ...loadConfig({}), port: 0, hostToken: "t", agentEnabled: false });
 const port = await server.listen();
@@ -409,13 +412,15 @@ for (let i = 0; i < 400 && seen.size < 2; i++) await new Promise((resolve) => se
 await server.close();
 console.log(JSON.stringify({ afterImport, health, atHealth, later: [...seen].sort() }));
 `);
-  const child = spawn(process.execPath, ["--import", join(root, "test", "no-live-models.mjs"), "--import", "tsx", script], {
+  const child = spawn(process.execPath, ["--import", moduleUrl("test", "no-live-models.mjs"), "--import", "tsx", script], {
     cwd: root, env: { ...process.env, PI_OS_SUPPORT_DIR: dir }, stdio: ["ignore", "pipe", "pipe"],
   });
   let out = "";
+  let err = "";
   child.stdout.on("data", (chunk) => { out += chunk; });
+  child.stderr.on("data", (chunk) => { err += chunk; });
   const code = await new Promise<number | null>((resolve) => child.once("exit", resolve));
-  assert.equal(code, 0, out);
+  assert.equal(code, 0, `${out}${err}`);
   const result = JSON.parse(out.trim().split("\n").filter((line) => line.startsWith("{")).at(-1)!);
   assert.deepEqual(result, { afterImport: [], health: 200, atHealth: [], later: ["pi-ai", "pi-coding-agent"] });
 });

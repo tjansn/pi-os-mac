@@ -73,7 +73,9 @@ test("500 candidates rank in well under 5 ms", () => {
   const started = performance.now();
   for (let i = 0; i < 50; i++) rankFiles(big, { terms: ["invoice"], range: MARCH }, NOW);
   const perRun = (performance.now() - started) / 50;
-  assert.ok(perRun < 5, `${perRun.toFixed(3)} ms per ranking`);
+  // As instantPerf.test.ts: PI_OS_PERF_SLACK (e.g. 3) widens the latency bound on slower or loaded machines.
+  const slack = Number(process.env.PI_OS_PERF_SLACK ?? "1") || 1;
+  assert.ok(perRun < 5 * slack, `${perRun.toFixed(3)} ms per ranking`);
 });
 
 test("FileSearchRequest: OR of AND-groups widened with synonyms, ≤ 6 terms, home scope", () => {

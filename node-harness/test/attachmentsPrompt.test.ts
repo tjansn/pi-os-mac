@@ -14,7 +14,9 @@ import { ATTACHMENTS_HEADING, type Attachment, type ImageAttachment } from "../s
 import type { BrowserPageResult } from "../src/contracts/browser.js";
 import type { ContextWire } from "../src/contracts/context.js";
 import { FileLedger } from "../src/ui/ledger.js";
-import { agentHost, agentRun, CAPTURES, captureLogs, fauxRuntimes, pngFile, seen, tempCaptures, type SeenRequest } from "./integrationFixtures.js";
+import {
+  agentHost, agentRun, CAPTURES, captureLogs, fauxRuntimes, pngFile, seen, SHELF_IMAGES_MACOS_ONLY, tempCaptures, type SeenRequest,
+} from "./integrationFixtures.js";
 
 /**
  * Context-shelf attachments in prompts (DESIGN3 A): rendered as untrusted data with a per-request
@@ -57,7 +59,7 @@ const shelf = (dir: string, name: string, width: number, height: number, origin:
   return { kind: "image", path: join(dir, name), width, height, origin };
 };
 
-test("every attachment kind renders as fenced data; elements point, files get ledger refs, images follow the message in order", async () => {
+test("every attachment kind renders as fenced data; elements point, files get ledger refs, images follow the message in order", { skip: SHELF_IMAGES_MACOS_ONLY }, async () => {
   const logs: string[] = [];
   const s = await scenario({ scope: "window", pull: "allowed", source: "user" }, "what is wrong with this chart?", dir => {
     copyFileSync(join(CAPTURES, "window.png"), join(dir, "shelf-b2.png"));
@@ -151,7 +153,7 @@ test("the page digest fence is redrawn until the page cannot contain it", () => 
   assert.match(long, /The page was cut at a size limit\./);
 });
 
-test("shelf images are re-checked like window captures: outside, symlinked, misnamed or mis-sized images are left out", async () => {
+test("shelf images are re-checked like window captures: outside, symlinked, misnamed or mis-sized images are left out", { skip: SHELF_IMAGES_MACOS_ONLY }, async () => {
   const outside = mkdtempSync(join(tmpdir(), "pi-os-outside-"));
   pngFile(join(outside, "shelf-e5.png"), 640, 400);
   const s = await scenario(undefined, "compare these", dir => {
@@ -184,7 +186,7 @@ test("shelf images are re-checked like window captures: outside, symlinked, misn
   } finally { await s.close(); await rm(outside, { recursive: true, force: true }); }
 });
 
-test("follow-ups render their own attachments with a fresh fence; their images follow the follow-up message", async () => {
+test("follow-ups render their own attachments with a fresh fence; their images follow the follow-up message", { skip: SHELF_IMAGES_MACOS_ONLY }, async () => {
   const s = await scenario({ scope: "general", pull: "allowed", source: "default" }, "first", dir => [{ kind: "text", text: "first selection" }]);
   try {
     s.runtimes.respond([s.reply(say("One.")), s.reply(say("Two."))]);
