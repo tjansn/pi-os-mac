@@ -1,5 +1,33 @@
 # Native UI polish
 
+## 2026-10-05 context chip, shelf, tether and Brave access (offscreen-verified only)
+
+New states extend Whisper (480 × 50 bar, glass presets, readable reader material); nothing replaces
+them. No new animation: chip, chips, outline and toast change state instantly; the tether is a
+functional affordance (straight and static under Reduce Motion). Nothing new takes the composer's
+first responder.
+
+| Severity | Location | Before | After | Why |
+| --- | --- | --- | --- | --- |
+| HIGH | `PromptPanel.swift` (opening) | “Ask about this window…”; every take was about the pinned window | “Ask anything…”; a **context chip** left of the send slot: off (icon, 30 pt circle), suggested (icon + name ≤ 110 pt, 1 pt accent outline), on (quiet accent fill); its width comes out of the editor's | Tom: open general, pull the window in only when meant; what the chip shows is what is sent |
+| MEDIUM | `ContextChipView.swift` | — | Label ink in every state (accent text at 12 pt on a tinted capsule measured < 4.5:1 in light and dark); Contrast/Increase Contrast: thicker outline, stronger fill; never first responder; VoiceOver checkbox “Brave window”, value changes silently on suggestions and is announced only for the user's own toggles | WCAG-safe, keyboard focus stays in the composer |
+| MEDIUM | `PromptPanel.swift` (keys) | Tab inserted a tab | Tab toggles the chip (not with marked IME text or a typed list owning the keys); ⌫ in an empty composer removes the last attachment | DESIGN2 §3.3 / selection.md §8 |
+| MEDIUM | `ShelfChipsView.swift` | — | A chip row above the composer (bar grows upward by 32 pt, 36 at Larger text): text in quotes (tail-truncated), image thumbnail + size, “⌖ Button “Send””, files (middle-truncated, keeps the extension); dashed accent outline + “+” for the clipboard suggestion; ⊗ on each; “+N” overflow; click previews exactly what is sent | Show exactly what will be sent; removable |
+| LOW | `PanelStyle.swift` (`DropOutlineView`) | — | 2 pt accent outline + 8 % tint over the bar while a drop is accepted (drawn content, so it also appears in offscreen renders) | Drop target feedback without motion |
+| MEDIUM | `PromptPanel.swift` (reader) | “TextEdit · title” on every answer; footer “Same pinned window” | Header only when the window was used; a general answer puts the question in the header row; footer “Ready for a follow-up”, “· Brave included” or “· Looked at Brave”; “⌖ Pointing at Button “Send”” after the question (label ink under Contrast) | No “pinned” framing unless included |
+| LOW | `ShelfToastView.swift` | — | Non-activating “Added to pi” capsule (no key, no main, 1.4 s), or a note with one **Grab Area** button (3 s); above the bar when the bar is open, never over it | ⌃⌥⌘C must not take focus from the app |
+| LOW | `SettingsWindow.swift` | General / Voice / Classifier | + **Context** page: Active window (segmented), shelf switches with the clipboard caveat, Brave access popup, *Open brave://inspect…*, *Act in Brave in the background*; General's button reads *Brave Access…* | One place for what pi sees |
+
+Offscreen pass (`pi-os-ui-preview --snapshot`, System/Frost/Contrast/Graphite × light/dark, standard and
+Larger text) found and fixed: shelf and toast labels truncating short text (label cells need padding);
+the image chip's thumbnail overlapping its size at Larger text; accent “on” text too weak in dark;
+the drop outline invisible offscreen (was a layer border); the tether preview composited with copy
+(erased the desktop); the toast preview ignoring the preset's appearance.
+
+Not verified: any live window; real app icons in the chip (layered macOS 26 icons render as a black
+tile into offscreen bitmaps, so previews use a drawn stand-in); glass over busy wallpapers; drop
+hover on the non-activating panel; the tether's live event path; VoiceOver with the chip and shelf.
+
 ## 2026-10-02 voice, instant previews, cards and streaming (offscreen-verified only)
 
 New states extend Whisper; nothing replaces the bar, reader, presets or materials.

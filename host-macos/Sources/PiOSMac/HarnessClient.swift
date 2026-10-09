@@ -34,7 +34,8 @@ public struct MacConfiguration {
     }
     public init(env: [String: String] = ProcessInfo.processInfo.environment) throws {
         support = URL(fileURLWithPath: env["PI_OS_SUPPORT_DIR"] ?? NSHomeDirectory() + "/Library/Application Support/pi-os", isDirectory: true)
-        captures = URL(fileURLWithPath: env["PI_OS_CAPTURES_DIR"] ?? support.appendingPathComponent("captures").path, isDirectory: true)
+        // Standardized once: shelf files, the shelf's wire check and Node's PI_OS_CAPTURES_DIR share one string.
+        captures = URL(fileURLWithPath: env["PI_OS_CAPTURES_DIR"] ?? support.appendingPathComponent("captures").path, isDirectory: true).standardizedFileURL
         if let configured = env["PI_OS_TOKEN"], !configured.isEmpty { token = configured }
         else {
             var bytes = [UInt8](repeating: 0, count: 32)
@@ -276,13 +277,35 @@ private final class OwnedChild {
         try await submit(id: id, context: context, prompt: prompt, takeId: nil, input: nil)
     }
     /// POST /invoke. `takeId` lets Node reuse the session prepared at key-down; `input` is additive
-    /// (Windows never sends it) and tells the agent the prompt was spoken.
-    public func submit(id: String, context: String, prompt: String, takeId: String?, input: AgentInput?) async throws {
-        var payload: [String: Any] = ["invocationId": id, "contextId": context, "prompt": prompt, "retainSession": true,
-                                      "invokedAt": ISO8601DateFormatter().string(from: Date())]
+    /// (Windows never sends it) and tells the agent the prompt was spoken. `scope` is what the context
+    /// chip showed (nil = legacy window behaviour); `attachments` is the context shelf, untrusted data.
+    public func submit(id: String, context: String, prompt: String, takeId: String?, input: AgentInput?,
+                       scope: ContextWire? = nil, attachments: [Attachment] = []) async throws {
+        let payload = try Self.invokePayload(id: id, contextId: context, prompt: prompt, invokedAt: Date(), takeId: takeId,
+                                             input: input, context: scope, attachments: attachments)
+        _ = try await request("POST", "/invoke", payload: payload)
+    }
+    /// The /invoke body (protocol §3.5, DESIGN3 wire additions). `context` and `attachments` are additive:
+    /// absent means legacy; an empty shelf sends no `attachments` key.
+    static func invokePayload(id: String, contextId: String, prompt: String, invokedAt: Date, takeId: String?, input: AgentInput?,
+                              context: ContextWire?, attachments: [Attachment]) throws -> [String: Any] {
+        var payload: [String: Any] = ["invocationId": id, "contextId": contextId, "prompt": prompt, "retainSession": true,
+                                      "invokedAt": ISO8601DateFormatter().string(from: invokedAt)]
         if let takeId { payload["takeId"] = takeId }
         if let input { payload["input"] = input.payload }
-        _ = try await request("POST", "/invoke", payload: payload)
+        try addContext(context, attachments: attachments, to: &payload)
+        return payload
+    }
+    /// The /followup body: the prompt plus the follow-up composer's chip and the shelf.
+    static func followupPayload(prompt: String, context: ContextWire?, attachments: [Attachment]) throws -> [String: Any] {
+        var payload: [String: Any] = ["prompt": prompt]
+        try addContext(context, attachments: attachments, to: &payload)
+        return payload
+    }
+    private static func addContext(_ context: ContextWire?, attachments: [Attachment], to payload: inout [String: Any]) throws {
+        let encoder = JSONEncoder()
+        if let context { payload["context"] = try JSONSerialization.jsonObject(with: encoder.encode(context)) }
+        if !attachments.isEmpty { payload["attachments"] = try JSONSerialization.jsonObject(with: encoder.encode(attachments)) }
     }
     /// POST /invocations/prepare at key-down: Node pre-builds the take's session. Best effort;
     /// an older harness without the route (404) or a failure just means no reuse.
@@ -299,8 +322,8 @@ private final class OwnedChild {
     public func instant(_ instant: InstantRequest) async throws -> InstantResponse {
         try JSONDecoder().decode(InstantResponse.self, from: await request("POST", "/instant", body: JSONEncoder().encode(instant)))
     }
-    public func followup(_ id: String, prompt: String) async throws {
-        _ = try await request("POST", "/invocations/\(id)/followup", payload: ["prompt": prompt])
+    public func followup(_ id: String, prompt: String, scope: ContextWire? = nil, attachments: [Attachment] = []) async throws {
+        _ = try await request("POST", "/invocations/\(id)/followup", payload: Self.followupPayload(prompt: prompt, context: scope, attachments: attachments))
     }
     public func closeThread(_ id: String) async {
         // Do not warm/restart a dead child merely to close a session it no longer owns.
@@ -361,6 +384,17 @@ private final class OwnedChild {
         public let card: CardSpec?
         public let cardComplete: Bool?
         public let route: Route?
+        /// Additive (DESIGN2 §5.1): the thread's scope and whether the agent looked at the window.
+        public let context: ContextRecord?
+        public struct ContextRecord: Decodable, Equatable {
+            public let scope: ContextScope
+            public let source: ContextSource?
+            /// Sticky: the agent looked at the window during the thread ("Looked at <app>").
+            public let pulled: Bool
+            /// The window is part of the thread right now (window scope, or pulled and not narrowed since).
+            /// Optional: older harnesses omit it, and the host then keeps its own follow-up scope.
+            public var included: Bool? = nil
+        }
         public struct Route: Decodable, Equatable {
             public let tier: String?
             public let model: String?
@@ -368,14 +402,14 @@ private final class OwnedChild {
             public let auto: Bool?
         }
         private enum Keys: String, CodingKey {
-            case state, activity, responseText, failureMessage, followupAvailable, revision, partialText, card, cardComplete, route
+            case state, activity, responseText, failureMessage, followupAvailable, revision, partialText, card, cardComplete, route, context
         }
         public init(state: String, activity: String? = nil, responseText: String? = nil, failureMessage: String? = nil,
                     followupAvailable: Bool? = nil, revision: Int? = nil, partialText: String? = nil, card: CardSpec? = nil,
                     cardComplete: Bool? = nil) {
             self.state = state; self.activity = activity; self.responseText = responseText; self.failureMessage = failureMessage
             self.followupAvailable = followupAvailable; self.revision = revision; self.partialText = partialText
-            self.card = card; self.cardComplete = cardComplete; route = nil
+            self.card = card; self.cardComplete = cardComplete; route = nil; context = nil
         }
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: Keys.self)
@@ -389,6 +423,7 @@ private final class OwnedChild {
             card = (try? c.decodeIfPresent(CardSpec.self, forKey: .card)) ?? nil
             cardComplete = (try? c.decodeIfPresent(Bool.self, forKey: .cardComplete)) ?? nil
             route = (try? c.decodeIfPresent(Route.self, forKey: .route)) ?? nil
+            context = (try? c.decodeIfPresent(ContextRecord.self, forKey: .context)) ?? nil
         }
         public var isTerminal: Bool { !["queued", "running"].contains(state) }
     }

@@ -3,6 +3,116 @@
 2026-09-15. Target machine: Apple Silicon, macOS 26.5.2, Xcode 26.6 / Swift 6.3.3,
 Node 24.15.0. Deployment target is macOS 14; that OS has not been exercised here.
 
+## 2026-10-05 final-review fixes (Mac side, wp2/f1-axwire), built and tested offline, NOT installed
+
+- **One credential rule** (POL-1): native AX now runs the web rule (`CredentialFields.identified`
+  over a `LiveAXNode`): native and DOM identifiers, a label element's title, value or description
+  (never a text-entry label's value), fail closed on an unreadable label element. Pointing, ⌃⌥⌘C,
+  the hotkey's selection, native typing and click destinations all use it, so a Brave field named
+  only by `AXDOMIdentifier` or a static-text label is never read or typed into by default.
+  `InputSurfaceInspector` reads the DOM id too (DeletionPolicy markers such as `delete-file`).
+  The selection gate also fails closed when a role or a text input's subrole read goes unanswered
+  (POL-3).
+- **Follow-ups** (L1, wire-2, wire-1): the host never captures before `POST /followup`; the
+  harness is the only follow-up capturer. The follow-up chip starts from the record's `included`
+  (on after the agent pulled the window in, off after the user narrowed; `pulled` alone never
+  re-widens; older harnesses keep the host's scope).
+- **Files** (wire-3, C2): each path-only file attachment gets a launcher token for the request's
+  context when the request is sent (`ShelfController.wireAttachments`), so the agent can open or
+  reveal dropped and copied files (never read them); tokens are revoked with the context. Image
+  files dropped or copied from Finder become shelf PNGs (up to the image cap; symlinks, undecodable
+  and other files stay references; the user's file is untouched).
+- **Pointing** (UX-1, UX-2): an element of the take's window includes that window as a
+  non-sticky suggestion that follows the element chip (Tab and *Only when I ask* still win); a
+  pointed-at element no longer counts as shelf content. An element of another window re-pins the
+  take there (as the tether, without a sticky choice) unless the take is committed to its window;
+  then the element goes with a read-only window chip (protocol pairing rule), added and removed
+  together.
+- **Chip and copy** (C1, UX-3, UX-5): `deixis-content` lets shelf content take “summarize the
+  selection” / “what is this image”; the off chip tells “pi may look” from “left out · pi won’t
+  look” (struck-through icon, AX value “left out”); Settings and README no longer promise that
+  nothing is sent while the chip is off. The π popover hint fits its label (a long app name
+  truncates in the middle); the menu bar gains *Add Selection to pi* (⌃⌥⌘C's path, after the menu
+  closes) and *Point at an Element…*; the Suggest note names ⌃⌥⌘⇧Space.
+- **Smaller fixes:** ⌃⌥⌘C's Copy fallback never runs in read-only mode (POL-4); the captures path
+  is standardized once (wire-4); VoiceOver's show-menu opens the chip menu (UX-6); “Pointing at …”
+  uses label ink without the ⌖ glyph (UX-9); a drag in the follow-up composer says “Pointing works
+  on a new question” (C7).
+
+**Verified offline:** `swift build` 0 warnings; `PI_OFFLINE=1 PI_OS_AGENT=0 swift test` 477/477;
+node `npm run check`, `npm run build`, guarded `npm test` 515/515, `npm run test:macos` 1/1. The
+installed build stays **stale**; refresh only with `PI_OS_SIGN_IDENTITY` (never ad hoc).
+
+## 2026-10-05 general by default, context shelf, pointing, Brave access — Mac flow + UI (S12), built and tested offline, NOT installed
+
+Branch `wp2/s12-mac` on `feat/context-shelf` (Phase-0 contracts and the seven Wave-1 components).
+The installed build 12 is **stale**: it still opens every take on the window and uses CDP for Brave.
+Refresh only with `PI_OS_SIGN_IDENTITY` (never ad hoc). The Node side has landed on this branch
+(`context`/`attachments` parsing, wp2/n4-server 21a93e0; the Brave Accessibility transport in agent
+sessions, 83daffc), so the remaining gate is the signed refresh itself and the live checks below.
+
+- **Key-down** pins identity only (CG window, focused element before the panel; the process
+  fingerprint at insert). No screenshot, no CDP. The Brave AX tab pin runs after the panel is on
+  screen (`[perf] brave-pin-after-panel`). The window capture is lazy (`TakePreparation`
+  `startCapture`): it starts when the chip first becomes suggested/on (`[perf] capture.window`),
+  never for a general take; a general submit neither waits for nor fails on it; a window submit
+  whose capture fails continues text-only with a note.
+- **Context chip** (`ContextChipController`, `ContextChipView`): off/suggested/on from every
+  `/instant` `scope` and the S6 on-device scorer through `ContextScoreThrottle`, fused only with the
+  rules score of the same text. `ContextChoice.fuse` fixed: the local score never decides alone
+  (DESIGN2 §4.2); follow-up upgrades now also need a screen-anchored reason (as Node's
+  `followupScope`). Tab/click (sticky), ⇧ + hotkey (second Carbon chord), *Ask About This Window…*,
+  *Settings → Context → Active window* (Only when I ask / Suggest / Always). `/invoke` and `/followup`
+  carry exactly the chip's `context`; the follow-up composer has the thread's chip (debounced
+  `/instant` typing scope, never retargeted; since the final-review fixes only the harness captures
+  the thread's pin for a widening follow-up). Copy: “Ask anything…”, “Looking at Brave…”, reader header and “· Brave included” only
+  when included, “Looked at Brave” when the agent pulled.
+- **Context shelf** (`ShelfController`, `ShelfChipsView`, `ShelfToast`): ⌃⌥⌘C “Add to pi” (Carbon
+  chord, target taken before anything is ordered front; non-activating “Added to pi”), the pi
+  hotkey's live selection (AX only, take-scoped), drops on the bar/reader/menu-bar π (the editors no
+  longer take drags), *Grab an Area…*, clipboard suggestion (types only until +; pi-os's own copies
+  and ⌃⌥⌘C's restore are never suggested). ⊗, ⌫, preview popover, caps, idle expiry, menu-bar count
+  and *Clear Attachments*. Sent items leave the shelf only once `/invoke` accepted them; their PNGs
+  are deleted when the thread closes.
+- **Attention overlay** (`AttentionController`): drag the chip or π → tether → window (re-pinned as
+  the take's context with the Brave pin, included, captured anew, old pin removed unless an element
+  still names it) or ⌥/“Point at an Element…” → element attachment; “Pointing at …” on the message.
+- **Brave**: *Settings → Context → Brave access* (Accessibility default / DevTools opt-in through the
+  existing sheet), *Act in Brave in the background*, the brave://inspect switch-off note; menu and
+  General button renamed *Brave Access…*. S4's note fixed: only a DevTools pin makes ⌘Return copy;
+  the “Brave tab” capability label only for DevTools.
+- **Hotkey conflict check fixed**: compares the plist's NSEvent masks (⇧⌃⌥⌘ only, fn ignored) and
+  knows unstored macOS defaults (⇧⌘3/4/5, ⌘Space, ⌃Space …); a stored entry wins.
+- **build-app.sh** copies `context-scorer-weights.json` into `Contents/Resources` before codesign;
+  signing rules unchanged.
+- **Review fixes:** shelf content takes “this”/“it” but no longer hides a screen-anchored reference
+  (“summarize this page”, “click Send” still suggest the window next to a selection); holding ⌫ to
+  clear a draft no longer goes on to remove attachments (key repeat); a pending *Point at an
+  Element…* pick is cancelled when the question is sent or the take ends (it would otherwise
+  consume the next click in another app); a lost ⇧-chord release can no longer swallow the next
+  hotkey release.
+
+**Verified offline:** `swift build` 0 warnings; `PI_OFFLINE=1 PI_OS_AGENT=0 swift test` 458/458
+(413 + 45 new: ContextFlowTests 17, ContextChipTests 10, ShelfUIFlowTests 11, ContextSettingsTests 6,
+CommandFlowTests 1; ContextChoiceTests and PanelPreviewTests extended); node `npm run check`, `npm run build`, `npm test`
+480/480, `npm run test:macos` 1/1. Offscreen `--snapshot` PNGs of every new state (System, Frost,
+Contrast, Graphite × light/dark, standard and Larger text) were inspected; fixes from that pass are
+in [UI_NOTES.md](UI_NOTES.md).
+
+**Pending live checks** (signed build, coordinated desktop, harmless fixtures only): Carbon
+registration of ⌃⌥⌘C and ⌃⌥⌘⇧Space next to Tom's shortcuts; ⌃⌥⌘C Copy fallback and clipboard
+restore in a real active app (Electron, Office, Preview images); drops onto the non-activating
+panel and the menu-bar icon (promised files from Mail/Photos); `screencapture -i` from the signed
+app; the tether's global mouse monitors, ⌥ mid-drag, Esc, two displays, a full-screen Space and
+no Input Monitoring prompt; Brave AX background press/fill with Brave behind another app; the
+`PI_OS_PERF` numbers for the Brave pin after the panel and the lazy capture (DESIGN2 C2/C9); real
+app icons in the chip (layered macOS 26 icons do not render offscreen); VoiceOver on the chip and
+shelf.
+
+**Node side:** `server.ts` parses `context` and `attachments` on `/invoke` and `/followup`
+(`parseTurnContext`) and passes them to the turn and the prompt (wp2/n4-server, merged in 21a93e0);
+the Brave Accessibility browser tools are wired into agent sessions (83daffc).
+
 ## 2026-10-02 final-review fixes (Mac side, d-swift), built and tested offline, NOT installed
 
 - **File search latest-wins.** `FileSearch` counts searches: a running search skips its

@@ -14,7 +14,7 @@ final class BrowserTests: XCTestCase {
         snapshot.browser = BrowserHint(pinned: false)
         let data = try JSONEncoder().encode(snapshot)
         let decoded = try JSONDecoder().decode(Snapshot.self, from: data)
-        XCTAssertEqual(decoded.browser?.mode, "cdp")
+        XCTAssertEqual(decoded.browser?.mode, .cdp)
         XCTAssertEqual(decoded.browser?.pinned, false)
         let text = String(data: data, encoding: .utf8)!
         XCTAssertFalse(text.contains("9222")); XCTAssertFalse(text.contains("initialURL"))
@@ -40,5 +40,52 @@ final class BrowserTests: XCTestCase {
         XCTAssertEqual(denied.status, 401)
         let disabled = await service.handle(HTTPRequest(method: "POST", path: "/tools/browser.connection", headers: ["x-harness-token": "private-token"], body: body))
         XCTAssertTrue(String(data: disabled.body, encoding: .utf8)!.contains("control_disabled"))
+    }
+    func testAccessibilityIsTheDefaultAndDevToolsIsAnExplicitOptIn() {
+        XCTAssertEqual(BrowserPin.hint(access: .ax, background: true), BrowserHint(pinned: false, mode: .ax, background: true))
+        XCTAssertEqual(BrowserPin.hint(access: .ax, background: false), BrowserHint(pinned: false, mode: .ax, background: false))
+        XCTAssertEqual(BrowserPin.hint(access: .cdp, background: true), BrowserHint(pinned: false, mode: .cdp))
+        let defaults = UserDefaults.standard
+        let old = defaults.volatileDomain(forName: UserDefaults.argumentDomain)
+        defer { defaults.setVolatileDomain(old, forName: UserDefaults.argumentDomain) }
+        // Build 11's switch alone never selects DevTools (no auto-connect after the update).
+        defaults.setVolatileDomain([BrowserPolicy.enabledKey: true], forName: UserDefaults.argumentDomain)
+        XCTAssertEqual(BrowserPin.access, .ax)
+        XCTAssertTrue(BrowserPin.backgroundActions, "stage B is on unless switched off")
+        defaults.setVolatileDomain([BrowserPolicy.accessKey: "cdp", BrowserPolicy.backgroundActionsKey: false], forName: UserDefaults.argumentDomain)
+        XCTAssertEqual(BrowserPin.access, .cdp)
+        XCTAssertFalse(BrowserPin.backgroundActions)
+    }
+    @MainActor func testSetupCopyExplainsDialogsAndTheBraveInspectSwitch() {
+        let text = BrowserSetup.informativeText(access: .ax, legacyConnection: true)
+        XCTAssertTrue(text.contains("brave://inspect/#remote-debugging") && text.contains("switch off"))
+        XCTAssertTrue(text.contains("asks for approval on every connection") && text.contains("controlled by automated test software"))
+        XCTAssertTrue(text.contains("no longer connects automatically"))
+        XCTAssertFalse(BrowserSetup.informativeText(access: .cdp, legacyConnection: true).contains("no longer connects automatically"))
+    }
+    func testAccessibilityContextsKeepNativeInputAndNeverConnectDevTools() async throws {
+        let service = DesktopService(captures: FileManager.default.temporaryDirectory, token: "secret", controlEnabled: { true })
+        for mode in [BrowserMode.ax, .cdp] {
+            var snapshot = Snapshot(id: "ctx-" + mode.rawValue, cursor: Point(x: 0, y: 0), target: nil, underCursor: nil, monitors: [])
+            snapshot.browser = BrowserHint(pinned: false, mode: mode)
+            await service.insert(snapshot)
+            do { _ = try await service.act(.typeText, arguments: InputArguments(contextId: snapshot.id, text: "not sent")); XCTFail() }
+            catch {
+                // ax: Brave is a native target and the native gates run (here: no target); cdp keeps its own route.
+                XCTAssertEqual((error as? DomainError)?.code, mode == .ax ? "no_target" : "browser_route_required")
+            }
+        }
+        let body = Data("{\"arguments\":{\"contextId\":\"ctx-ax\",\"mutation\":false}}".utf8)
+        let response = await service.handle(HTTPRequest(method: "POST", path: "/tools/browser.connection", headers: ["x-harness-token": "secret"], body: body))
+        XCTAssertTrue(String(decoding: response.body, as: UTF8.self).contains("browser_disabled"), "an ax task never gets DevTools metadata")
+    }
+    func testBrowserPinNeverOpensADevToolsConnection() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let pin = try String(contentsOf: root.appendingPathComponent("Sources/PiOSMac/BrowserPin.swift"), encoding: .utf8)
+        for marker in ["ws://", "URLSession", "WebSocket", "/devtools/", "/json/", "NWConnection"] { XCTAssertFalse(pin.contains(marker), marker) }
+        // Background actions never hide the capsule or focus/raise the window.
+        let service = try String(contentsOf: root.appendingPathComponent("Sources/PiOSMac/DesktopService.swift"), encoding: .utf8)
+        let route = try XCTUnwrap(service.range(of: "private func browserAXAct").map { String(service[$0.lowerBound...]) }?.components(separatedBy: "private func browserReadAfterAction").first)
+        for marker in ["beforeInput", "focus(", "kAXRaiseAction", "Frontmost"] { XCTAssertFalse(route.contains(marker), marker) }
     }
 }

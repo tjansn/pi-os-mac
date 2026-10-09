@@ -1,0 +1,8 @@
+{
+  "arguments": {
+    "contextId": "ctx-123",
+    "ref": "e11",
+    "action": "setValue",
+    "value": ""
+  }
+}

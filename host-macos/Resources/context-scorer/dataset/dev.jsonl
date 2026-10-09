@@ -1,0 +1,180 @@
+{"id": "en001", "lang": "en", "text": "summarize this page", "gold": "window"}
+{"id": "en002", "lang": "en", "text": "summarize the page", "gold": "window"}
+{"id": "en003", "lang": "en", "text": "what does this error mean?", "gold": "window"}
+{"id": "en004", "lang": "en", "text": "what does the error say", "gold": "window"}
+{"id": "en005", "lang": "en", "text": "reply to this email", "gold": "window"}
+{"id": "en006", "lang": "en", "text": "reply to the email", "gold": "window"}
+{"id": "en007", "lang": "en", "text": "translate this", "gold": "window"}
+{"id": "en008", "lang": "en", "text": "fix the typo", "gold": "window"}
+{"id": "en009", "lang": "en", "text": "what am I looking at?", "gold": "window"}
+{"id": "en010", "lang": "en", "text": "explain this chart", "gold": "window"}
+{"id": "en011", "lang": "en", "text": "is this code correct?", "gold": "window"}
+{"id": "en012", "lang": "en", "text": "what's wrong with this function", "gold": "window"}
+{"id": "en013", "lang": "en", "text": "read me the last message", "gold": "window"}
+{"id": "en014", "lang": "en", "text": "click the sign in button", "gold": "window"}
+{"id": "en015", "lang": "en", "text": "scroll down", "gold": "window"}
+{"id": "en016", "lang": "en", "text": "fill in the form with my details", "gold": "window"}
+{"id": "en017", "lang": "en", "text": "which of these flights is the cheapest?", "gold": "window"}
+{"id": "en018", "lang": "en", "text": "make this paragraph more formal", "gold": "window"}
+{"id": "en019", "lang": "en", "text": "who sent this?", "gold": "window"}
+{"id": "en020", "lang": "en", "text": "what's the total on the invoice", "gold": "window"}
+{"id": "en021", "lang": "en", "text": "explain the selected text", "gold": "window"}
+{"id": "en022", "lang": "en", "text": "check my spelling here", "gold": "window"}
+{"id": "en023", "lang": "en", "text": "what does it say at the top?", "gold": "window"}
+{"id": "en024", "lang": "en", "text": "how do I get rid of this popup", "gold": "window"}
+{"id": "en025", "lang": "en", "text": "close this tab", "gold": "window"}
+{"id": "en026", "lang": "en", "text": "add this event to my calendar", "gold": "window"}
+{"id": "en027", "lang": "en", "text": "save this as a PDF", "gold": "window"}
+{"id": "en028", "lang": "en", "text": "what time is the meeting in the invite?", "gold": "window"}
+{"id": "en029", "lang": "en", "text": "tl;dr", "gold": "window"}
+{"id": "en030", "lang": "en", "text": "rewrite it shorter", "gold": "window"}
+{"id": "en031", "lang": "en", "text": "what's this?", "gold": "window"}
+{"id": "en032", "lang": "en", "text": "is this a scam?", "gold": "window"}
+{"id": "en033", "lang": "en", "text": "why is the build failing", "gold": "window"}
+{"id": "en034", "lang": "en", "text": "compare these two options", "gold": "window"}
+{"id": "en035", "lang": "en", "text": "find the price on this page", "gold": "window"}
+{"id": "en036", "lang": "en", "text": "go to the next page", "gold": "window"}
+{"id": "en037", "lang": "en", "text": "where's the download button?", "gold": "window"}
+{"id": "en038", "lang": "en", "text": "turn the table into a CSV", "gold": "window"}
+{"id": "en039", "lang": "en", "text": "who wrote the article?", "gold": "window"}
+{"id": "en040", "lang": "en", "text": "what's the main finding of the paper", "gold": "window"}
+{"id": "en041", "lang": "en", "text": "summarize the video", "gold": "window"}
+{"id": "en042", "lang": "en", "text": "answer the question in the chat", "gold": "window"}
+{"id": "en043", "lang": "en", "text": "does this look right to you?", "gold": "window"}
+{"id": "en044", "lang": "en", "text": "translate the page into German", "gold": "window"}
+{"id": "en045", "lang": "en", "text": "what does the second paragraph mean", "gold": "window"}
+{"id": "en046", "lang": "en", "text": "copy all the email addresses from here", "gold": "window"}
+{"id": "en047", "lang": "en", "text": "proofread", "gold": "window"}
+{"id": "en048", "lang": "en", "text": "summarize", "gold": "window"}
+{"id": "en049", "lang": "en", "text": "draft a reply saying I'll be late", "gold": "window"}
+{"id": "en050", "lang": "en", "text": "what's the deadline?", "gold": "window"}
+{"id": "en051", "lang": "en", "text": "search google for this", "gold": "window"}
+{"id": "en052", "lang": "en", "text": "is that correct?", "gold": "window"}
+{"id": "en053", "lang": "en", "text": "make it sound friendlier", "gold": "window"}
+{"id": "en054", "lang": "en", "text": "what's the password requirement on this form", "gold": "window"}
+{"id": "en055", "lang": "en", "text": "accept the cookie banner", "gold": "window"}
+{"id": "en056", "lang": "en", "text": "explain the diff", "gold": "window"}
+{"id": "de057", "lang": "de", "text": "was steht hier", "gold": "window"}
+{"id": "de058", "lang": "de", "text": "fasse die Seite zusammen", "gold": "window"}
+{"id": "de059", "lang": "de", "text": "antworte auf die Mail", "gold": "window"}
+{"id": "de060", "lang": "de", "text": "was bedeutet diese Fehlermeldung", "gold": "window"}
+{"id": "de061", "lang": "de", "text": "übersetz das ins Englische", "gold": "window"}
+{"id": "de062", "lang": "de", "text": "erklär mir das", "gold": "window"}
+{"id": "de063", "lang": "de", "text": "was ist das hier?", "gold": "window"}
+{"id": "de064", "lang": "de", "text": "korrigiere die Tippfehler", "gold": "window"}
+{"id": "de065", "lang": "de", "text": "klick auf Weiter", "gold": "window"}
+{"id": "de066", "lang": "de", "text": "scroll nach unten", "gold": "window"}
+{"id": "de067", "lang": "de", "text": "worum geht es in dem Artikel", "gold": "window"}
+{"id": "de068", "lang": "de", "text": "wer hat mir das geschickt?", "gold": "window"}
+{"id": "de069", "lang": "de", "text": "ist der Code so richtig?", "gold": "window"}
+{"id": "de070", "lang": "de", "text": "mach den Text förmlicher", "gold": "window"}
+{"id": "de071", "lang": "de", "text": "wie viel kostet das?", "gold": "window"}
+{"id": "de072", "lang": "de", "text": "fasse das Video zusammen", "gold": "window"}
+{"id": "de073", "lang": "de", "text": "was sagt die Fehlermeldung", "gold": "window"}
+{"id": "de074", "lang": "de", "text": "beantworte die letzte Nachricht", "gold": "window"}
+{"id": "de075", "lang": "de", "text": "trag den Termin in meinen Kalender ein", "gold": "window"}
+{"id": "de076", "lang": "de", "text": "lies mir die Mail vor", "gold": "window"}
+{"id": "de077", "lang": "de", "text": "was meint er damit?", "gold": "window"}
+{"id": "de078", "lang": "de", "text": "stimmt das?", "gold": "window"}
+{"id": "de079", "lang": "de", "text": "übersetze den markierten Text", "gold": "window"}
+{"id": "de080", "lang": "de", "text": "welcher Flug ist am günstigsten?", "gold": "window"}
+{"id": "de081", "lang": "de", "text": "fass zusammen", "gold": "window"}
+{"id": "de082", "lang": "de", "text": "kannst du das besser formulieren?", "gold": "window"}
+{"id": "de083", "lang": "de", "text": "wann ist die Deadline?", "gold": "window"}
+{"id": "de084", "lang": "de", "text": "schließ den Dialog", "gold": "window"}
+{"id": "de085", "lang": "de", "text": "wo ist hier der Download-Button", "gold": "window"}
+{"id": "de086", "lang": "de", "text": "was will der Kunde von mir?", "gold": "window"}
+{"id": "de087", "lang": "de", "text": "schreib eine Antwort darauf", "gold": "window"}
+{"id": "de088", "lang": "de", "text": "erklär mir die Tabelle", "gold": "window"}
+{"id": "en089", "lang": "en", "text": "explain quantum computing", "gold": "general"}
+{"id": "en090", "lang": "en", "text": "what's the weather tomorrow?", "gold": "general"}
+{"id": "en091", "lang": "en", "text": "write an email to my boss asking for Friday off", "gold": "general"}
+{"id": "en092", "lang": "en", "text": "open Figma", "gold": "general"}
+{"id": "en093", "lang": "en", "text": "how do I make pasta?", "gold": "general"}
+{"id": "en094", "lang": "en", "text": "what's 17% of 2300", "gold": "general"}
+{"id": "en095", "lang": "en", "text": "convert 5 miles to km", "gold": "general"}
+{"id": "en096", "lang": "en", "text": "set a timer for 10 minutes", "gold": "general"}
+{"id": "en097", "lang": "en", "text": "who won the Champions League in 2024?", "gold": "general"}
+{"id": "en098", "lang": "en", "text": "what's the capital of Australia", "gold": "general"}
+{"id": "en099", "lang": "en", "text": "write a haiku about autumn", "gold": "general"}
+{"id": "en100", "lang": "en", "text": "give me a 20 minute workout plan", "gold": "general"}
+{"id": "en101", "lang": "en", "text": "play some jazz", "gold": "general"}
+{"id": "en102", "lang": "en", "text": "remind me to call mom at 6", "gold": "general"}
+{"id": "en103", "lang": "en", "text": "what time is it in Tokyo", "gold": "general"}
+{"id": "en104", "lang": "en", "text": "find my tax documents from 2024", "gold": "general"}
+{"id": "en105", "lang": "en", "text": "open the downloads folder", "gold": "general"}
+{"id": "en106", "lang": "en", "text": "turn on dark mode", "gold": "general"}
+{"id": "en107", "lang": "en", "text": "how does a transformer model work?", "gold": "general"}
+{"id": "en108", "lang": "en", "text": "translate 'good morning' into Japanese", "gold": "general"}
+{"id": "en109", "lang": "en", "text": "fix this sentence: their going to the park tomorrow", "gold": "general"}
+{"id": "en110", "lang": "en", "text": "summarize the history of the Roman Empire", "gold": "general"}
+{"id": "en111", "lang": "en", "text": "what's the latest news about Apple?", "gold": "general"}
+{"id": "en112", "lang": "en", "text": "search the web for cheap flights to Lisbon", "gold": "general"}
+{"id": "en113", "lang": "en", "text": "book a table for two at an Italian place nearby", "gold": "general"}
+{"id": "en114", "lang": "en", "text": "write a python script that renames photos by date", "gold": "general"}
+{"id": "en115", "lang": "en", "text": "tell me a joke", "gold": "general"}
+{"id": "en116", "lang": "en", "text": "create a new note called groceries", "gold": "general"}
+{"id": "en117", "lang": "en", "text": "how many days until Christmas?", "gold": "general"}
+{"id": "en118", "lang": "en", "text": "recommend a good sci-fi book", "gold": "general"}
+{"id": "en119", "lang": "en", "text": "explain the difference between TCP and UDP", "gold": "general"}
+{"id": "en120", "lang": "en", "text": "write a cover letter for a product manager job", "gold": "general"}
+{"id": "en121", "lang": "en", "text": "open the pricing page on stripe.com", "gold": "general"}
+{"id": "en122", "lang": "en", "text": "what does error code 0x80070005 mean?", "gold": "general"}
+{"id": "en123", "lang": "en", "text": "how do I take a screenshot on a Mac?", "gold": "general"}
+{"id": "en124", "lang": "en", "text": "what's on my calendar today?", "gold": "general"}
+{"id": "en125", "lang": "en", "text": "send a message to Anna saying I'm on my way", "gold": "general"}
+{"id": "en126", "lang": "en", "text": "how do I close a window that's frozen on macOS", "gold": "general"}
+{"id": "en127", "lang": "en", "text": "what's the weather this weekend", "gold": "general"}
+{"id": "en128", "lang": "en", "text": "what should I cook this week?", "gold": "general"}
+{"id": "en129", "lang": "en", "text": "here's an idea: write a poem about cats", "gold": "general"}
+{"id": "en130", "lang": "en", "text": "explain this like I'm five: how do vaccines work", "gold": "general"}
+{"id": "en131", "lang": "en", "text": "make a table of the planets and their moons", "gold": "general"}
+{"id": "en132", "lang": "en", "text": "find the cheapest flights to Rome in May", "gold": "general"}
+{"id": "en133", "lang": "en", "text": "how much screen time is healthy for kids?", "gold": "general"}
+{"id": "en134", "lang": "en", "text": "go to github.com", "gold": "general"}
+{"id": "en135", "lang": "en", "text": "what's a good name for a cat?", "gold": "general"}
+{"id": "en136", "lang": "en", "text": "help me plan a trip to Japan", "gold": "general"}
+{"id": "en137", "lang": "en", "text": "define serendipity", "gold": "general"}
+{"id": "en138", "lang": "en", "text": "write a tweet announcing our product launch", "gold": "general"}
+{"id": "en139", "lang": "en", "text": "what's the best way to learn German?", "gold": "general"}
+{"id": "en140", "lang": "en", "text": "is it going to rain this afternoon?", "gold": "general"}
+{"id": "en141", "lang": "en", "text": "open the last file I downloaded", "gold": "general"}
+{"id": "en142", "lang": "en", "text": "how do I center a div in CSS", "gold": "general"}
+{"id": "en143", "lang": "en", "text": "help", "gold": "general"}
+{"id": "en144", "lang": "en", "text": "what's the current Bitcoin price?", "gold": "general"}
+{"id": "de145", "lang": "de", "text": "erkläre Quantencomputing", "gold": "general"}
+{"id": "de146", "lang": "de", "text": "wie wird das Wetter morgen?", "gold": "general"}
+{"id": "de147", "lang": "de", "text": "schreib eine Mail an meinen Chef, dass ich Freitag frei brauche", "gold": "general"}
+{"id": "de148", "lang": "de", "text": "öffne Figma", "gold": "general"}
+{"id": "de149", "lang": "de", "text": "wie mache ich Pasta?", "gold": "general"}
+{"id": "de150", "lang": "de", "text": "was ist die Hauptstadt von Australien", "gold": "general"}
+{"id": "de151", "lang": "de", "text": "stell einen Timer auf 10 Minuten", "gold": "general"}
+{"id": "de152", "lang": "de", "text": "wie spät ist es in Tokio", "gold": "general"}
+{"id": "de153", "lang": "de", "text": "erzähl mir einen Witz", "gold": "general"}
+{"id": "de154", "lang": "de", "text": "übersetze 'guten Morgen' ins Spanische", "gold": "general"}
+{"id": "de155", "lang": "de", "text": "fasse die Geschichte des Römischen Reichs zusammen", "gold": "general"}
+{"id": "de156", "lang": "de", "text": "schreib ein Gedicht über den Herbst", "gold": "general"}
+{"id": "de157", "lang": "de", "text": "wie funktioniert ein Verbrennungsmotor?", "gold": "general"}
+{"id": "de158", "lang": "de", "text": "such nach günstigen Flügen nach Lissabon", "gold": "general"}
+{"id": "de159", "lang": "de", "text": "mach den Dunkelmodus an", "gold": "general"}
+{"id": "de160", "lang": "de", "text": "finde meine Steuerunterlagen von 2024", "gold": "general"}
+{"id": "de161", "lang": "de", "text": "was ist der Unterschied zwischen TCP und UDP", "gold": "general"}
+{"id": "de162", "lang": "de", "text": "wie viele Tage sind es noch bis Weihnachten?", "gold": "general"}
+{"id": "de163", "lang": "de", "text": "empfiehl mir ein gutes Buch", "gold": "general"}
+{"id": "de164", "lang": "de", "text": "was kann ich diese Woche kochen?", "gold": "general"}
+{"id": "de165", "lang": "de", "text": "wie schließe ich ein Fenster auf dem Mac", "gold": "general"}
+{"id": "de166", "lang": "de", "text": "was bedeutet der Fehlercode 404?", "gold": "general"}
+{"id": "de167", "lang": "de", "text": "schreib ein Python-Skript, das Dateien umbenennt", "gold": "general"}
+{"id": "de168", "lang": "de", "text": "spiel etwas Jazz", "gold": "general"}
+{"id": "de169", "lang": "de", "text": "erinnere mich um 18 Uhr an den Anruf", "gold": "general"}
+{"id": "de170", "lang": "de", "text": "was sind 15 Prozent von 80", "gold": "general"}
+{"id": "de171", "lang": "de", "text": "wie sage ich danke auf Japanisch?", "gold": "general"}
+{"id": "de172", "lang": "de", "text": "öffne den Download-Ordner", "gold": "general"}
+{"id": "de173", "lang": "de", "text": "was gibt es Neues in der Welt?", "gold": "general"}
+{"id": "de174", "lang": "de", "text": "plane mir ein Wochenende in Wien", "gold": "general"}
+{"id": "de175", "lang": "de", "text": "schreib einen Tweet über unseren Launch", "gold": "general"}
+{"id": "de176", "lang": "de", "text": "was ist ein guter Name für eine Katze?", "gold": "general"}
+{"id": "de177", "lang": "de", "text": "korrigiere diesen Satz: ich habe gestern nach Hause gegangen", "gold": "general"}
+{"id": "de178", "lang": "de", "text": "wie lange kocht man ein Ei?", "gold": "general"}
+{"id": "de179", "lang": "de", "text": "zeig mir die Seite von Spiegel Online", "gold": "general"}
+{"id": "de180", "lang": "de", "text": "wie viel kostet ein Tesla Model 3?", "gold": "general"}

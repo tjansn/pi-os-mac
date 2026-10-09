@@ -8,29 +8,29 @@ enum InputSurfaceInspector {
     private static let terminalBundles: Set<String> = ["com.apple.Terminal", "com.googlecode.iterm2", "com.mitchellh.ghostty",
         "dev.warp.Warp-Stable", "com.github.wez.wezterm", "net.kovidgoyal.kitty", "org.alacritty", "com.cmuxterm.app"]
     static func surfaces(_ element: AXUIElement, bundleID: String) -> [InputSurface] {
-        let budget = DesktopAX.Budget(0.08)
-        var current: AXUIElement? = element, seen: [AXUIElement] = [], result: [InputSurface] = []
+        surfaces(LiveAXNode(element, budget: DesktopAX.Budget(0.08)), bundleID: bundleID)
+    }
+    /// The element and up to seven ancestors (one batched read each). Native and DOM identifiers both
+    /// count, so a Brave web control named only by its DOM id ("delete-file") meets DeletionPolicy too.
+    static func surfaces(_ element: any BrowserAXNode, bundleID: String) -> [InputSurface] {
+        var current: (any BrowserAXNode)? = element, seen: [any BrowserAXNode] = [], result: [InputSurface] = []
         var terminal = terminalBundles.contains(bundleID), files = bundleID == "com.apple.finder"
         for _ in 0..<8 {
-            guard let node = current, Date() < budget.deadline, !seen.contains(where: { CFEqual($0, node) }) else { break }
+            guard let node = current, !seen.contains(where: { $0.isSame(node) }) else { break }
             seen.append(node)
-            guard let role = budget.read(node, kAXRoleAttribute) as? String else { break }
+            let values = node.values([kAXRoleAttribute, kAXIdentifierAttribute, "AXDOMIdentifier", kAXDescriptionAttribute, kAXTitleAttribute])
+            guard let role = values[kAXRoleAttribute] as? String else { break }
             if [kAXWindowRole, kAXApplicationRole].contains(role) { break }
-            let identifier = budget.read(node, kAXIdentifierAttribute) as? String ?? ""
-            let description = budget.read(node, kAXDescriptionAttribute) as? String ?? ""
-            let title = budget.read(node, kAXTitleAttribute) as? String ?? ""
+            let identifier = [kAXIdentifierAttribute, "AXDOMIdentifier"].compactMap { values[$0] as? String }.filter { !$0.isEmpty }.joined(separator: " ")
+            let description = values[kAXDescriptionAttribute] as? String ?? ""
+            let title = values[kAXTitleAttribute] as? String ?? ""
             let marker = (identifier + " " + description).lowercased()
             terminal = terminal || marker.contains("xterm") || marker.contains("terminal input") || marker.contains("terminal content") || description.lowercased() == "terminal"
             files = files || marker.contains("file-explorer") || marker.contains("file tree") || marker.contains("workbench.view.explorer")
-            var editable = false
-            if [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole].contains(role) {
-                var settable: DarwinBoolean = false
-                AXUIElementSetMessagingTimeout(node, 0.02)
-                editable = AXUIElementIsAttributeSettable(node, kAXValueAttribute as CFString, &settable) == .success && settable.boolValue
-            }
+            let editable = [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole].contains(role) && node.isSettable(kAXValueAttribute)
             result.append(InputSurface(role: role, label: title.isEmpty ? description : title,
                                        identifier: identifier, editableText: editable))
-            current = budget.element(node, kAXParentAttribute)
+            current = node.node(kAXParentAttribute)
         }
         for i in result.indices {
             result[i].terminal = terminal; result[i].fileBrowser = files

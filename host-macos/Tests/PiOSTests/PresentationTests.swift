@@ -94,6 +94,18 @@ final class PresentationTests: XCTestCase {
         panel.reopenLastAnswer()
         XCTAssertFalse(panel.followupEnabled, "Recalled answer must not recreate a closed thread")
     }
+    @MainActor func testThePopoverLinesFitTheirLabels() {
+        // The π popover's line under "Active window" is a 256 pt single-line label at 11 pt.
+        let hint = NSTextField(labelWithString: ContextChipCopy.popoverIncludeHint)
+        hint.font = .systemFont(ofSize: 11)
+        XCTAssertLessThanOrEqual(hint.cell!.cellSize.width, 256, "“drag the chip onto a window” is never cut off")
+        XCTAssertTrue(ContextChipCopy.popoverIncludeHint.contains("drag the chip onto a window"))
+        // A long app name gives way in the middle of the heading, so “Not included” stays readable.
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let panel = (try? String(contentsOf: root.appendingPathComponent("Sources/PiOSMac/PromptPanel.swift"), encoding: .utf8)) ?? ""
+        XCTAssertTrue(panel.contains("app.lineBreakMode = .byTruncatingMiddle"))
+        XCTAssertTrue(panel.contains("ContextChipCopy.popoverIncludeHint"))
+    }
     func testActionableFailureCopyWithoutChangingDomainCodes() {
         let permission = FailurePresentation(DomainError("permission_denied", "technical detail"))
         XCTAssertTrue(permission.offersPermissions)

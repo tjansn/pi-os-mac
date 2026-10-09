@@ -3,13 +3,14 @@ import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 import {
-  createAssistantMessageEventStream, getCurrentSystemPrompt, getCurrentTools, parseStreamingJson, type AssistantMessage, type JsonObject, type ToolCall,
+  createAssistantMessageEventStream, getCurrentSystemPrompt, getCurrentTools, parseStreamingJson, validateToolArguments,
+  type AssistantMessage, type JsonObject, type ToolCall,
 } from "@earendil-works/pi-ai";
-import { makeStrictJsonSchema } from "@earendil-works/pi-ai/api/constrained-sampling";
+import { makeStrictJsonSchema, resolveJsonSchemaStrictSampling } from "@earendil-works/pi-ai/api/constrained-sampling";
 import { createAgentSession, ModelRuntime, SessionManager, SettingsManager, type ExtensionAPI, type InlineExtension, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { CardSpec } from "../src/contracts/cards.js";
 import { loadAgentResources, registerResourceProviders } from "../src/agent/resources.js";
-import { blocksToCard } from "../src/ui/blocks.js";
+import { blocksToCard, SHOW_RESULT_BLOCK_TYPES, withoutNullMembers } from "../src/ui/blocks.js";
 import { FileLedger } from "../src/ui/ledger.js";
 import { createShowResultExtension, SHOW_RESULT_TOOL } from "../src/ui/showResult.js";
 import { validateCard } from "../src/ui/validate.js";
@@ -48,24 +49,52 @@ function schemaKeywords(schema: unknown, found = new Set<string>()): Set<string>
   return found;
 }
 
-test("show_result tool definition: closed TypeBox schema, prefer-strict sampling, model-only, factual guidance", () => {
+test("show_result tool definition: one closed object per block type, prefer-strict sampling, model-only, structured-only guidance", () => {
   const tool = registered(createShowResultExtension({ ledger: fixtureLedger(), onCard() {} }));
   assert.equal(tool.name, SHOW_RESULT_TOOL);
   assert.deepEqual(tool.constrainedSampling, { type: "json_schema", strict: "prefer" });
   assert.equal(tool.exposure, "model-only");
-  assert.match(tool.promptGuidelines!.join("\n"), /Never invent values, sample rows, file names, paths, links or metadata/);
-  assert.match(tool.promptGuidelines!.join("\n"), /never write paths or tokens/);
+  const guidance = tool.promptGuidelines!.join("\n");
+  assert.match(guidance, /Never invent values, sample rows, file names, paths, links or metadata/);
+  assert.match(guidance, /never write paths or tokens/);
+  assert.match(guidance, /show_result only for structured results/);
+  assert.match(guidance, /one-line answers in plain text/);
   const schema = JSON.parse(JSON.stringify(tool.parameters));
   assert.equal(schema.additionalProperties, false);
-  assert.equal(schema.properties.blocks.items.additionalProperties, false);
-  // Keywords some providers reject under strict sampling stay out of the model-facing schema (the catalog enforces limits).
+  assert.deepEqual(schema.required, ["blocks"]);
+  // Keywords some providers reject stay out of the model-facing schema (the catalog enforces limits);
+  // the union itself is the point (r2/DESIGN2 §5.6), and the discriminator is a one-value enum, not const.
   const keywords = schemaKeywords(schema);
-  for (const banned of ["maxLength", "minLength", "pattern", "maxItems", "minimum", "maximum", "uniqueItems", "anyOf", "oneOf", "const", "$ref"]) {
+  for (const banned of ["maxLength", "minLength", "pattern", "maxItems", "minimum", "maximum", "uniqueItems", "oneOf", "const", "$ref"]) {
     assert(!keywords.has(banned), `schema uses ${banned}`);
   }
-  // pi-ai converts it to the provider strict subset without falling back.
-  const strict = makeStrictJsonSchema(schema) as { required: string[]; properties: Record<string, unknown> };
-  assert.deepEqual(strict.required.sort(), ["blocks", "summary"]);
+  const variants = schema.properties.blocks.items.anyOf as { properties: Record<string, { enum?: string[] }>; required: string[]; additionalProperties: boolean }[];
+  assert.deepEqual(variants.map(variant => variant.properties.type!.enum), SHOW_RESULT_BLOCK_TYPES.map(type => [type]));
+  for (const variant of variants) assert.equal(variant.additionalProperties, false);
+  const required = Object.fromEntries(variants.map(variant => [variant.properties.type!.enum![0], variant.required]));
+  assert.deepEqual(required, {
+    markdown: ["type", "text"], result: ["type", "value"], keyValue: ["type", "items"], table: ["type", "columns", "rows"],
+    files: ["type", "refs"], links: ["type", "links"], status: ["type", "text"], notice: ["type", "text"], suggestions: ["type", "prompts"],
+  });
+  // pi's strict subset has no object unions, so "prefer" sends the tool without provider-side strict sampling:
+  // nothing is padded with nulls (the flat block made every block emit 14 of them).
+  assert.throws(() => makeStrictJsonSchema(schema), /object and array unions are unsupported/);
+  assert.equal(resolveJsonSchemaStrictSampling(tool as never, true), undefined);
+});
+
+test("show_result arguments: a one-line card is just its fields; pi's check refuses fields of another block type; padded nulls are dropped first", () => {
+  const tool = registered(createShowResultExtension({ ledger: fixtureLedger(), onCard() {} }));
+  const check = (args: unknown) => validateToolArguments(tool as never, { type: "toolCall", id: "c1", name: SHOW_RESULT_TOOL, arguments: tool.prepareArguments!(args) as JsonObject });
+  const capital = { blocks: [{ type: "result", value: "Canberra" }] };
+  assert.deepEqual(check(capital), capital);
+  assert.equal(JSON.stringify(capital).includes("null"), false);
+  assert(blocksToCard(capital, fixtureLedger()).ok);
+  assert.throws(() => check({ blocks: [{ type: "result", value: "Canberra", prompts: ["More"] }] }), /Validation failed/);
+  assert.throws(() => check({ blocks: [{ type: "table", columns: ["A"] }] }), /Validation failed/);
+  // Strict-sampling habits: absent optional members as nulls are absent members.
+  const padded = { summary: null, blocks: [{ type: "result", value: "42", input: null, detail: null, kind: null }, { type: "notice", text: "Heads up", tone: null }] };
+  assert.deepEqual(check(padded), { blocks: [{ type: "result", value: "42" }, { type: "notice", text: "Heads up" }] });
+  assert.deepEqual(withoutNullMembers("not an object"), "not an object");
 });
 
 test("show_result execute: valid card → onCard(complete) + terminate; invalid → tool error, no card", async () => {

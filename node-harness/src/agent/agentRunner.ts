@@ -1,4 +1,5 @@
-import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
+import { randomBytes } from "node:crypto";
+import type { AssistantMessage, ImageContent, Model, TextContent } from "@earendil-works/pi-ai";
 import type { CreateAgentSessionOptions, InlineExtension, ToolDefinition, ToolLoadout } from "@earendil-works/pi-coding-agent";
 import {
   createAgentSession,
@@ -7,13 +8,20 @@ import {
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import type { HostClient, DesktopContextSnapshot, ScreenshotRef } from "../hostClient.js";
-import { createComputerUseExtension } from "./computerUseExtension.js";
-import { BrowserSession } from "../browser/session.js";
-import { BROWSER_TOOLS } from "../browser/tools.js";
+import { createComputerUseExtension, USE_ACTIVE_WINDOW_TOOL, type ContextHooks } from "./computerUseExtension.js";
+import { compactSnapshotSummary, renderPageDigest } from "./desktopTools.js";
+import { pageDigestSection, pageReadOf, type AxTransport, type PageRead } from "../browser/axTransport.js";
+import { axBrowserExtension, BROWSER_TOOLS, browserToolNames } from "../browser/tools.js";
+import { createBrowserTransport, type BrowserTransport } from "../browser/transport.js";
 import { LiveAgentSession, type SessionObserver } from "./liveSession.js";
 export { LiveAgentSession } from "./liveSession.js";
 import { loadScreenshotImage } from "./screenshotImage.js";
-import { createSessionSettings, loadAgentResources, registerResourceProviders } from "./resources.js";
+import { createSessionSettings, loadAgentResources, PI_OS_SYSTEM_PROMPT, registerResourceProviders } from "./resources.js";
+import type { ContextPull, ContextRecord, ContextScope, ContextSource, ContextWire } from "../contracts/context.js";
+import {
+  attachmentStats, parseAttachments, renderAttachmentsForPrompt, type Attachment, type ImageAttachment,
+} from "../contracts/attachments.js";
+import { parseBrowserHint, parseBrowserPageResult, type BrowserPageResult } from "../contracts/browser.js";
 import { effectiveResourceMode, TRUST_WARNING, type ResourceSelection } from "./resourceSettings.js";
 import {
   CODEMODE_TOOL, CODEMODE_TOOL_NAMES, codemodeExtensionFactories, MODEL_ONLY_TOOLS, SCRIPT_CALLABLE_TOOLS,
@@ -121,7 +129,27 @@ export interface AgentRunOptions {
   /** false: the router decided the request needs no screenshot; it is not attached (default true). */
   attachScreenshot?: boolean;
   services?: AgentServices;
+  /**
+   * The host's context choice for this turn (parseContext). Absent: legacy window behaviour (Windows,
+   * older Mac builds). `general` sends no screenshot, no desktop JSON and no window tools, only the
+   * active app's name and, with `pull: "allowed"`, the use_active_window loader.
+   */
+  context?: ContextWire;
+  /** Context-shelf attachments, validated by parseAttachments with the captures dir and contextId. Untrusted data. */
+  attachments?: Attachment[];
+  /**
+   * The pinned Brave tab's AX page (host `browser.page`): the raw result or the server's whole read
+   * (readPage); null when there is none. Window and legacy turns stage it into the first prompt; a
+   * general turn's use_active_window reads it on demand. With an AX transport its refs are adopted.
+   */
+  browserPage?: BrowserPageProvider;
 }
+
+/** What a page provider hands over: the host's `browser.page` result, the server's whole read (refs, read time), or nothing. */
+export type BrowserPageSource = BrowserPageResult | PageRead | null;
+export type BrowserPageProvider = () => Promise<BrowserPageSource>;
+/** A successful page read: the validated page, the digest a prompt shows and the refs printed in it. */
+export type StagedPageRead = Extract<PageRead, { ok: true }>;
 
 export interface AgentRunResult {
   responseText: string;
@@ -196,23 +224,53 @@ export function summarizeSnapshot(snapshot: DesktopContextSnapshot): string {
 }
 
 export const READ_ONLY_TOOLS = ["desktop_get_context", "desktop_refresh_context", "desktop_capture_window"];
+/** Tools that look at or act on the pinned window: inactive in a general turn until use_active_window. */
+export const WINDOW_TOOLS: readonly string[] = [...READ_ONLY_TOOLS, "desktop_act", ...BROWSER_TOOLS];
 
 /**
  * The isolated tools allowlist (CRITIC F24: the allowlist filters every registered tool and
  * naming one activates it). Read-only sessions get observation, instant/launcher reads, cards
- * and codemode; control adds native input (or the Brave tools) and open_item. pi_os_escalate
- * only exists for sessions on Auto, where the router acts on it.
+ * and codemode; control adds native input and open_item. The pinned Brave tab adds its tools:
+ * DevTools (`browser: true` or a CDP transport) replaces desktop_act; Accessibility keeps
+ * desktop_act (Brave is a native target) and adds browser_snapshot, plus browser_act when the
+ * transport may act in the background (browserToolNames; read-only gets browser_snapshot only).
+ * pi_os_escalate only exists for sessions on Auto, where the router acts on it; use_active_window
+ * only in scope-aware (macOS) sessions, which keep it inactive outside general turns.
  */
-export function sessionToolAllowlist(options: { readOnly: boolean; browser?: boolean; auto?: boolean }): string[] {
+export function sessionToolAllowlist(options: { readOnly: boolean; browser?: boolean | BrowserTransport; auto?: boolean; activeWindow?: boolean }): string[] {
+  const transport = typeof options.browser === "object" ? options.browser : undefined;
+  const replacesDesktopAct = options.browser === true || transport?.replacesDesktopAct === true;
   return [
     ...READ_ONLY_TOOLS,
-    ...(options.readOnly ? [] : options.browser ? BROWSER_TOOLS : ["desktop_act"]),
+    ...(options.readOnly || replacesDesktopAct ? [] : ["desktop_act"]),
+    ...(options.browser === true ? (options.readOnly ? [] : BROWSER_TOOLS) : browserToolNames(transport, options.readOnly)),
     ...LAUNCHER_READ_TOOL_NAMES,
     ...(options.readOnly ? [] : [OPEN_ITEM_TOOL]),
     SHOW_RESULT_TOOL,
     ...CODEMODE_TOOL_NAMES,
     ...(options.auto ? [ESCALATE_TOOL_NAME] : []),
+    ...(options.activeWindow ? [USE_ACTIVE_WINDOW_TOOL] : []),
   ];
+}
+
+/** A thread's scope as the tool selection sees it. `legacy`: no context was ever sent (window behaviour). */
+export interface ScopeView {
+  scope: "legacy" | ContextScope;
+  pull: ContextPull;
+  /** use_active_window brought the window into this general thread. */
+  pulled: boolean;
+}
+
+/**
+ * The tools a scope allows (DESIGN2 §5.2): legacy and window turns keep every session tool except
+ * the loader; a general turn drops the window tools and, when the host allows a pull, offers
+ * use_active_window instead, until a pull brings the window tools in.
+ */
+export function scopeToolNames(all: readonly string[], view: ScopeView): string[] {
+  const general = view.scope === "general" && !view.pulled;
+  return all.filter(name => name === USE_ACTIVE_WINDOW_TOOL
+    ? general && view.pull === "allowed"
+    : !(general && WINDOW_TOOLS.includes(name)));
 }
 
 /** Tools a light lane (quick/fast tier) leaves inactive unless the router hints them; an escalation restores them. */
@@ -277,6 +335,30 @@ export function advertiseScriptCallableOnly(factories: InlineExtension[], callab
   });
 }
 
+/**
+ * pi 1.0 renders promptGuidelines only into its default base prompt: buildSystemPromptSections drops
+ * the tools and rules sections once a custom prompt is set. Under the lean pi-os prompt each pi-os
+ * tool's guidelines therefore move into its description, where they reach the model exactly while
+ * the tool is active and leave the system prompt the same in every scope. pi's codemode tool is left
+ * alone (its loadout rewrites its description).
+ */
+export function foldPromptGuidelines(factories: InlineExtension[]): InlineExtension[] {
+  const fold = (tool: ToolDefinition): ToolDefinition => {
+    const guidelines = (tool.promptGuidelines ?? []).map(line => line.trim()).filter(Boolean);
+    if (!guidelines.length) return tool;
+    const { promptGuidelines: _folded, ...rest } = tool;
+    return { ...rest, description: `${tool.description}\n\nGuidelines:\n${guidelines.map(line => `- ${line}`).join("\n")}` } as ToolDefinition;
+  };
+  return factories.map(extension => typeof extension === "function" || extension.name === "pi-os-codemode" ? extension : {
+    name: extension.name,
+    factory(pi) {
+      const api = Object.create(pi) as typeof pi;
+      api.registerTool = ((tool: ToolDefinition) => pi.registerTool(fold(tool))) as typeof pi.registerTool;
+      return extension.factory(api);
+    },
+  });
+}
+
 /** Engine stand-ins when the caller wires none (only reachable outside the harness server). */
 let defaultEngines: InstantToolEngines | undefined;
 
@@ -288,7 +370,12 @@ export interface SessionExtensionOptions {
   platform?: NodeJS.Platform;
   /** Only when that image is attached to the first prompt (or revoked before it, see promptFirst). */
   initialScreenshotId?: string;
-  browser?: BrowserSession;
+  /**
+   * The pinned Brave tab's transport (createBrowserTransport). DevTools: the computer-use extension
+   * registers its tools in place of desktop_act. Accessibility: its own extension (axBrowserExtension)
+   * beside an unchanged computer-use extension (desktop_act and its post-action capture stay).
+   */
+  browser?: BrowserTransport;
   /** Host launcher read routes exist (macOS): find_files, list_apps, open_item. */
   launcher?: boolean;
   engines?: InstantToolEngines;
@@ -297,23 +384,35 @@ export interface SessionExtensionOptions {
   onCard?: (spec: CardSpec, complete: boolean) => void;
   /** The user's own words in this thread, read lazily by open_item (only user-named sites open directly). */
   userRequests?: () => readonly string[];
+  /** Scope-aware macOS session (createLiveSession): use_active_window and the scope-neutral prompt layout. */
+  context?: ContextHooks;
+  /** Isolated macOS session: the lean pi-os base prompt; tool guidelines move into descriptions. */
+  leanPrompt?: boolean;
 }
 
 /**
- * Every pi-os extension of a session, in load order: computer use, instant/launcher tools,
- * show_result, pi_os_escalate (only allowed/active on Auto), the stable prompt-cache key hook
- * (no tools), then the codemode policy before pi's codemode. The isolated allowlist
- * (sessionToolAllowlist) decides what is exposed.
+ * Every pi-os extension of a session, in load order: computer use, the AX Brave tools (an ax
+ * transport only), instant/launcher tools, show_result, pi_os_escalate (only allowed/active on
+ * Auto), the stable prompt-cache key hook (no tools), then the codemode policy before pi's
+ * codemode. The isolated allowlist (sessionToolAllowlist) decides what is exposed.
  */
 export function sessionExtensions(options: SessionExtensionOptions) {
   const platform = options.platform ?? process.platform;
   const ledger = options.ledger ?? new FileLedger();
+  const cdp = options.browser?.mode === "cdp" ? options.browser : undefined;
+  const ax = options.browser?.mode === "ax" ? options.browser : undefined;
   // macOS: desktop_act returns the post-action capture (one model turn fewer; ignored elsewhere).
   const computerUse = createComputerUseExtension(options.contextId, options.hostClient, options.capturesDir, options.readOnly, platform,
-    options.initialScreenshotId, options.browser, { postActionCapture: platform === "darwin" });
+    options.initialScreenshotId, cdp, {
+      postActionCapture: platform === "darwin",
+      ...(options.context ? { context: options.context } : {}),
+      ...(options.leanPrompt ? { leanPrompt: true } : {}),
+    });
   const engines = options.engines ?? (defaultEngines ??= toolEnginesFrom(createInstantEngines()));
   const extensions: InlineExtension[] = [
     computerUse,
+    // Brave over Accessibility: browser_snapshot / browser_act through the host's browser.page / browser.axAct.
+    ...(ax ? [axBrowserExtension(ax, { readOnly: options.readOnly })] : []),
     // Without host launcher routes (Windows) only the engine-only instant tools register.
     createLauncherToolsExtension({
       engines, readOnly: options.readOnly, contextId: options.contextId,
@@ -325,7 +424,7 @@ export function sessionExtensions(options: SessionExtensionOptions) {
     createPromptCacheExtension(),
     ...advertiseScriptCallableOnly(codemodeExtensionFactories()),
   ];
-  return { extensions, computerUse, ledger };
+  return { extensions: options.leanPrompt ? foldPromptGuidelines(extensions) : extensions, computerUse, ledger };
 }
 
 /**
@@ -368,13 +467,317 @@ export function sessionSetupKey(options: AgentRunOptions): string {
   return JSON.stringify([
     process.platform, options.contextId, options.readOnly ?? null, options.launcher === true,
     options.resourceSelection?.mode ?? "isolated", options.modelSelection ?? null, routing.bias,
-    options.snapshot.browser?.mode ?? null,
+    browserSetup(options.snapshot.browser),
   ]);
+}
+
+/**
+ * The Brave hint as far as it decides the session's browser transport and tools (createBrowserTransport):
+ * mode, a pinned tab, and background acting (browser_act through browser.axAct, or a pointer to
+ * desktop_act). A session prepared with one variant is never reused for another.
+ */
+function browserSetup(hint: unknown): [string, boolean, boolean] | null {
+  if (hint === undefined || hint === null) return null;
+  const parsed = parseBrowserHint(hint);
+  return parsed.ok ? [parsed.value.mode, parsed.value.pinned, parsed.value.background === true] : null;
 }
 
 /** Whether promptFirst will attach the pinned screenshot for this plan. */
 export function attachesScreenshot(snapshot: AgentRunOptions["snapshot"], plan: Pick<TurnPlan, "attachScreenshot">): boolean {
   return Boolean(snapshot.screenshot?.filePath) && plan.attachScreenshot;
+}
+
+/** How long a turn waits for the host's Brave page digest before going on without it. */
+export const PAGE_DIGEST_TIMEOUT_MS = 1_500;
+
+/** What the provider settled on within `timeoutMs`; null for none, a rejection or the deadline. */
+async function settlePage(provider: BrowserPageProvider | undefined, timeoutMs: number): Promise<unknown> {
+  if (!provider) return null;
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      provider(),
+      new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), timeoutMs); timer.unref?.(); }),
+    ]);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+const isPageRead = (value: unknown): value is PageRead =>
+  typeof value === "object" && value !== null && "ok" in value && "contextId" in value;
+
+/**
+ * A provider's value as a validated page (Node never shows a page that fails parseBrowserPageResult)
+ * and, for the server's whole read, the time it was read. A failed read, or a read of another context
+ * when `contextId` is given, is no page.
+ */
+function validPage(raw: unknown, contextId?: string): { page: BrowserPageResult; readAt?: number } | undefined {
+  if (!raw) return undefined;
+  let source = raw;
+  let readAt: number | undefined;
+  if (isPageRead(raw)) {
+    if (raw.ok !== true || (contextId !== undefined && raw.contextId !== contextId)) return undefined;
+    source = raw.page;
+    if (Number.isFinite(raw.readAt)) readAt = raw.readAt;
+  }
+  const page = parseBrowserPageResult(source);
+  return page.ok ? { page: page.value, ...(readAt !== undefined ? { readAt } : {}) } : undefined;
+}
+
+/** A provider's page, validated; undefined otherwise (none, failed, invalid, thrown or past the deadline). */
+export async function readBrowserPage(provider?: BrowserPageProvider, timeoutMs = PAGE_DIGEST_TIMEOUT_MS): Promise<BrowserPageResult | undefined> {
+  return validPage(await settlePage(provider, timeoutMs))?.page;
+}
+
+/**
+ * A provider's page as a read an AX transport can adopt: the digest a prompt shows (N3's format, the
+ * one browser_snapshot and browser_act use) and exactly the refs printed in it, re-derived from the
+ * validated page. Its read time is the server's (never later than now), so refs age from the host read.
+ */
+export async function readStagedPage(provider: BrowserPageProvider | undefined, contextId: string,
+  timeoutMs = PAGE_DIGEST_TIMEOUT_MS): Promise<StagedPageRead | undefined> {
+  const value = validPage(await settlePage(provider, timeoutMs), contextId);
+  if (!value) return undefined;
+  const now = Date.now();
+  return pageReadOf(value.page, contextId, Math.min(value.readAt ?? now, now));
+}
+
+/** A window turn's page section, and the read whose refs the prompt that shows it adopts (AX transport). */
+interface PageSection { text: string; read?: StagedPageRead }
+
+/**
+ * The page a window turn (or a follow-up that brings the window in) shows. With an AX transport:
+ * pageDigestSection over the staged read, whose refs become actionable with that prompt, so the
+ * model can act without another read. Otherwise (no transport, DevTools): the digest as before.
+ */
+async function pageSection(thread: ThreadContext | undefined, provider: BrowserPageProvider | undefined): Promise<PageSection | undefined> {
+  if (thread?.ax) {
+    const read = await readStagedPage(provider, thread.ax.contextId);
+    return read && { text: pageDigestSection(read.digest), read };
+  }
+  const page = await readBrowserPage(provider);
+  return page && { text: renderPageDigest(page) };
+}
+
+/**
+ * use_active_window's page in an AX session. The extension renders what it gets with renderPageDigest
+ * (fenced, marked untrusted); here the staged digest is that body and no separate element list
+ * follows, so the refs the model sees are exactly the adopted ones, in the format browser_snapshot
+ * and browser_act use. The refs are adopted now: the pull's result reaches the model with its next
+ * response, when the browser tools become active.
+ */
+async function pulledPage(thread: ThreadContext): Promise<BrowserPageResult | undefined> {
+  if (!thread.ax) return readBrowserPage(thread.browserPage);
+  const read = await readStagedPage(thread.browserPage, thread.ax.contextId);
+  if (!read) return undefined;
+  // A transport that already ended for this task adopts nothing; the page is still worth reading.
+  thread.ax.adoptPage(read);
+  return {
+    title: read.page.title, ...(read.page.url ? { url: read.page.url } : {}), text: read.digest,
+    headings: [], links: [], controls: [], fields: [], truncated: read.page.truncated,
+  };
+}
+
+/**
+ * Scope change a follow-up's context made, kept until that follow-up's prompt is built. `lost`: the
+ * window the agent pulled in is gone, and the thread goes on without it (releasePulledWindow).
+ */
+type ScopeTransition = "none" | "upgrade" | "downgrade" | "lost";
+
+/**
+ * A live session's context scope (DESIGN2 §4.2, §5.2). The first turn sets it from the host's
+ * `context` (none: legacy). Follow-ups inherit it; the host may widen it to the window at any time,
+ * but only an explicit choice (`user`, `setting`) narrows it again, so inherited or suggested scope
+ * never downgrades a thread. use_active_window brings the window into a general thread.
+ */
+class ThreadContext implements ScopeView {
+  scope: ScopeView["scope"] = "legacy";
+  pull: ContextPull = "denied";
+  source: ContextSource | undefined;
+  pulled = false;
+  /** use_active_window ran at some point in this thread (record `pulled`). */
+  lookedAt = false;
+  /**
+   * The window is in the thread only because use_active_window pulled it into a general thread: the
+   * host never chose window scope itself (a follow-up that inherits it, `source: "followup"`, does not count).
+   */
+  pulledOnly = false;
+  /** release() ran: the next follow-up's apply leaves the `lost` note for its prompt. */
+  released = false;
+  transition: ScopeTransition = "none";
+  browserPage: BrowserPageProvider | undefined;
+  /** Attachment images of the prompt being sent (handed to the extension once). */
+  promptContent: (TextContent | ImageContent)[] | undefined;
+  /** The pinned Brave tab's Accessibility transport (BrowserHint.mode "ax"); refs are adopted into it. */
+  ax: AxTransport | undefined;
+  /** The page read the prompt being sent shows: adopted at that prompt's start, after the turn's ref invalidation. */
+  staged: StagedPageRead | undefined;
+  /** Re-selects the active tools for the current scope (set once the session exists). */
+  sync: () => void = () => {};
+  /** The first prompt was sent (seeding is over). */
+  started = false;
+  /** Screenshot seeded after the build (seedScreenshot), compared like the build-time seed. */
+  seed: string | undefined;
+  seedExtension: ((imageId: string) => void) | undefined;
+
+  constructor(readonly capturesDir: string, readonly platform: NodeJS.Platform, readonly contextId?: string) {}
+
+  /** The window is not part of the thread: general scope and not pulled. */
+  get general(): boolean { return this.scope === "general" && !this.pulled; }
+
+  apply(context: ContextWire | undefined, followup: boolean): void {
+    if (!followup) {
+      this.scope = context?.scope ?? "legacy";
+      this.pull = context?.pull ?? "denied";
+      this.source = context?.source;
+      this.pulled = this.lookedAt = this.pulledOnly = this.released = false;
+      this.transition = "none";
+      return;
+    }
+    if (this.released) {
+      // release() already left the window out; this follow-up says why (the server sends it general).
+      this.released = false;
+      this.transition = "lost";
+    }
+    if (!context) return;
+    this.pull = context.pull;
+    if (context.scope === "window") {
+      if (context.source !== "followup") this.pulledOnly = false;
+      if (this.general) { this.transition = "upgrade"; this.source = context.source; }
+      if (this.scope === "general") this.scope = "window";
+    } else if (!this.general && (context.source === "user" || context.source === "setting")) {
+      this.scope = "general";
+      this.pulled = this.pulledOnly = false;
+      this.source = context.source;
+      this.transition = "downgrade";
+    }
+  }
+
+  takeTransition(): ScopeTransition {
+    const transition = this.transition;
+    this.transition = "none";
+    return transition;
+  }
+
+  /** The pulled-in window is gone: the thread is general again, as if never pulled (record `pulled` stays). */
+  release(): void {
+    this.scope = "general";
+    this.pulled = this.pulledOnly = false;
+    this.released = true;
+  }
+}
+
+const threads = new WeakMap<LiveAgentSession, ThreadContext>();
+
+/**
+ * DESIGN2 C13: a take is usually prepared before the host's capture lands, so its session holds no
+ * screenshot seed. Instead of rebuilding it, the server seeds the screenshot the first prompt will
+ * attach. Only before the first prompt and only when the session holds no seed yet; promptFirst still
+ * revokes the seed unless exactly that image is attached (authority follows delivered images only).
+ * Returns false when the session cannot be seeded (the caller then rebuilds, as before).
+ */
+export function seedScreenshot(live: LiveAgentSession, imageId: string): boolean {
+  const thread = threads.get(live);
+  if (!thread?.seedExtension || thread.started || thread.seed !== undefined || live.controls.initialScreenshotId !== undefined || !imageId) return false;
+  thread.seed = imageId;
+  thread.seedExtension(imageId);
+  return true;
+}
+
+/** Content-free context summary for the invocation record; undefined for legacy threads (and fixture sessions). */
+export function contextRecord(live: LiveAgentSession): ContextRecord | undefined {
+  const thread = threads.get(live);
+  if (!thread || thread.scope === "legacy" || !thread.source) return undefined;
+  return { scope: thread.scope, source: thread.source, pulled: thread.lookedAt, included: !thread.general };
+}
+
+/**
+ * Whether the thread leaves the window out right now (general and not pulled); undefined for sessions
+ * without a thread view. The record's `pulled` cannot tell: it stays true after the user narrows a
+ * pulled thread, so the server asks this before a follow-up is planned.
+ */
+export function threadIsGeneral(live: LiveAgentSession): boolean | undefined {
+  return threads.get(live)?.general;
+}
+
+/**
+ * A follow-up whose pinned window is gone (`target_gone`, `no_target`) in a thread that has the window
+ * only because the agent pulled it in (the host never chose window scope): the thread goes on general,
+ * as if never pulled, and the follow-up's prompt says the window is no longer available. Returns false
+ * (nothing changed) for any other thread: window threads the host chose keep failing as before.
+ */
+export function releasePulledWindow(live: LiveAgentSession): boolean {
+  const thread = threads.get(live);
+  if (!thread?.pulledOnly || !thread.pulled) return false;
+  thread.release();
+  thread.sync();
+  return true;
+}
+
+/** The app named in a general prompt: the pinned target only (never the title, path or URL). */
+function activeAppLines(snapshot: DesktopContextSnapshot, pull: ContextPull): string[] {
+  const app = snapshot.targetWindow?.processName;
+  if (!app) return [];
+  return [pull === "allowed"
+    ? `Active app: ${JSON.stringify(app)} (its window is not included). Call use_active_window only if the request refers to something shown there.`
+    : `Active app: ${JSON.stringify(app)} (its window is not included; the user chose not to share it).`, ""];
+}
+
+/**
+ * A shelf image as image content: the request rules re-checked (a `shelf-<id>.png` directly inside the
+ * captures directory), then loadScreenshotImage's realpath containment, regular-file, size and PNG
+ * checks, and the PNG header must match the declared (capped) size. Shelf images are not captures:
+ * they carry no imageId and never move coordinate authority.
+ */
+export async function loadShelfImage(attachment: ImageAttachment, capturesDir: string): Promise<ImageContent> {
+  if (!parseAttachments([attachment], { capturesDir }).ok) throw new Error("capture_failed: Attachment image is not a pi-os shelf capture");
+  const image = await loadScreenshotImage(attachment.path, capturesDir);
+  const header = Buffer.from(image.data.slice(0, 32), "base64");
+  if (header.length < 24 || header.toString("latin1", 12, 16) !== "IHDR"
+    || header.readUInt32BE(16) !== attachment.width || header.readUInt32BE(20) !== attachment.height) {
+    throw new Error("capture_failed: Attachment image does not match its declared size");
+  }
+  return image;
+}
+
+/** Attachment text for a prompt plus the extra content (images) sent right after its message. */
+export interface AttachmentPrompt {
+  lines: string[];
+  content: (TextContent | ImageContent)[];
+}
+
+/**
+ * renderAttachmentsForPrompt with a fresh nonce (its "pointing at" line per element names the element's
+ * window when that is not the request's `contextId`), ledger refs for file tokens (the only way a token
+ * reaches the agent), and the images in attachment order behind a note that they are data, not window
+ * captures. An image that fails its checks is named as missing.
+ */
+export async function attachmentPrompt(attachments: readonly Attachment[], capturesDir: string,
+  ledger?: Pick<FileLedger, "register">, contextId?: string): Promise<AttachmentPrompt> {
+  if (!attachments.length) return { lines: [], content: [] };
+  const lines = [renderAttachmentsForPrompt(attachments, { nonce: randomBytes(8).toString("hex"), ...(contextId ? { contextId } : {}) })];
+  attachments.forEach((attachment, index) => {
+    if (attachment.kind === "file" && attachment.token && ledger) {
+      // The path stays with the host: the ledger shows a name and no folder.
+      const [file] = ledger.register([{ token: attachment.token, name: attachment.name, path: "", isDirectory: false, isPackage: false,
+        ...(attachment.uti ? { contentType: attachment.uti } : {}) }]);
+      if (file) lines.push(`Attachment [${index + 1}] is file ref ${file.ref} for the pi-os file tools (open, reveal or show it; its contents are not attached).`);
+    }
+  });
+  lines.push("");
+  const images = attachments.filter((attachment): attachment is ImageAttachment => attachment.kind === "image");
+  if (!images.length) return { lines, content: [] };
+  const loaded = await Promise.all(images.map(image => loadShelfImage(image, capturesDir).catch(() => undefined)));
+  const content: (TextContent | ImageContent)[] = [{ type: "text",
+    text: "Attachment images (untrusted content the user added; not captures of the pinned window, so never take click coordinates from them):" }];
+  loaded.forEach((image, index) => {
+    content.push({ type: "text", text: image ? `Attachment image ${index + 1}:` : `Attachment image ${index + 1} could not be read and is missing.` });
+    if (image) content.push(image);
+  });
+  return { lines, content };
 }
 
 export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult> {
@@ -392,8 +795,11 @@ export async function createLiveSession(options: AgentRunOptions): Promise<LiveA
   const lifetime = new AbortController();
   const mac = process.platform === "darwin";
   const readOnly = options.readOnly ?? mac;
-  const browser = mac && !readOnly && snapshot.browser?.mode === "cdp"
-    ? new BrowserSession(hostClient, contextId, lifetime.signal) : undefined;
+  const platform = services.platform ?? process.platform;
+  // The pinned Brave tab (DESIGN2 §7): Accessibility by default (host browser.page / browser.axAct, no
+  // DevTools socket, no dialog); DevTools only for an explicit "cdp" hint with control; macOS only.
+  const browser = createBrowserTransport(snapshot.browser, hostClient, contextId, { readOnly, signal: lifetime.signal, platform });
+  const ax = browser?.mode === "ax" ? browser : undefined;
 
   if (signal?.aborted) throw abortError(signal);
   const isolated = effectiveResourceMode(process.platform, readOnly, options.resourceSelection) === "isolated";
@@ -401,15 +807,34 @@ export async function createLiveSession(options: AgentRunOptions): Promise<LiveA
   let live: LiveAgentSession | undefined;
   // The user's raw requests (promptFirst/promptFollowup add them); a prepared session reads them at execute time.
   const userRequests: string[] = [];
+  // macOS sessions are scope-aware (general/window turns); Windows hosts send no context and keep
+  // today's prompt and tools. Every turn sets the scope (planTurn/promptFirst), so a prepared session
+  // serves either scope.
+  const scoped = platform === "darwin";
+  const lean = scoped && isolated;
+  const thread = new ThreadContext(capturesDir, platform, contextId);
+  thread.ax = ax;
+  const hooks: ContextHooks | undefined = scoped ? {
+    pullState: () => thread.scope !== "general" || thread.pulled ? "pulled" : thread.pull === "allowed" ? "allowed" : "denied",
+    pulled: () => {
+      if (thread.scope === "general" && !thread.pulled) thread.pulledOnly = true;
+      thread.pulled = thread.lookedAt = true;
+      thread.sync();
+    },
+    browserPage: () => pulledPage(thread),
+    takePromptContent: () => { const content = thread.promptContent; thread.promptContent = undefined; return content; },
+  } : undefined;
   const { extensions, computerUse: extension, ledger } = sessionExtensions({
-    contextId, hostClient, capturesDir, readOnly, launcher: options.launcher === true,
+    contextId, hostClient, capturesDir, readOnly, launcher: options.launcher === true, platform,
     ...(snapshot.screenshot?.imageId ? { initialScreenshotId: snapshot.screenshot.imageId } : {}),
     ...(browser ? { browser } : {}),
     ...(services.engines ? { engines: services.engines } : {}),
     onCard: (spec, complete) => live?.emitCard(spec, complete),
     userRequests: () => userRequests,
+    ...(hooks ? { context: hooks } : {}),
+    leanPrompt: lean,
   });
-  const loader = await loadAgentResources(extensions, cwd, agentDir, isolated);
+  const loader = await loadAgentResources(extensions, cwd, agentDir, isolated, lean ? { systemPrompt: PI_OS_SYSTEM_PROMPT } : {});
 
   const modelRuntime = await (services.modelRuntime ?? (() => ModelRuntime.create()))();
   // Every invocation runtime knows Auto; the handle is this session's decision slot.
@@ -427,7 +852,6 @@ export async function createLiveSession(options: AgentRunOptions): Promise<LiveA
 
   // Settings-page selection (if any) -> concrete model for THIS invocation; none (or a lost one) -> Auto
   // on macOS, pi's own default elsewhere.
-  const platform = services.platform ?? process.platform;
   const resolved = resolveSessionModel(modelRuntime, options.modelSelection, routing().bias, platform);
   if (resolved.fallbackReason) log(`[agent] ${resolved.fallbackReason}; ${platform === "darwin" ? "using Auto" : "using pi's automatic default"}`);
 
@@ -437,7 +861,7 @@ export async function createLiveSession(options: AgentRunOptions): Promise<LiveA
     modelRuntime,
     resourceLoader: loader,
     sessionManager: SessionManager.inMemory(),
-    ...(isolated ? { tools: sessionToolAllowlist({ readOnly, browser: Boolean(browser), auto: resolved.auto }) } : {}),
+    ...(isolated ? { tools: sessionToolAllowlist({ readOnly, ...(browser ? { browser } : {}), auto: resolved.auto, activeWindow: scoped }) } : {}),
     // Always explicit (also Windows trusted mode) so the image override applies to every session.
     settingsManager: createSessionSettings(isolated, cwd, agentDir),
   };
@@ -462,10 +886,16 @@ export async function createLiveSession(options: AgentRunOptions): Promise<LiveA
     const current = session.getActiveToolNames();
     if (current.length !== names.length || names.some(name => !current.includes(name))) session.setActiveToolsByName(names);
   };
-  setActiveTools(toolNames);
+  // The scope decides which tools exist this turn; a light lane's omissions (codemode) stay as they are.
+  thread.sync = () => {
+    const current = new Set(session.getActiveToolNames());
+    setActiveTools(scopeToolNames(toolNames, thread).filter(name => current.has(name) || !LIGHT_LANE_OMITTED_TOOLS.includes(name)));
+  };
+  setActiveTools(scopeToolNames(toolNames, thread));
+  thread.seedExtension = imageId => extension.seedScreenshot(imageId);
   log(
     `[agent] model=${session.model ? `${session.model.provider}/${session.model.id}` : "default"}` +
-    ` effort=${session.thinkingLevel} tools=${toolNames.length}`,
+    ` effort=${session.thinkingLevel} tools=${scopeToolNames(toolNames, thread).length}`,
   );
 
   let memo: { source: readonly Model<any>[]; catalog: RoutingCatalog } | undefined;
@@ -481,12 +911,17 @@ export async function createLiveSession(options: AgentRunOptions): Promise<LiveA
   }, () => {
     if (!first) { extension.invalidateScreenshot(); browser?.invalidateReferences(); }
     first = false;
+    // A staged page's refs are actionable from the prompt that shows it (no second read before acting).
+    const staged = thread.staged;
+    thread.staged = undefined;
+    if (staged) ax?.adoptPage(staged);
   }, {
     ...(resolved.auto ? { auto } : {}),
     catalog,
     thinkingLevel: () => session.thinkingLevel,
     ...(!resolved.auto && session.model ? { manual: { provider: session.model.provider, model: session.model.id, thinkingLevel: session.thinkingLevel } } : {}),
-    toolNames,
+    // Scoped: planTurn's lanes and an escalation's restore both select from what the scope allows.
+    get toolNames() { return scopeToolNames(toolNames, thread); },
     setActiveTools,
     revokeInitialScreenshot: () => extension.invalidateScreenshot(),
     ...(snapshot.screenshot?.imageId ? { initialScreenshotId: snapshot.screenshot.imageId } : {}),
@@ -494,6 +929,7 @@ export async function createLiveSession(options: AgentRunOptions): Promise<LiveA
     setupKey: sessionSetupKey(options),
     addUserRequest: (text: string) => { if (userRequests.length < 64) userRequests.push(text.slice(0, 4_000)); },
   });
+  threads.set(live, thread);
   return live;
 }
 
@@ -506,12 +942,24 @@ export interface TurnInput {
   hints?: ClassifierHints | null;
   settings: RoutingSettings;
   stats?: LatencyView;
+  /**
+   * The host's context for this turn (the same value promptFirst/promptFollowup get). Absent on a
+   * first turn: legacy; absent on a follow-up: the thread's scope is inherited.
+   */
+  context?: ContextWire;
+  /** This turn's attachments: an image needs a vision-capable model. */
+  attachments?: readonly Attachment[];
+  /**
+   * The snapshot's screenshot was captured for this follow-up (the server's fresh capture of the pin):
+   * a window follow-up then shows it (FollowupOptions.freshScreenshot) and routes like an image request.
+   */
+  freshScreenshot?: boolean;
 }
 
 export interface TurnPlan {
   decision?: RouteDecision;
   routeInput?: RouteInput;
-  /** Attach the pinned screenshot to the first prompt. */
+  /** Attach the pinned screenshot to the first prompt (never in a general turn). */
   attachScreenshot: boolean;
   activeTools?: string[];
 }
@@ -519,18 +967,38 @@ export interface TurnPlan {
 /**
  * Auto: route the next prompt BEFORE it is sent. Heuristics (+ already-available advisory
  * hints) → decide() (< 1 ms, no I/O) → the session's decision slot, the turn's active tools
- * and screenshot gating. Sessions on a manually chosen model keep today's behaviour.
+ * and screenshot gating. Sessions on a manually chosen model keep today's routing. The turn's
+ * context scope is applied first: it selects the tools and whether the window image exists.
  */
 export function planTurn(live: LiveAgentSession, turn: TurnInput): TurnPlan {
+  const thread = threads.get(live);
+  // A transition left by a follow-up that never reached its prompt must not leak into this one.
+  if (turn.followup) thread?.takeTransition();
+  thread?.apply(turn.context, turn.followup);
+  const general = thread?.general ?? false;
   const { auto, catalog } = live.controls;
-  if (!auto || !catalog) return { attachScreenshot: true };
-  const context = turn.snapshot && !turn.followup
-    ? routeContextFromSnapshot(turn.snapshot)
-    // Follow-ups never carry an image; route them like a text request on the same surface.
-    : { ...(turn.snapshot ? routeContextFromSnapshot(turn.snapshot) : { surface: "other" as const, browserCdp: false }), hasScreenshot: false };
+  if (!auto || !catalog) {
+    thread?.sync();
+    return { attachScreenshot: !general };
+  }
+  // The thread's host scope reaches the router (N1 RouteInput): window shows the window image and needs
+  // vision, general never attaches it, and legacy (no scope) keeps today's screen-need formula. A pull
+  // routes the thread as window; attachment images need a vision model of their own, and attached
+  // text counts like a selection.
+  const scope = thread && thread.scope !== "legacy" ? thread.scope : undefined;
+  const base = turn.snapshot ? routeContextFromSnapshot(turn.snapshot, scope)
+    : { surface: "other" as const, hasScreenshot: false, browserCdp: false, ...(scope ? { scope } : {}) };
+  // Follow-ups never carry the pinned image (route them like a text request on the same surface),
+  // except a fresh capture: shown when a follow-up brings the window into a general thread, or in a
+  // window thread that had no screenshot (followupShowsCapture).
+  const windowImage = base.hasScreenshot && (turn.followup
+    ? followupShowsCapture(thread?.transition ?? "none", general, turn.freshScreenshot === true) : !general);
+  const attached = turn.attachments?.length ? attachmentStats(turn.attachments) : { images: 0, textChars: 0 };
   const lastTier = auto.lastTier();
-  const routeInput = buildRouteInput(turn.text, context, {
+  const routeInput = buildRouteInput(turn.text, { ...base, hasScreenshot: windowImage }, {
     followup: turn.followup, ...(lastTier ? { lastTier } : {}), ...(turn.hints ? { hints: turn.hints } : {}),
+    ...(thread?.pulled ? { pulled: true } : {}), ...(attached.images > 0 ? { hasImageAttachment: true } : {}),
+    ...(attached.textChars > 0 ? { selectionChars: attached.textChars } : {}),
   });
   const settings: RoutingSettings = { ...turn.settings, bias: biasForThinkingLevel(live.controls.thinkingLevel?.()) };
   const decision = decide(routeInput, catalog(), settings, turn.stats ? { stats: turn.stats } : {});
@@ -540,7 +1008,7 @@ export function planTurn(live: LiveAgentSession, turn: TurnInput): TurnPlan {
     activeTools = activeToolsFor(live.controls.toolNames, decision);
     live.controls.setActiveTools(activeTools);
   }
-  return { decision, routeInput, attachScreenshot: decision.attachScreenshot, ...(activeTools ? { activeTools } : {}) };
+  return { decision, routeInput, attachScreenshot: !general && decision.attachScreenshot, ...(activeTools ? { activeTools } : {}) };
 }
 
 /** Prompt note for push-to-talk input; carries no transcript metadata beyond the language. */
@@ -556,43 +1024,165 @@ export function spokenInputNote(input: InvokeInput | undefined): string[] {
   ];
 }
 
+const NO_SCREENSHOT_NOTE = "No screenshot is attached to this request; call desktop_capture_window when you need to see the window.";
+
+/**
+ * Sends one prompt with its attachment images handed to the computer-use extension, and the page read
+ * it shows handed to the AX transport (adopted at the prompt's start), for exactly this prompt.
+ */
+async function send(live: LiveAgentSession, text: string, signal: AbortSignal | undefined, image: ImageContent | undefined,
+  content: (TextContent | ImageContent)[], staged?: StagedPageRead): Promise<AgentRunResult> {
+  const thread = threads.get(live);
+  if (thread && content.length) thread.promptContent = content;
+  if (thread && staged) thread.staged = staged;
+  try { return await live.prompt(text, signal, image); }
+  finally { if (thread) { thread.promptContent = undefined; thread.staged = undefined; } }
+}
+
+/**
+ * The first prompt of a thread, per scope (DESIGN2 §5.2):
+ *  - legacy (no context) and window: the pinned-window context, the screenshot the plan attaches,
+ *    and the Brave page digest when the host has one (macOS: compact JSON; Windows: unchanged);
+ *  - general: no screenshot (its seeded authority is revoked), no desktop JSON, no window tools, only
+ *    the active app's name and, when the host allows a pull, the use_active_window loader.
+ * Attachments are rendered as untrusted data in every scope; their images follow the message.
+ */
 export async function promptFirst(live: LiveAgentSession, options: AgentRunOptions): Promise<AgentRunResult> {
   const { snapshot, prompt, capturesDir, signal } = options;
+  const thread = threads.get(live);
+  // planTurn usually applied the context already; applying the same first-turn context again is a no-op.
+  if (options.context) thread?.apply(options.context, false);
+  if (thread) {
+    thread.browserPage = options.browserPage;
+    thread.sync();
+  }
+  const general = thread?.general ?? false;
+  const mac = (thread?.platform ?? process.platform) === "darwin";
   const isolated = effectiveResourceMode(process.platform, options.readOnly ?? process.platform === "darwin", options.resourceSelection) === "isolated";
   const available = Boolean(snapshot.screenshot?.filePath);
-  const attach = attachesScreenshot(snapshot, { attachScreenshot: options.attachScreenshot !== false });
+  const attach = !general && attachesScreenshot(snapshot, { attachScreenshot: options.attachScreenshot !== false });
   // Coordinate authority follows delivered images only (computerUseExtension): no image, no authority,
   // and a seed for any other image (a session prepared before this capture) never authorizes either.
-  if (!attach || live.controls.initialScreenshotId !== snapshot.screenshot?.imageId) live.controls.revokeInitialScreenshot?.();
-  const userMessage = [
-    "## Desktop context (target identity pinned before the prompt appeared)",
-    summarizeSnapshot(attach ? snapshot : { ...snapshot, screenshot: null }),
-    ...(available && !attach ? ["No screenshot is attached to this request; call desktop_capture_window when you need to see the window."] : []),
-    "",
-    ...(!isolated && process.platform === "darwin" ? ["## Trusted pi compatibility", TRUST_WARNING,
-      "Desktop tool refusals must not be bypassed through another input path.", ""] : []),
-    ...spokenInputNote(options.input),
-    "## Request",
-    prompt,
-  ].join("\n");
-
+  const seed = thread?.seed ?? live.controls.initialScreenshotId;
+  if (thread) thread.started = true;
+  if (!attach || seed !== snapshot.screenshot?.imageId) live.controls.revokeInitialScreenshot?.();
   if (signal?.aborted) throw abortError(signal);
   // The raw request only (never the context summary, window title or document path above).
   live.controls.addUserRequest?.(prompt);
-  const image = attach && snapshot.screenshot?.filePath
-    ? await loadScreenshotImage(snapshot.screenshot.filePath, capturesDir) : undefined;
-  return live.prompt(userMessage, signal, image);
+  const [image, page, shelf] = await Promise.all([
+    attach && snapshot.screenshot?.filePath ? loadScreenshotImage(snapshot.screenshot.filePath, capturesDir) : undefined,
+    general ? undefined : pageSection(thread, options.browserPage),
+    attachmentPrompt(options.attachments ?? [], capturesDir, live.controls.ledger, options.contextId),
+  ]);
+  if (signal?.aborted) throw abortError(signal);
+  const shown = attach ? snapshot : { ...snapshot, screenshot: null };
+  const userMessage = [
+    ...(general ? [] : [
+      "## Desktop context (target identity pinned before the prompt appeared)",
+      mac ? compactSnapshotSummary(shown) : summarizeSnapshot(shown),
+      // An explicit window turn says so whenever its image is missing (capture failed or no vision model).
+      ...((thread?.scope === "window" ? !attach : available && !attach) ? [NO_SCREENSHOT_NOTE] : []),
+      "",
+      ...(page ? [page.text, ""] : []),
+    ]),
+    ...shelf.lines,
+    ...(!isolated && process.platform === "darwin" ? ["## Trusted pi compatibility", TRUST_WARNING,
+      "Desktop tool refusals must not be bypassed through another input path.", ""] : []),
+    ...spokenInputNote(options.input),
+    ...(general && thread ? activeAppLines(snapshot, thread.pull) : []),
+    "## Request",
+    prompt,
+  ].join("\n");
+  return send(live, userMessage, signal, image, shelf.content, page?.read);
 }
 
-export function promptFollowup(live: LiveAgentSession, prompt: string, signal?: AbortSignal, input?: InvokeInput): Promise<AgentRunResult> {
+/** What a follow-up may carry besides its words (POST /invocations/{id}/followup). */
+export interface FollowupOptions {
+  /** The host's context for this follow-up; absent: the thread's scope is inherited. */
+  context?: ContextWire;
+  attachments?: Attachment[];
+  /**
+   * A fresh snapshot of the thread's pin. Shown (summary and screenshot, viewing only: follow-up
+   * images never authorize coordinates) when this follow-up brings the window into a general thread.
+   */
+  snapshot?: DesktopContextSnapshot & { screenshot?: ScreenshotRef | null };
+  /**
+   * The pinned Brave tab's page digest, staged when the window comes in and read by use_active_window.
+   * A provider serves only its own request: without one this follow-up shows no digest.
+   */
+  browserPage?: BrowserPageProvider;
+  /**
+   * `snapshot.screenshot` was captured for this follow-up. A window thread that had no screenshot (its
+   * first capture failed) shows it, viewing only; an upgrade shows the snapshot's screenshot anyway.
+   */
+  freshScreenshot?: boolean;
+}
+
+const WINDOW_FOLLOWUP = [
+  "## Follow-up on the same pinned target",
+  "Keep the thread's original target; never retarget. Earlier screenshots and browser references are historical.",
+  "Take a fresh desktop_capture_window or browser_snapshot before acting. All safety and cumulative input budgets still apply.",
+];
+
+const VIEWING_SCREENSHOT_NOTE = "The current screenshot of the window is attached for viewing; call desktop_capture_window before the first coordinate action.";
+
+/** Whether a follow-up shows a capture of the pin: one that brings the window into a general thread, or a fresh one in a window thread. */
+function followupShowsCapture(transition: ScopeTransition, general: boolean, fresh: boolean): boolean {
+  return transition === "upgrade" || (fresh && !general && transition === "none");
+}
+
+/**
+ * A follow-up in the thread's scope. Window (and legacy) threads keep the pinned-target note; a
+ * general thread adds nothing; a follow-up that brings the window in shows it (and activates the
+ * window tools), and one that leaves it out says that earlier window content is historical. With
+ * nothing to load (no attachments, no window coming in) the prompt starts synchronously, as before.
+ */
+export function promptFollowup(live: LiveAgentSession, prompt: string, signal?: AbortSignal, input?: InvokeInput,
+  options: FollowupOptions = {}): Promise<AgentRunResult> {
+  const thread = threads.get(live);
+  if (options.context) thread?.apply(options.context, true);
+  if (thread) {
+    // Never an earlier request's provider: a memoized read from that time would show a stale page
+    // (e.g. a Like's old pressed state) next to a fresh screenshot.
+    thread.browserPage = options.browserPage;
+    thread.sync();
+  }
+  const transition = thread?.takeTransition() ?? "none";
   live.controls.addUserRequest?.(prompt);
-  return live.prompt([
-    "## Follow-up on the same pinned target",
-    "Keep the thread's original target; never retarget. Earlier screenshots and browser references are historical.",
-    "Take a fresh desktop_capture_window or browser_snapshot before acting. All safety and cumulative input budgets still apply.",
-    ...spokenInputNote(input),
-    "## Request", prompt,
-  ].join("\n"), signal);
+  // A capture of the pin goes with this follow-up when the window comes in, or fresh into a window thread.
+  const shows = followupShowsCapture(transition, thread?.general ?? false, options.freshScreenshot === true);
+  const compose = (image: ImageContent | undefined, page: PageSection | undefined, shelf: AttachmentPrompt) => {
+    const header = transition === "upgrade" ? [
+      "## Follow-up: the user included the active window",
+      "Keep the thread's original target; never retarget. The desktop tools for the pinned window are available now.",
+      ...(options.snapshot ? [compactSnapshotSummary({ ...options.snapshot, screenshot: image ? options.snapshot.screenshot ?? null : null })] : []),
+      image ? VIEWING_SCREENSHOT_NOTE : "No screenshot is attached; call desktop_capture_window when you need to see the window.",
+      "",
+      ...(page ? [page.text, ""] : []),
+    ] : transition === "downgrade" ? [
+      "## Follow-up: the active window is no longer included",
+      `Earlier screenshots and page content in this thread are historical; do not look at or act on the window.${thread?.pull === "allowed"
+        ? " Call use_active_window only if the request refers to something shown there." : ""}`,
+      "",
+    ] : transition === "lost" ? [
+      "## Follow-up: the window is no longer available",
+      "The window looked at earlier in this thread was closed or can no longer be reached, so it is not included and its tools are off."
+        + " Earlier screenshots and page content are historical: use them only for what they showed then, and say so.",
+      "",
+    ] : thread?.general ? [] : image ? [...WINDOW_FOLLOWUP, VIEWING_SCREENSHOT_NOTE] : WINDOW_FOLLOWUP;
+    return [...header, ...shelf.lines, ...spokenInputNote(input), "## Request", prompt].join("\n");
+  };
+  if (!shows && !options.attachments?.length) return send(live, compose(undefined, undefined, { lines: [], content: [] }), signal, undefined, []);
+  return (async () => {
+    const shot = shows ? options.snapshot?.screenshot?.filePath : undefined;
+    const [image, page, shelf] = await Promise.all([
+      shot && thread ? loadScreenshotImage(shot, thread.capturesDir).catch(() => undefined) : undefined,
+      transition === "upgrade" ? pageSection(thread, thread?.browserPage) : undefined,
+      attachmentPrompt(options.attachments ?? [], thread?.capturesDir ?? "", live.controls.ledger, thread?.contextId),
+    ]);
+    if (signal?.aborted) throw abortError(signal);
+    return send(live, compose(image, page, shelf), signal, image, shelf.content, page?.read);
+  })();
 }
 
 /** Normalize an aborted signal into a classifiable error. */

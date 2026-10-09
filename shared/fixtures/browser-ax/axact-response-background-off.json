@@ -1,0 +1,7 @@
+{
+  "ok": false,
+  "error": {
+    "code": "browser_background_disabled",
+    "message": "Background actions in Brave are turned off in pi-os Settings."
+  }
+}

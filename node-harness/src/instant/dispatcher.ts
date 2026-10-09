@@ -1,6 +1,8 @@
 import { homedir } from "node:os";
+import { rulesContextScorer, warmContextScope } from "../agent/routing/contextScope.js";
 import type { HostAction } from "../contracts/actions.js";
 import type { CardSpec } from "../contracts/cards.js";
+import { parseInstantScope, type ContextScorer, type InstantScope } from "../contracts/context.js";
 import type {
   ClassifierHints, FallthroughReason, InstantIntent, InstantPhase, InstantRequest, InstantResponse, IntentClassifier,
 } from "../contracts/instant.js";
@@ -29,12 +31,20 @@ import type { DateQuery, MatchContext, Parsed } from "./types.js";
  * the last), so only the settled query reaches the host's serial search queue.
  * Numbers are parsed and shown in the request's format locale and copied in the
  * same decimal convention. Never throws: every failure is a fallthrough. Logs
- * (perf) carry phase/decision/intent and timings only.
+ * (perf) carry phase/decision/intent and timings only. Every response to a
+ * readable request carries the advisory context `scope` of its text (rules v2,
+ * microseconds, computed before any engine work): the host's context chip
+ * listens to it while the user types or speaks.
  */
 
 export interface InstantDispatcherDeps extends InstantDeps {
   /** Optional advisory classifier, consulted only on a grammar miss for partial/final, only for hints. */
   classifier?: IntentClassifier;
+  /**
+   * On-device scorer for `scope` on every response (default: rules v2, routing/contextScope.ts).
+   * Synchronous and local: it sees typing and partials. NO_CONTEXT_SCORER leaves the field out.
+   */
+  scorer?: ContextScorer;
   /** Settings kill switch; false → fallthrough "disabled". */
   enabled?: () => boolean;
   /** Default web search template with %s (DuckDuckGo). */
@@ -75,6 +85,8 @@ export interface InstantDispatcher {
 }
 
 export const MAX_INSTANT_TEXT = 500;
+/** Longest text a scorer sees (over-long requests still fall through to the agent, which the chip serves). */
+const MAX_SCORED_TEXT = 4_000;
 const PHASES: readonly InstantPhase[] = ["typing", "partial", "final"];
 const TIMEOUT = Symbol("timeout");
 const FAILED = Symbol("failed");
@@ -205,6 +217,19 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
     classifierMs: deps.budgets?.classifierMs ?? 250,
   };
   const timeoutMs = deps.calcTimeoutMs ?? 30;
+  const scorer = deps.scorer ?? rulesContextScorer;
+  // The default rules compile their regexes now (once per process), not on the first keystroke.
+  if (scorer === rulesContextScorer) warmContextScope();
+
+  /** The text's scope, or undefined (unreadable request, no scorer, a scorer that failed or answered off-contract). */
+  function scopeOf(text: unknown): InstantScope | undefined {
+    if (typeof text !== "string" || !text.trim()) return undefined;
+    try {
+      return parseInstantScope(scorer(text.slice(0, MAX_SCORED_TEXT))) ?? undefined;
+    } catch {
+      return undefined;
+    }
+  }
 
   async function math(parsed: Extract<Parsed, { kind: "calc" | "unit" | "base" }>, locale: string): Promise<Body | null> {
     const engine = await fend.get();
@@ -458,11 +483,13 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
     const phase: InstantPhase = PHASES.includes(request?.phase) ? request.phase : "final";
     const signal = callerSignal ?? new AbortController().signal;
     let intentLabel = "none";
+    // Every phase and decision: the chip needs it on typing previews and on instant answers alike.
+    const scope = scopeOf(request?.text);
     const finish = (body: Body): InstantResponse => {
       const elapsedMs = Math.round((clock() - started) * 10) / 10;
       const label = body.decision === "fallthrough" ? body.reason : body.decision === "refuse" ? "refuse" : body.intent;
       deps.perf?.("instant.dispatch", elapsedMs, { phase, decision: body.decision, kind: label, parsed: intentLabel });
-      return { seq, elapsedMs, source: "grammar", ...body } as InstantResponse;
+      return { seq, elapsedMs, source: "grammar", ...body, ...(scope ? { scope } : {}) } as InstantResponse;
     };
     try {
       if (typeof request?.text !== "string" || !PHASES.includes(request.phase) || request.text.length > MAX_INSTANT_TEXT) return finish(fallthrough("no_match"));

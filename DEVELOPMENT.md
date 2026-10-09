@@ -97,9 +97,26 @@ directory (macOS) and lets `fetch` reach only this project's loopback routes
 provider APIs, the ECB rate feed and Ollama, throws. Do not bypass it. The
 integration tests (`test/integration*.test.ts`) drive the HTTP surface end to end
 with a fake host and an in-process provider (pi-ai's faux core), so real pi
-sessions, the Auto router, SSE and cards run without any network or model. The
+sessions, the Auto router, SSE and cards run without any network or model.
+`test/serverContext.test.ts` covers the context scope and the context shelf through the
+same HTTP surface: strict `context` / `attachments` parsing (every shared fixture), general
+vs window turns, a general turn that survives a lost window, attachments end to end, the
+Brave page digest served by a fake `browser.page` route from `shared/fixtures/browser-ax`,
+and log lines checked for the absence of request, attachment and page text. The
 macOS conformance suite (`npm run test:macos`) additionally builds and starts the
 Swift host in `--conformance` mode; it never installs or signs anything.
+
+### Context scope and attachments (macOS)
+
+Hosts without a context chip (Windows, older Mac builds) send no `context`: the harness
+then runs today's window turn unchanged. A Mac request with `context.scope: "general"`
+gets no screenshot, no desktop JSON and no window tools, only the app name and, when the
+host allows a pull, the `use_active_window` tool; it continues even when the pinned window
+is gone. `scope: "window"` keeps today's strictness and, for a Brave tab pinned in
+Accessibility mode, stages the host's `browser.page` digest into the first prompt (read in
+parallel, at most 1.5 s, never through DevTools). Attachments (`attachments[]`) are
+validated against `PI_OS_CAPTURES_DIR`: shelf images must be `shelf-<id>.png` directly
+inside it. See `shared/protocol/protocol.md` ("Context scope", "Attachments").
 
 ## Refresh the installed application
 
@@ -161,8 +178,17 @@ are read on the next request.
 | `cache/fx-ecb.json` | The cached ECB reference rates. |
 | `logs/classifier-shadow.jsonl` | Only with the classifier's shadow log on: labels, probabilities and latency, never text (pauses at 5 MiB). |
 
-Harness logs never contain prompts, transcripts, typed text, file names or classifier
-inputs; `[perf] stage=… ms=…` lines carry stage names, durations, counts and model ids.
+Harness logs never contain prompts, transcripts, typed text, file names, classifier
+inputs, attachment content, window titles, page text or paths; `[perf] stage=… ms=…` lines
+carry stage names, durations, counts, codes and model ids. Per turn: `invoke.context`
+(scope, source, pull, window availability, rules score, the host's `hint`, attachment
+count and kinds), `context.label` (explicit user choices: label and scores only, for
+retraining the scope scorer), `invoke.page` (Brave digest read: ok/code, length, refs),
+`invoke.capture` (a follow-up's fresh capture of the pin, taken only by the harness when the
+window comes in or the thread has no screenshot yet: ok/code),
+`invoke.route` (tier, model, scope, screenshot, vision), `agent.response` (TTFT,
+`createdMs` to the provider's stream start, `firstDelta` kind, tokens) and `invoke.total`
+(model turns, scope, pulled, included, attachment count).
 
 ## Process safety
 

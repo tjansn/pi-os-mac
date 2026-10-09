@@ -1,0 +1,13 @@
+{
+  "seq": 6,
+  "elapsedMs": 0,
+  "source": "grammar",
+  "decision": "fallthrough",
+  "reason": "no_match",
+  "scope": {
+    "window": 0.6,
+    "reasons": [
+      "Pronoun!"
+    ]
+  }
+}

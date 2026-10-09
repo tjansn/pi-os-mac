@@ -2,11 +2,10 @@ import { createRequire } from "node:module";
 import type { EventEmitter } from "node:events";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { BrowserError, failure } from "./errors.js";
 
-export class BrowserError extends Error {
-  constructor(readonly code: string, message: string) { super(`${code}: ${message}`); }
-}
-export const failure = (code: string, message: string): never => { throw new BrowserError(code, message); };
+// DevTools opt-in transport only (`BrowserHint.mode === "cdp"`); the default AX path never loads it.
+export { BrowserError, failure };
 export interface BrowserConnection {
   processId: number; port: number; initialURL: string; url: string;
   allowCredentialFields?: boolean;

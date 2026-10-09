@@ -1,0 +1,8 @@
+{
+  "ok": true,
+  "result": {
+    "performed": false,
+    "action": "press",
+    "verification": "Not pressed."
+  }
+}

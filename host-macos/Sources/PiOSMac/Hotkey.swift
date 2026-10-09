@@ -37,13 +37,51 @@ public struct HotkeyChord: Equatable {
         "q": 12, "r": 15, "s": 1, "t": 17, "u": 32, "v": 9, "w": 13, "x": 7, "y": 16, "z": 6,
         "0": 29, "1": 18, "2": 19, "3": 20, "4": 21, "5": 23, "6": 22, "7": 26, "8": 28, "9": 25,
     ]
+    /// The same chord with ⇧ added (the "Ask about this window" variant), or nil when it already has ⇧.
+    public var withShift: HotkeyChord? {
+        guard modifiers & UInt32(shiftKey) == 0 else { return nil }
+        return HotkeyChord(keyCode: keyCode, modifiers: modifiers | UInt32(shiftKey))
+    }
+    private init(keyCode: UInt32, modifiers: UInt32) { self.keyCode = keyCode; self.modifiers = modifiers }
+
+    /// `com.apple.symbolichotkeys` stores modifiers as NSEvent flag masks (⌃ = 1 << 18), not Carbon bits
+    /// (⌃ = 4096): the old comparison could never match (selection.md side finding).
+    var eventModifierMask: UInt32 {
+        var mask: UInt32 = 0
+        if modifiers & UInt32(controlKey) != 0 { mask |= UInt32(NSEvent.ModifierFlags.control.rawValue) }
+        if modifiers & UInt32(optionKey) != 0 { mask |= UInt32(NSEvent.ModifierFlags.option.rawValue) }
+        if modifiers & UInt32(cmdKey) != 0 { mask |= UInt32(NSEvent.ModifierFlags.command.rawValue) }
+        if modifiers & UInt32(shiftKey) != 0 { mask |= UInt32(NSEvent.ModifierFlags.shift.rawValue) }
+        return mask
+    }
+    /// ⇧⌃⌥⌘ only: entries also carry device bits such as fn (F-keys) and the numeric pad.
+    static let comparedModifiers = UInt32(NSEvent.ModifierFlags([.shift, .control, .option, .command]).rawValue)
+    /// macOS defaults that are absent from the plist until the user changes them (id → key code, NSEvent mask):
+    /// screenshots (⇧⌘3/4/5 and the ⌃ clipboard variants), Spotlight (⌘Space, ⌥⌘Space) and input sources
+    /// (⌃Space, ⌃⌥Space). An entry in the plist always wins over these.
+    static let systemDefaults: [String: (keyCode: UInt32, modifiers: UInt32)] = {
+        let shift = UInt32(NSEvent.ModifierFlags.shift.rawValue), control = UInt32(NSEvent.ModifierFlags.control.rawValue)
+        let option = UInt32(NSEvent.ModifierFlags.option.rawValue), command = UInt32(NSEvent.ModifierFlags.command.rawValue)
+        return ["28": (20, shift | command), "29": (20, control | shift | command), "30": (21, shift | command),
+                "31": (21, control | shift | command), "184": (23, shift | command), "64": (49, command),
+                "65": (49, option | command), "60": (49, control), "61": (49, control | option)]
+    }()
     public func systemConflict() -> Bool {
-        guard let domain = UserDefaults.standard.persistentDomain(forName: "com.apple.symbolichotkeys"),
-              let keys = domain["AppleSymbolicHotKeys"] as? [String: [String: Any]] else { return false }
-        return keys.values.contains { entry in
-            guard (entry["enabled"] as? NSNumber)?.boolValue == true,
-                  let value = entry["value"] as? [String: Any], let parameters = value["parameters"] as? [NSNumber], parameters.count >= 3 else { return false }
-            return parameters[1].uint32Value == keyCode && parameters[2].uint32Value == modifiers
+        let keys = UserDefaults.standard.persistentDomain(forName: "com.apple.symbolichotkeys")?["AppleSymbolicHotKeys"] as? [String: Any]
+        return systemConflict(symbolicHotKeys: keys)
+    }
+    /// Pure form for tests: `symbolicHotKeys` is the `AppleSymbolicHotKeys` dictionary (nil = none stored).
+    func systemConflict(symbolicHotKeys: [String: Any]?) -> Bool {
+        let stored = symbolicHotKeys ?? [:]
+        let mask = eventModifierMask
+        for raw in stored.values {
+            guard let entry = raw as? [String: Any], (entry["enabled"] as? NSNumber)?.boolValue == true,
+                  let value = entry["value"] as? [String: Any], let parameters = value["parameters"] as? [NSNumber],
+                  parameters.count >= 3 else { continue }
+            if parameters[1].uint32Value == keyCode && parameters[2].uint32Value & Self.comparedModifiers == mask { return true }
+        }
+        return Self.systemDefaults.contains { id, chord in
+            stored[id] == nil && chord.keyCode == keyCode && chord.modifiers == mask
         }
     }
 }

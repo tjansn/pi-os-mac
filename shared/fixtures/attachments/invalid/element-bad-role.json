@@ -1,0 +1,22 @@
+{
+  "invocationId": "inv-ctx-0001",
+  "contextId": "ctx-123",
+  "invokedAt": "2026-10-05T09:00:00Z",
+  "retainSession": true,
+  "takeId": "take-7",
+  "prompt": "x",
+  "attachments": [
+    {
+      "kind": "element",
+      "contextId": "ctx-123",
+      "role": "button",
+      "bounds": {
+        "x": 1,
+        "y": 1,
+        "width": 10,
+        "height": 10
+      }
+    }
+  ],
+  "_expect": "invalid_role"
+}

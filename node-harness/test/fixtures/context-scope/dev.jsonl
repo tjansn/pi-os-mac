@@ -1,0 +1,190 @@
+{"id": "en001", "lang": "en", "text": "summarize this page", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "en002", "lang": "en", "text": "summarize the page", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "en003", "lang": "en", "text": "what does this error mean?", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "en004", "lang": "en", "text": "what does the error say", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "en005", "lang": "en", "text": "reply to this email", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "en006", "lang": "en", "text": "reply to the email", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "en007", "lang": "en", "text": "translate this", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "en008", "lang": "en", "text": "fix the typo", "gold": "window", "cat": "definite", "ambiguous": true}
+{"id": "en009", "lang": "en", "text": "what am I looking at?", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "en010", "lang": "en", "text": "explain this chart", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "en011", "lang": "en", "text": "is this code correct?", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "en012", "lang": "en", "text": "what's wrong with this function", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "en013", "lang": "en", "text": "read me the last message", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "en014", "lang": "en", "text": "click the sign in button", "gold": "window", "cat": "act", "ambiguous": false}
+{"id": "en015", "lang": "en", "text": "scroll down", "gold": "window", "cat": "act", "ambiguous": false}
+{"id": "en016", "lang": "en", "text": "fill in the form with my details", "gold": "window", "cat": "act", "ambiguous": false}
+{"id": "en017", "lang": "en", "text": "which of these flights is the cheapest?", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "en018", "lang": "en", "text": "make this paragraph more formal", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "en019", "lang": "en", "text": "who sent this?", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "en020", "lang": "en", "text": "what's the total on the invoice", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "en021", "lang": "en", "text": "explain the selected text", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "en022", "lang": "en", "text": "check my spelling here", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "en023", "lang": "en", "text": "what does it say at the top?", "gold": "window", "cat": "nonoun", "ambiguous": false}
+{"id": "en024", "lang": "en", "text": "how do I get rid of this popup", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "en025", "lang": "en", "text": "close this tab", "gold": "window", "cat": "act", "ambiguous": false}
+{"id": "en026", "lang": "en", "text": "add this event to my calendar", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "en027", "lang": "en", "text": "save this as a PDF", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "en028", "lang": "en", "text": "what time is the meeting in the invite?", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "en029", "lang": "en", "text": "tl;dr", "gold": "window", "cat": "bare", "ambiguous": true}
+{"id": "en030", "lang": "en", "text": "rewrite it shorter", "gold": "window", "cat": "nonoun", "ambiguous": true}
+{"id": "en031", "lang": "en", "text": "what's this?", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "en032", "lang": "en", "text": "is this a scam?", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "en033", "lang": "en", "text": "why is the build failing", "gold": "window", "cat": "definite", "ambiguous": true}
+{"id": "en034", "lang": "en", "text": "compare these two options", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "en035", "lang": "en", "text": "find the price on this page", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "en036", "lang": "en", "text": "go to the next page", "gold": "window", "cat": "act", "ambiguous": false}
+{"id": "en037", "lang": "en", "text": "where's the download button?", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "en038", "lang": "en", "text": "turn the table into a CSV", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "en039", "lang": "en", "text": "who wrote the article?", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "en040", "lang": "en", "text": "what's the main finding of the paper", "gold": "window", "cat": "definite", "ambiguous": true}
+{"id": "en041", "lang": "en", "text": "summarize the video", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "en042", "lang": "en", "text": "answer the question in the chat", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "en043", "lang": "en", "text": "does this look right to you?", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "en044", "lang": "en", "text": "translate the page into German", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "en045", "lang": "en", "text": "what does the second paragraph mean", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "en046", "lang": "en", "text": "copy all the email addresses from here", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "en047", "lang": "en", "text": "proofread", "gold": "window", "cat": "bare", "ambiguous": true}
+{"id": "en048", "lang": "en", "text": "summarize", "gold": "window", "cat": "bare", "ambiguous": true}
+{"id": "en049", "lang": "en", "text": "draft a reply saying I'll be late", "gold": "window", "cat": "nonoun", "ambiguous": true}
+{"id": "en050", "lang": "en", "text": "what's the deadline?", "gold": "window", "cat": "nonoun", "ambiguous": true}
+{"id": "en051", "lang": "en", "text": "search google for this", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "en052", "lang": "en", "text": "is that correct?", "gold": "window", "cat": "nonoun", "ambiguous": true}
+{"id": "en053", "lang": "en", "text": "make it sound friendlier", "gold": "window", "cat": "nonoun", "ambiguous": true}
+{"id": "en054", "lang": "en", "text": "what's the password requirement on this form", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "en055", "lang": "en", "text": "accept the cookie banner", "gold": "window", "cat": "act", "ambiguous": false}
+{"id": "en056", "lang": "en", "text": "explain the diff", "gold": "window", "cat": "definite", "ambiguous": true}
+{"id": "de057", "lang": "de", "text": "was steht hier", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "de058", "lang": "de", "text": "fasse die Seite zusammen", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "de059", "lang": "de", "text": "antworte auf die Mail", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "de060", "lang": "de", "text": "was bedeutet diese Fehlermeldung", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "de061", "lang": "de", "text": "übersetz das ins Englische", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "de062", "lang": "de", "text": "erklär mir das", "gold": "window", "cat": "nonoun", "ambiguous": true}
+{"id": "de063", "lang": "de", "text": "was ist das hier?", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "de064", "lang": "de", "text": "korrigiere die Tippfehler", "gold": "window", "cat": "definite", "ambiguous": true}
+{"id": "de065", "lang": "de", "text": "klick auf Weiter", "gold": "window", "cat": "act", "ambiguous": false}
+{"id": "de066", "lang": "de", "text": "scroll nach unten", "gold": "window", "cat": "act", "ambiguous": false}
+{"id": "de067", "lang": "de", "text": "worum geht es in dem Artikel", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "de068", "lang": "de", "text": "wer hat mir das geschickt?", "gold": "window", "cat": "nonoun", "ambiguous": false}
+{"id": "de069", "lang": "de", "text": "ist der Code so richtig?", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "de070", "lang": "de", "text": "mach den Text förmlicher", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "de071", "lang": "de", "text": "wie viel kostet das?", "gold": "window", "cat": "nonoun", "ambiguous": true}
+{"id": "de072", "lang": "de", "text": "fasse das Video zusammen", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "de073", "lang": "de", "text": "was sagt die Fehlermeldung", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "de074", "lang": "de", "text": "beantworte die letzte Nachricht", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "de075", "lang": "de", "text": "trag den Termin in meinen Kalender ein", "gold": "window", "cat": "definite", "ambiguous": true}
+{"id": "de076", "lang": "de", "text": "lies mir die Mail vor", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "de077", "lang": "de", "text": "was meint er damit?", "gold": "window", "cat": "nonoun", "ambiguous": false}
+{"id": "de078", "lang": "de", "text": "stimmt das?", "gold": "window", "cat": "nonoun", "ambiguous": true}
+{"id": "de079", "lang": "de", "text": "übersetze den markierten Text", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "de080", "lang": "de", "text": "welcher Flug ist am günstigsten?", "gold": "window", "cat": "nonoun", "ambiguous": true}
+{"id": "de081", "lang": "de", "text": "fass zusammen", "gold": "window", "cat": "bare", "ambiguous": true}
+{"id": "de082", "lang": "de", "text": "kannst du das besser formulieren?", "gold": "window", "cat": "nonoun", "ambiguous": false}
+{"id": "de083", "lang": "de", "text": "wann ist die Deadline?", "gold": "window", "cat": "nonoun", "ambiguous": true}
+{"id": "de084", "lang": "de", "text": "schließ den Dialog", "gold": "window", "cat": "act", "ambiguous": false}
+{"id": "de085", "lang": "de", "text": "wo ist hier der Download-Button", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "de086", "lang": "de", "text": "was will der Kunde von mir?", "gold": "window", "cat": "nonoun", "ambiguous": true}
+{"id": "de087", "lang": "de", "text": "schreib eine Antwort darauf", "gold": "window", "cat": "nonoun", "ambiguous": false}
+{"id": "de088", "lang": "de", "text": "erklär mir die Tabelle", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "en089", "lang": "en", "text": "explain quantum computing", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "en090", "lang": "en", "text": "what's the weather tomorrow?", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "en091", "lang": "en", "text": "write an email to my boss asking for Friday off", "gold": "general", "cat": "write-new", "ambiguous": false}
+{"id": "en092", "lang": "en", "text": "open Figma", "gold": "general", "cat": "launcher", "ambiguous": false}
+{"id": "en093", "lang": "en", "text": "how do I make pasta?", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "en094", "lang": "en", "text": "what's 17% of 2300", "gold": "general", "cat": "instant", "ambiguous": false}
+{"id": "en095", "lang": "en", "text": "convert 5 miles to km", "gold": "general", "cat": "instant", "ambiguous": false}
+{"id": "en096", "lang": "en", "text": "set a timer for 10 minutes", "gold": "general", "cat": "system", "ambiguous": false}
+{"id": "en097", "lang": "en", "text": "who won the Champions League in 2024?", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "en098", "lang": "en", "text": "what's the capital of Australia", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "en099", "lang": "en", "text": "write a haiku about autumn", "gold": "general", "cat": "write-new", "ambiguous": false}
+{"id": "en100", "lang": "en", "text": "give me a 20 minute workout plan", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "en101", "lang": "en", "text": "play some jazz", "gold": "general", "cat": "launcher", "ambiguous": false}
+{"id": "en102", "lang": "en", "text": "remind me to call mom at 6", "gold": "general", "cat": "system", "ambiguous": false}
+{"id": "en103", "lang": "en", "text": "what time is it in Tokyo", "gold": "general", "cat": "instant", "ambiguous": false}
+{"id": "en104", "lang": "en", "text": "find my tax documents from 2024", "gold": "general", "cat": "files", "ambiguous": false}
+{"id": "en105", "lang": "en", "text": "open the downloads folder", "gold": "general", "cat": "files", "ambiguous": false}
+{"id": "en106", "lang": "en", "text": "turn on dark mode", "gold": "general", "cat": "system", "ambiguous": false}
+{"id": "en107", "lang": "en", "text": "how does a transformer model work?", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "en108", "lang": "en", "text": "translate 'good morning' into Japanese", "gold": "general", "cat": "inline", "ambiguous": false}
+{"id": "en109", "lang": "en", "text": "fix this sentence: their going to the park tomorrow", "gold": "general", "cat": "inline", "ambiguous": false}
+{"id": "en110", "lang": "en", "text": "summarize the history of the Roman Empire", "gold": "general", "cat": "trap", "ambiguous": false}
+{"id": "en111", "lang": "en", "text": "what's the latest news about Apple?", "gold": "general", "cat": "web", "ambiguous": false}
+{"id": "en112", "lang": "en", "text": "search the web for cheap flights to Lisbon", "gold": "general", "cat": "web", "ambiguous": false}
+{"id": "en113", "lang": "en", "text": "book a table for two at an Italian place nearby", "gold": "general", "cat": "web", "ambiguous": false}
+{"id": "en114", "lang": "en", "text": "write a python script that renames photos by date", "gold": "general", "cat": "write-new", "ambiguous": false}
+{"id": "en115", "lang": "en", "text": "tell me a joke", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "en116", "lang": "en", "text": "create a new note called groceries", "gold": "general", "cat": "launcher", "ambiguous": false}
+{"id": "en117", "lang": "en", "text": "how many days until Christmas?", "gold": "general", "cat": "instant", "ambiguous": false}
+{"id": "en118", "lang": "en", "text": "recommend a good sci-fi book", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "en119", "lang": "en", "text": "explain the difference between TCP and UDP", "gold": "general", "cat": "trap", "ambiguous": false}
+{"id": "en120", "lang": "en", "text": "write a cover letter for a product manager job", "gold": "general", "cat": "write-new", "ambiguous": false}
+{"id": "en121", "lang": "en", "text": "open the pricing page on stripe.com", "gold": "general", "cat": "trap", "ambiguous": false}
+{"id": "en122", "lang": "en", "text": "what does error code 0x80070005 mean?", "gold": "general", "cat": "trap", "ambiguous": true}
+{"id": "en123", "lang": "en", "text": "how do I take a screenshot on a Mac?", "gold": "general", "cat": "trap", "ambiguous": false}
+{"id": "en124", "lang": "en", "text": "what's on my calendar today?", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "en125", "lang": "en", "text": "send a message to Anna saying I'm on my way", "gold": "general", "cat": "write-new", "ambiguous": false}
+{"id": "en126", "lang": "en", "text": "how do I close a window that's frozen on macOS", "gold": "general", "cat": "trap", "ambiguous": false}
+{"id": "en127", "lang": "en", "text": "what's the weather this weekend", "gold": "general", "cat": "trap", "ambiguous": false}
+{"id": "en128", "lang": "en", "text": "what should I cook this week?", "gold": "general", "cat": "trap", "ambiguous": false}
+{"id": "en129", "lang": "en", "text": "here's an idea: write a poem about cats", "gold": "general", "cat": "trap", "ambiguous": false}
+{"id": "en130", "lang": "en", "text": "explain this like I'm five: how do vaccines work", "gold": "general", "cat": "trap", "ambiguous": false}
+{"id": "en131", "lang": "en", "text": "make a table of the planets and their moons", "gold": "general", "cat": "trap", "ambiguous": false}
+{"id": "en132", "lang": "en", "text": "find the cheapest flights to Rome in May", "gold": "general", "cat": "web", "ambiguous": false}
+{"id": "en133", "lang": "en", "text": "how much screen time is healthy for kids?", "gold": "general", "cat": "trap", "ambiguous": false}
+{"id": "en134", "lang": "en", "text": "go to github.com", "gold": "general", "cat": "launcher", "ambiguous": false}
+{"id": "en135", "lang": "en", "text": "what's a good name for a cat?", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "en136", "lang": "en", "text": "help me plan a trip to Japan", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "en137", "lang": "en", "text": "define serendipity", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "en138", "lang": "en", "text": "write a tweet announcing our product launch", "gold": "general", "cat": "write-new", "ambiguous": false}
+{"id": "en139", "lang": "en", "text": "what's the best way to learn German?", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "en140", "lang": "en", "text": "is it going to rain this afternoon?", "gold": "general", "cat": "trap", "ambiguous": false}
+{"id": "en141", "lang": "en", "text": "open the last file I downloaded", "gold": "general", "cat": "files", "ambiguous": false}
+{"id": "en142", "lang": "en", "text": "how do I center a div in CSS", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "en143", "lang": "en", "text": "help", "gold": "general", "cat": "bare", "ambiguous": true}
+{"id": "en144", "lang": "en", "text": "what's the current Bitcoin price?", "gold": "general", "cat": "web", "ambiguous": false}
+{"id": "de145", "lang": "de", "text": "erkläre Quantencomputing", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "de146", "lang": "de", "text": "wie wird das Wetter morgen?", "gold": "general", "cat": "trap", "ambiguous": false}
+{"id": "de147", "lang": "de", "text": "schreib eine Mail an meinen Chef, dass ich Freitag frei brauche", "gold": "general", "cat": "write-new", "ambiguous": false}
+{"id": "de148", "lang": "de", "text": "öffne Figma", "gold": "general", "cat": "launcher", "ambiguous": false}
+{"id": "de149", "lang": "de", "text": "wie mache ich Pasta?", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "de150", "lang": "de", "text": "was ist die Hauptstadt von Australien", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "de151", "lang": "de", "text": "stell einen Timer auf 10 Minuten", "gold": "general", "cat": "system", "ambiguous": false}
+{"id": "de152", "lang": "de", "text": "wie spät ist es in Tokio", "gold": "general", "cat": "instant", "ambiguous": false}
+{"id": "de153", "lang": "de", "text": "erzähl mir einen Witz", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "de154", "lang": "de", "text": "übersetze 'guten Morgen' ins Spanische", "gold": "general", "cat": "inline", "ambiguous": false}
+{"id": "de155", "lang": "de", "text": "fasse die Geschichte des Römischen Reichs zusammen", "gold": "general", "cat": "trap", "ambiguous": false}
+{"id": "de156", "lang": "de", "text": "schreib ein Gedicht über den Herbst", "gold": "general", "cat": "write-new", "ambiguous": false}
+{"id": "de157", "lang": "de", "text": "wie funktioniert ein Verbrennungsmotor?", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "de158", "lang": "de", "text": "such nach günstigen Flügen nach Lissabon", "gold": "general", "cat": "web", "ambiguous": false}
+{"id": "de159", "lang": "de", "text": "mach den Dunkelmodus an", "gold": "general", "cat": "system", "ambiguous": false}
+{"id": "de160", "lang": "de", "text": "finde meine Steuerunterlagen von 2024", "gold": "general", "cat": "files", "ambiguous": false}
+{"id": "de161", "lang": "de", "text": "was ist der Unterschied zwischen TCP und UDP", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "de162", "lang": "de", "text": "wie viele Tage sind es noch bis Weihnachten?", "gold": "general", "cat": "instant", "ambiguous": false}
+{"id": "de163", "lang": "de", "text": "empfiehl mir ein gutes Buch", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "de164", "lang": "de", "text": "was kann ich diese Woche kochen?", "gold": "general", "cat": "trap", "ambiguous": false}
+{"id": "de165", "lang": "de", "text": "wie schließe ich ein Fenster auf dem Mac", "gold": "general", "cat": "trap", "ambiguous": false}
+{"id": "de166", "lang": "de", "text": "was bedeutet der Fehlercode 404?", "gold": "general", "cat": "trap", "ambiguous": true}
+{"id": "de167", "lang": "de", "text": "schreib ein Python-Skript, das Dateien umbenennt", "gold": "general", "cat": "write-new", "ambiguous": false}
+{"id": "de168", "lang": "de", "text": "spiel etwas Jazz", "gold": "general", "cat": "launcher", "ambiguous": false}
+{"id": "de169", "lang": "de", "text": "erinnere mich um 18 Uhr an den Anruf", "gold": "general", "cat": "system", "ambiguous": false}
+{"id": "de170", "lang": "de", "text": "was sind 15 Prozent von 80", "gold": "general", "cat": "instant", "ambiguous": false}
+{"id": "de171", "lang": "de", "text": "wie sage ich danke auf Japanisch?", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "de172", "lang": "de", "text": "öffne den Download-Ordner", "gold": "general", "cat": "files", "ambiguous": false}
+{"id": "de173", "lang": "de", "text": "was gibt es Neues in der Welt?", "gold": "general", "cat": "web", "ambiguous": false}
+{"id": "de174", "lang": "de", "text": "plane mir ein Wochenende in Wien", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "de175", "lang": "de", "text": "schreib einen Tweet über unseren Launch", "gold": "general", "cat": "write-new", "ambiguous": false}
+{"id": "de176", "lang": "de", "text": "was ist ein guter Name für eine Katze?", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "de177", "lang": "de", "text": "korrigiere diesen Satz: ich habe gestern nach Hause gegangen", "gold": "general", "cat": "inline", "ambiguous": false}
+{"id": "de178", "lang": "de", "text": "wie lange kocht man ein Ei?", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "de179", "lang": "de", "text": "zeig mir die Seite von Spiegel Online", "gold": "general", "cat": "trap", "ambiguous": false}
+{"id": "de180", "lang": "de", "text": "wie viel kostet ein Tesla Model 3?", "gold": "general", "cat": "web", "ambiguous": false}
+{"id": "en181", "lang": "en", "text": "and now in German", "gold": "window", "cat": "followup", "ambiguous": true, "prev": "translate this page into French"}
+{"id": "en182", "lang": "en", "text": "and now in German", "gold": "general", "cat": "followup", "ambiguous": true, "prev": "write a haiku about autumn"}
+{"id": "en183", "lang": "en", "text": "make it shorter", "gold": "general", "cat": "followup", "ambiguous": true, "prev": "write an email to my boss asking for Friday off"}
+{"id": "en184", "lang": "en", "text": "make it shorter", "gold": "window", "cat": "followup", "ambiguous": true, "prev": "summarize this article"}
+{"id": "en185", "lang": "en", "text": "why?", "gold": "window", "cat": "followup", "ambiguous": true, "prev": "is this code correct?"}
+{"id": "en186", "lang": "en", "text": "what about tomorrow?", "gold": "general", "cat": "followup", "ambiguous": true, "prev": "what's the weather today?"}
+{"id": "de187", "lang": "de", "text": "und jetzt auf Englisch", "gold": "window", "cat": "followup", "ambiguous": true, "prev": "fasse die Seite zusammen"}
+{"id": "de188", "lang": "de", "text": "noch kürzer bitte", "gold": "general", "cat": "followup", "ambiguous": true, "prev": "schreib ein Gedicht über den Herbst"}
+{"id": "de189", "lang": "de", "text": "und was heißt das genau?", "gold": "window", "cat": "followup", "ambiguous": true, "prev": "was bedeutet diese Fehlermeldung"}
+{"id": "de190", "lang": "de", "text": "und in Berlin?", "gold": "general", "cat": "followup", "ambiguous": true, "prev": "wie wird das Wetter morgen in München?"}

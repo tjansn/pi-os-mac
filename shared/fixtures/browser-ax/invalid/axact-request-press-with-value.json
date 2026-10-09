@@ -1,0 +1,8 @@
+{
+  "arguments": {
+    "contextId": "ctx-123",
+    "ref": "e3",
+    "action": "press",
+    "value": "x"
+  }
+}

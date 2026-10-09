@@ -14,28 +14,66 @@ import PiOSCore
 }
 extension HarnessClient: InstantHarness {}
 
-/// Preparation split (CRITIC §3.1 item 5): `warm` (Node ready, then POST /invocations/prepare)
-/// and `capture` (pinned-window screenshot) start together at key-down. Instant commands wait on
-/// warm only, so they work with no capturable window; agent submits wait on both, as before.
+/// Preparation split (CRITIC §3.1 item 5; DESIGN2 C2): `warm` (Node ready, then POST
+/// /invocations/prepare) starts at key-down. The window capture is lazy: it starts the first time the
+/// take's context becomes window (a suggestion, Tab, the ⇧ chord, the menu, "Always"), never for a
+/// general take. Instant commands wait on warm only; a general agent submit never waits for, starts or
+/// fails on a capture; a window submit awaits it.
 @MainActor public final class TakePreparation {
     public let warm: Task<Void, Error>
-    public let capture: Task<Void, Error>
-    public init(warm: Task<Void, Error>, capture: Task<Void, Error>) { self.warm = warm; self.capture = capture }
+    private let makeCapture: (() -> Task<Void, Error>)?
+    public private(set) var capture: Task<Void, Error>?
+    /// Eager form (echo/tests): the capture already runs.
+    public init(warm: Task<Void, Error>, capture: Task<Void, Error>) {
+        self.warm = warm; self.capture = capture; makeCapture = nil
+    }
+    /// Lazy form: `startCapture` runs `capture` at most once (per target, see `restartCapture`).
+    public init(warm: Task<Void, Error>, startCapture capture: @escaping () -> Task<Void, Error>) {
+        self.warm = warm; makeCapture = capture
+    }
+    public var captureStarted: Bool { capture != nil }
+    /// Idempotent. True when this call started the capture.
+    @discardableResult public func startCapture() -> Bool {
+        guard capture == nil, let makeCapture else { return false }
+        capture = makeCapture()
+        return true
+    }
+    /// The take was re-pinned (tether): forget the old target's capture; the next start captures the new one.
+    public func restartCapture() {
+        guard makeCapture != nil else { return }
+        capture?.cancel(); capture = nil
+    }
     public func readyForInstant() async throws { try await warm.value }
-    public func readyForAgent() async throws { try await warm.value; try await capture.value }
-    public func cancel() { warm.cancel(); capture.cancel() }
+    /// Window scope (and legacy callers): warm, then the capture (started now if nothing started it).
+    /// General scope: warm only.
+    public func readyForAgent(scope: ContextScope = .window) async throws {
+        try await warm.value
+        guard scope == .window else { return }
+        try await windowCapture()
+    }
+    /// The capture alone (started if needed). A failure here is the caller's to tolerate (text-only window turn).
+    public func windowCapture() async throws {
+        startCapture()
+        try await capture?.value
+    }
+    public func cancel() { warm.cancel(); capture?.cancel() }
 }
 
 /// A pinned take, created by the host's key-down work.
 public struct CommandTake {
-    public let contextId: String
+    /// The take's window context (identity pinned at key-down; a tether may re-pin it).
+    public var contextId: String
     public let takeId: String
     /// Pinned app, window and tab titles for the recognizer. Never logged or sent to Node.
     public let contextualStrings: [String]
     /// nil in echo mode (no harness): everything goes straight to the host's submit path.
     public let preparation: TakePreparation?
-    public init(contextId: String, takeId: String, contextualStrings: [String], preparation: TakePreparation?) {
-        self.contextId = contextId; self.takeId = takeId; self.contextualStrings = contextualStrings; self.preparation = preparation
+    /// The context chip (nil: no chip, legacy window behaviour).
+    public let context: ContextChipController?
+    public init(contextId: String, takeId: String, contextualStrings: [String], preparation: TakePreparation?,
+                context: ContextChipController? = nil) {
+        self.contextId = contextId; self.takeId = takeId; self.contextualStrings = contextualStrings
+        self.preparation = preparation; self.context = context
     }
 }
 
@@ -49,8 +87,12 @@ public struct AgentRequest: Equatable {
     public var kind: Kind
     public var takeId: String?
     public var input: AgentInput?
-    public init(prompt: String, question: String, kind: Kind = .fresh, takeId: String? = nil, input: AgentInput? = nil) {
+    /// What the context chip showed when the request was made (nil: legacy, no `context` on the wire).
+    public var context: ContextWire?
+    public init(prompt: String, question: String, kind: Kind = .fresh, takeId: String? = nil, input: AgentInput? = nil,
+                context: ContextWire? = nil) {
         self.prompt = prompt; self.question = question; self.kind = kind; self.takeId = takeId; self.input = input
+        self.context = context
     }
 }
 
@@ -246,6 +288,10 @@ public struct InstantResult: Equatable {
     private var transcript = VoiceTranscript()
     private var preview: (text: String, response: InstantResponse)?
     private var pendingConfirmation: (text: String, action: HostAction)?
+    /// The ⇧ chord or the menu started this take: its context chip opens on (an explicit choice).
+    private var includeNextTake = false
+    /// The ⇧ chord turned the chip on over an open composer; its release edge is not a gesture.
+    private var swallowRelease = false
 
     public init(voice: VoiceInput, harness: InstantHarness, host: CommandHost, surface: CommandSurface,
                 scheduler: CommandScheduler? = nil, timing: Timing = Timing(),
@@ -260,14 +306,27 @@ public struct InstantResult: Equatable {
 
     // MARK: Hotkey
 
-    public func hotkeyPressed() {
+    /// `includeWindow`: the ⇧ variant of the hotkey opens with the context chip on (tap or hold). Over an
+    /// open composer it turns the chip on instead of closing the bar.
+    public func hotkeyPressed(includeWindow: Bool = false) {
+        if includeWindow, let take, surface?.showsComposer == true, !listening, !finalizing, host?.isWorking != true {
+            take.context?.choose(include: true)
+            swallowRelease = true
+            return
+        }
+        // A missed ⇧-chord release (Carbon can miss one) must never swallow this press's release: a hold
+        // would then never finalize.
+        swallowRelease = false
         keyDown = true; pressedAt = clock(); releasedAt = nil; pendingStartError = nil
         let surfaceState: TalkSurface = host?.isWorking == true || finalizing ? .working
             : surface?.showsComposer == true && !listening ? .composer : .idle
+        includeNextTake = includeWindow
         apply(gesture.press(surface: surfaceState, voice: readiness,
                             voiceOffHint: readiness == .disabled && voiceOffHint?.shouldOffer == true))
+        includeNextTake = false
     }
     public func hotkeyReleased() {
+        if swallowRelease { swallowRelease = false; return }
         keyDown = false; releasedAt = clock()
         startErrorTimer?.cancel(); startErrorTimer = nil
         if let error = pendingStartError {
@@ -277,12 +336,22 @@ public struct InstantResult: Equatable {
         }
         apply(gesture.release())
     }
-    /// Menu "Ask About This Window…": exactly today's tap, never the microphone.
+    /// Menu "Ask About This Window…": today's tap with the context chip on, never the microphone. Over an
+    /// open composer it includes the window.
     public func menuInvoke() {
+        if let take, surface?.showsComposer == true, !listening, !finalizing, host?.isWorking != true {
+            take.context?.choose(include: true); return
+        }
         let surfaceState: TalkSurface = host?.isWorking == true || finalizing ? .working : surface?.showsComposer == true ? .composer : .idle
         var tap = TalkGesture(holdThreshold: timing.holdThreshold, maximumHold: timing.maximumHold, clock: clock)
+        includeNextTake = true
         run(tap.press(surface: surfaceState, voice: .disabled) + tap.release())
+        includeNextTake = false
     }
+    /// Tab or a click on the chip.
+    public func toggleContext() { take?.context?.toggle() }
+    /// A tether re-pinned the take: instant requests and actions name the new context from now on.
+    public func retarget(contextId: String) { take?.contextId = contextId }
 
     /// Escape, close, cancel or panel hide: end the take and drop any audio.
     public func interrupt() {
@@ -309,6 +378,7 @@ public struct InstantResult: Equatable {
                 resetTake()
                 guard let next = host?.beginTake() else { refused = true; continue }
                 take = next
+                if includeNextTake { next.context?.choose(include: true) }
                 if perf { print("[perf] take kind=begin voice=\(readiness == .ready)"); fflush(stdout) }
             case .startMic:
                 guard let take, !refused else { continue }
@@ -456,6 +526,9 @@ public struct InstantResult: Equatable {
     private func schedulePreview(_ text: String, phase: InstantPhase, inputMode: String) {
         previewTimer?.cancel(); previewTimer = nil
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        // The on-device scorer runs off the main thread on every edit (latest wins); it only counts once
+        // the rules score for the same text arrived.
+        if !trimmed.isEmpty { take?.context?.textChanged(trimmed) }
         guard !trimmed.isEmpty, trimmed.utf16.count <= Self.maximumInstantText else { cancelPreview(); return }
         guard phase == .typing else {
             previewTimer = scheduler.after(timing.previewDebounce) { [weak self] in
@@ -500,6 +573,7 @@ public struct InstantResult: Equatable {
             guard let response = try? await self.harness.instant(request), !Task.isCancelled,
                   self.take?.takeId == take.takeId, mine == self.seq, response.seq == mine, !self.finalizing else { return }
             self.preview = (text, response)
+            take.context?.apply(response, text: text)
             let next = InstantPreview.make(response, inputMode: inputMode)
             if next == nil, phase == .typing, case .value? = self.shownPreview {
                 // Hold the last value for one interval; a newer preview replaces or clears it first.
@@ -563,6 +637,8 @@ public struct InstantResult: Equatable {
             fflush(stdout)
         }
         guard let response, response.seq == mine else { submit(agent); return }
+        // The final scope unless the user chose: the chip shows it before the request is sent.
+        take.context?.apply(response, text: trimmed)
         switch response.decision {
         case .handOff: submit(agent)
         case .act(_, let title, let action, let confirm, _):
@@ -675,9 +751,13 @@ public struct InstantResult: Equatable {
     private func submit(_ request: AgentRequest) {
         cancelPreview()
         finalizing = false; quickAnswer = nil
+        var request = request
+        // What the chip shows at Return is what is sent. Follow-ups carry their own (thread) context.
+        if request.kind == .fresh, request.context == nil { request.context = take?.context?.wire }
         host?.submitToAgent(request)
     }
     private func resetTake() {
+        take?.context?.end()
         holdTimer?.cancel(); startErrorTimer?.cancel(); previewTimer?.cancel(); confirmationTimer?.cancel()
         holdTimer = nil; startErrorTimer = nil; previewTimer = nil; confirmationTimer = nil
         closeThrottleWindow(); previewClearTimer?.cancel(); previewClearTimer = nil; shownPreview = nil

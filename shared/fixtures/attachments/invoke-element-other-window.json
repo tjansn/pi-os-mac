@@ -1,0 +1,29 @@
+{
+  "invocationId": "inv-ctx-0001",
+  "contextId": "ctx-123",
+  "invokedAt": "2026-10-05T09:00:00Z",
+  "retainSession": true,
+  "takeId": "take-7",
+  "prompt": "what does this do?",
+  "attachments": [
+    {
+      "kind": "window",
+      "contextId": "ctx-789",
+      "app": "Brave Browser",
+      "title": "Inbox – Fixture Mail",
+      "actionable": false
+    },
+    {
+      "kind": "element",
+      "contextId": "ctx-789",
+      "role": "AXButton",
+      "label": "Send",
+      "bounds": {
+        "x": 1480,
+        "y": 96,
+        "width": 72,
+        "height": 30
+      }
+    }
+  ]
+}

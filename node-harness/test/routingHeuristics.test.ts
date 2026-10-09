@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  BASE_TIERS, buildRouteInput, classificationFromHints, classifyUtterance, extractRequestText, intrinsicTier,
-  routeContextFromSnapshot, surfaceFromProcess, tierRank,
+  BASE_TIERS, boundedUtterance, buildRouteInput, classificationFromHints, classifyUtterance, extractRequestText, intrinsicTier,
+  routeContextFromSnapshot, screenEvidence, surfaceFromProcess, tierRank,
   type AgentIntent, type Classification, type ClassifierHints, type SurfaceClass,
 } from "../src/agent/routing/index.js";
 import type { DesktopContextSnapshot } from "../src/hostClient.js";
@@ -180,6 +180,42 @@ test("German object pronoun 'das' is deixis like English 'this'; the article 'da
     assert.ok(classifyUtterance(text).needsScreen < 0.5, text);
   }
   assert.equal(classifyUtterance("ändere das").intent, "act_in_app", "like 'change this'");
+});
+
+test("'gib … ein' is typing into a field only when 'ein' closes the clause ('gib mir ein Rezept' is a request)", () => {
+  for (const text of ["gib mir ein Rezept für Pfannkuchen", "gib mir ein paar ideen für das wochenende", "gib mir einen tipp", "gib mir ein, zwei tipps"]) {
+    const c = classifyUtterance(text);
+    assert.notEqual(c.intent, "act_in_app", text);
+    assert.ok(c.needsScreen < 0.5, text);
+  }
+  for (const text of ["gib deine adresse ein", "gib hallo welt ein.", "gib das datum ein und drück enter", "bitte gib die nummer 1234 ein"]) {
+    assert.equal(classifyUtterance(text).intent, "act_in_app", text);
+  }
+});
+
+test("edits of what is shown are UI actions ('make the first line bold', 'format …', 'rename …', 'set/change … to')", () => {
+  for (const text of ["make the first line bold", "make the heading bigger", "format the table", "rename this file to notes",
+    "set my status to away", "change the title to hello", "mach den text fett", "formatiere die tabelle", "benenne die datei in notizen um"]) {
+    assert.equal(classifyUtterance(text).intent, "act_in_app", text);
+  }
+  assert.equal(classifyUtterance("make it shorter").intent, "write", "rewrites stay write");
+  assert.equal(classifyUtterance("make a bigger plan for my week").intent, "other", "no determiner, nothing shown is edited");
+  assert.equal(classifyUtterance("rename the login handler", { surface: "editor" }).intent, "code", "an editor rename is a refactoring");
+  assert.equal(classifyUtterance("set an alarm for 7").intent, "other");
+});
+
+test("screen evidence names why needsScreen is set (content-free reason codes)", () => {
+  const evidence = (text: string) => {
+    const normalized = boundedUtterance(text);
+    return screenEvidence(normalized, classifyUtterance(text).intent);
+  };
+  assert.deepEqual(evidence("what's on my screen"), { p: 0.9, reason: "deixis-strong" });
+  assert.deepEqual(evidence("click the blue submit button"), { p: 0.8, reason: "act-in-app" });
+  assert.deepEqual(evidence("translate this to german"), { p: 0.6, reason: "deixis-weak" });
+  assert.deepEqual(evidence("summarize the page"), { p: 0.6, reason: "definite-noun" });
+  assert.deepEqual(evidence("what's the capital of france"), { p: 0.1 });
+  for (const text of ["what's on my screen", "summarize the page", "hmm"]) assert.equal(evidence(text).p, classifyUtterance(text).needsScreen);
+  assert.equal(boundedUtterance(`  Hello’s   ${"x".repeat(5_000)}`).length, 1_000);
 });
 
 test("ordinary words are not code: language names and 'code' only in a code context", () => {

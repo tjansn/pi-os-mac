@@ -1,7 +1,7 @@
 import { parseStreamingJson } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, InlineExtension } from "@earendil-works/pi-coding-agent";
 import type { CardSpec } from "../contracts/cards.js";
-import { blocksToCard, partialBlocksToCard, showResultParamsSchema, type BlocksOptions, type FileRefSource } from "./blocks.js";
+import { blocksToCard, partialBlocksToCard, showResultParamsSchema, withoutNullMembers, type BlocksOptions, type FileRefSource } from "./blocks.js";
 import type { CardIssue } from "./validate.js";
 
 /**
@@ -13,12 +13,17 @@ import type { CardIssue } from "./validate.js";
  * restating it. While the call streams, partial cards are built leniently
  * from the provider's partially parsed arguments. Invalid calls come back to
  * the model as tool errors so it can fix them. Nothing here logs content.
+ *
+ * Cards are for structured results only (r2/DESIGN2 §5.6): prose and one-line
+ * answers stream as text from the first token, while a card shows nothing
+ * readable until its call is generated (a one-sentence card cost 93–95 output
+ * tokens against 11 as text).
  */
 
 export const SHOW_RESULT_TOOL = "show_result";
 
 export const SHOW_RESULT_GUIDELINES = [
-  "Use show_result to present computed values, files found by pi-os file tools, tables, key facts, links or follow-up suggestions as a native card; answer plain prose in normal text.",
+  "Use show_result only for structured results: computed values, files found by pi-os file tools, tables, key facts, links or follow-up suggestions. Answer explanations, prose and one-line answers in plain text, which the user sees as it streams.",
   "Put only data you actually have from the conversation, the screen or tool results into show_result. Never invent values, sample rows, file names, paths, links or metadata.",
   "For files pass only refs (f1, f2, …) returned by a pi-os file tool in this conversation; never write paths or tokens.",
   "show_result ends your turn and its card is the answer: write at most one short sentence before it and nothing after it. If it returns invalid_card, fix the named blocks and call it again, or answer in text.",
@@ -87,13 +92,16 @@ export function createShowResultExtension(options: ShowResultExtensionOptions): 
       pi.registerTool({
         name: SHOW_RESULT_TOOL,
         label: "Show Result",
-        description: "Display the final answer to the user as a native pi-os card built from blocks: markdown prose, a computed result, "
-          + "key/value facts, a small table, files (ledger refs from pi-os file tools), links, a status line, a notice, or follow-up suggestions. "
-          + "Ends the turn.",
-        promptSnippet: "Display the final answer as a native card (values, tables, files, links, suggestions)",
+        description: "Display a structured final answer as a native pi-os card built from blocks: a computed result, key/value facts, "
+          + "a small table, files (ledger refs from pi-os file tools), links, a status line, a notice, follow-up suggestions, or markdown "
+          + "prose next to them. Each block has only the fields of its type. Ends the turn. Plain answers go in text, not here.",
+        promptSnippet: "Display a structured answer as a native card (values, tables, files, links, suggestions)",
         promptGuidelines: SHOW_RESULT_GUIDELINES,
         parameters: showResultParamsSchema,
+        // The block union is outside pi's strict subset, so "prefer" sends it without provider-side strict
+        // sampling (no null padding); pi checks the schema and blocksToCard stays the authority.
         constrainedSampling: { type: "json_schema", strict: "prefer" },
+        prepareArguments: withoutNullMembers,
         // The card is the turn's final answer: codemode scripts cannot call it mid-run.
         exposure: "model-only",
         async execute(_toolCallId, params) {

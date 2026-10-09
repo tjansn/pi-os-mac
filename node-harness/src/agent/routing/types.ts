@@ -1,4 +1,5 @@
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
+import type { ContextScope } from "../../contracts/context.js";
 import { TIERS, type AgentIntent, type ClassifierHints, type Tier } from "../../contracts/instant.js";
 
 /**
@@ -38,7 +39,7 @@ export type SurfaceClass = "browser" | "editor" | "terminal" | "finder" | "mail_
 export interface Classification {
   source: "heuristic";
   intent: AgentIntent;
-  /** 0..1; < 0.5 keeps the request off the weakest tier. */
+  /** 0..1; < 0.5 is logged as low-confidence (no longer a tier floor: escalation covers misses). */
   intentConfidence: number;
   complexity: 0 | 1 | 2;
   /** 0..1 probability that the request needs the screenshot (deixis, screen words). */
@@ -63,6 +64,14 @@ export interface RouteInput {
   surface: SurfaceClass;
   /** A host screenshot is available to attach to the first prompt. */
   hasScreenshot: boolean;
+  /**
+   * The host's context scope (contracts/context.ts). general: never a screenshot, no vision need;
+   * window: the screenshot when there is one, and a vision-capable model (window threads see images).
+   * Absent: legacy (Windows, older Mac builds), screenshot by the classification exactly as before.
+   */
+  scope?: ContextScope;
+  /** An image attachment rides along (context shelf): a vision-capable model is required. */
+  hasImageAttachment?: boolean;
   /** Length of selected text supplied with the request, if the host provides it. */
   selectionChars: number;
   /** The pinned browser is driven through CDP snapshots rather than pixels. */
@@ -108,6 +117,8 @@ export interface Profile extends TierChoice {
   ii: number;
   /** Curated priors win over generic family estimates within a tier. */
   source: "prior" | "generic";
+  /** Never picked by Auto on its own; the prior only estimates the latency when a tier override pins it. */
+  pinOnly?: boolean;
 }
 
 export interface RoutingCatalog {
@@ -139,6 +150,10 @@ export interface RouteDecision {
   /** Tool-name hints for the agent lane; callers intersect them with their allowlist. */
   toolsAdd: string[];
   attachScreenshot: boolean;
+  /** The routed model accepts images (false: send no image, including image attachments). */
+  vision: boolean;
+  /** RouteInput.scope, echoed (absent for legacy requests). */
+  scope?: ContextScope;
   bias: RoutingBias;
   /** Short labels (no content) for logs and the invocation record. */
   reasons: string[];

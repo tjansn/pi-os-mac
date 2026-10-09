@@ -44,7 +44,19 @@ const CODE_WORDS = anywhere("code|coding|source code|function|regex(?:p)?|regula
 const CODE_LANGUAGE = anywhere("in (?:python|java|swift|rust|ruby|bash|go|php|perl|lua|zsh|powershell)|(?:python|java|swift|rust|ruby|bash|php|perl|lua|zsh|powershell) (?:code|script|program|function|error|library|package|syntax|class|module|app|project|file)");
 const CODE_SURFACE_LEAD = leading("fix|add|refactor|rename|implement|run|build|test|debug|explain|create|make|change|update|install|deploy|behebe?|füge?|fuege?|implementier\\p{L}*|teste?|erstell\\p{L}*|änder\\p{L}*|aender\\p{L}*|bau(?:e)?");
 const WRITE = anywhere("rewrite|re-write|rephrase|reword|paraphrase|summari[sz]e|summary of|translate|translation|reply|respond to|draft|compose|write|proofread|polish|shorten|make (?:it|this|that) (?:shorter|longer|more formal|more casual|friendlier|nicer|clearer)|fix (?:the |my )?(?:grammar|spelling|typos?|wording)|schreib\\p{L}*|formulier\\p{L}*|umformulier\\p{L}*|übersetz\\p{L}*|uebersetz\\p{L}*|zusammenfass\\p{L}*|fass\\p{L}* .{0,40}?zusammen|antworte?|beantworte?|korrigier\\p{L}*|kürz\\p{L}*|kuerz\\p{L}*|entwirf|entwurf|verfass\\p{L}*");
-const ACT_LEAD = leading("click|double[- ]click|right[- ]click|tap|press|hit|type|enter|fill(?: in| out)?|scroll|select|choose|pick|check(?: the)? (?:box|checkbox)|uncheck|tick|untick|toggle|enable|disable|turn (?:on|off)|drag|drop|close|minimi[sz]e|maximi[sz]e|resize|move|send|post|share|save|like|follow|unfollow|subscribe|mute|unmute|play|pause|add|insert|paste|copy|highlight|zoom (?:in|out)|go back|undo|redo|accept|decline|dismiss|klick\\p{L}*|drück\\p{L}*|drueck\\p{L}*|tipp\\p{L}*|gib .{1,40}? ein|füll\\p{L}*|fuell\\p{L}*|scroll\\p{L}*|wähl\\p{L}*|waehl\\p{L}*|markier\\p{L}*|aktivier\\p{L}*|deaktivier\\p{L}*|schalt\\p{L}*|schließ\\p{L}*|schliess\\p{L}*|sende|schick\\p{L}*|speicher\\p{L}*|teile|füge?|fuege?|kopier\\p{L}*|spiel\\p{L}* .{1,40}? ab|pausier\\p{L}*|akzeptier\\p{L}*|bestätig\\p{L}*|bestaetig\\p{L}*|lehn\\p{L}* .{1,40}? ab");
+const ACT_LEAD = leading("click|double[- ]click|right[- ]click|tap|press|hit|type|enter|fill(?: in| out)?|scroll|select|choose|pick|check(?: the)? (?:box|checkbox)|uncheck|tick|untick|toggle|enable|disable|turn (?:on|off)|drag|drop|close|minimi[sz]e|maximi[sz]e|resize|move|send|post|share|save|like|follow|unfollow|subscribe|mute|unmute|play|pause|add|insert|paste|copy|highlight|zoom (?:in|out)|go back|undo|redo|accept|decline|dismiss|klick\\p{L}*|drück\\p{L}*|drueck\\p{L}*|tipp\\p{L}*|gib .{1,40}? ein(?=[?!.]*$|,(?! ?zwei)| und | dann )|füll\\p{L}*|fuell\\p{L}*|scroll\\p{L}*|wähl\\p{L}*|waehl\\p{L}*|markier\\p{L}*|aktivier\\p{L}*|deaktivier\\p{L}*|schalt\\p{L}*|schließ\\p{L}*|schliess\\p{L}*|sende|schick\\p{L}*|speicher\\p{L}*|teile|füge?|fuege?|kopier\\p{L}*|spiel\\p{L}* .{1,40}? ab|pausier\\p{L}*|akzeptier\\p{L}*|bestätig\\p{L}*|bestaetig\\p{L}*|lehn\\p{L}* .{1,40}? ab");
+/**
+ * Edits of what is shown that ACT_LEAD misses ("make the first line bold", "format the table", "rename this",
+ * "set my status to away", "change the title to …"). Checked after the editor/terminal code rule, where
+ * "rename …" is a refactoring.
+ */
+const ACT_EDIT_LEAD = leading([
+  // A determiner: "make the heading bigger", never "make a bigger plan" (no screenshot for that on legacy hosts).
+  "make (?:the|this|that|these|those|it|them|my) .{0,40}?(?:bold|italic|underlined|bigger|smaller|larger|uppercase|lowercase)",
+  "(?:format|rename) (?:the|this|that|these|those|it|them|my)",
+  "(?:set|change) (?:the|this|that|these|those|it|them|my) .{0,40}?(?:to|as)",
+  "formatier\\p{L}*|benenn\\p{L}* .{1,40}? um|mach\\p{L}* .{1,40}? (?:fett|kursiv|größer|groesser|kleiner)",
+].join("|"));
 const DEICTIC_EDIT_LEAD = leading("do|fix|change|edit|update|correct|mach(?:e)?|ändere?|aendere?|bearbeite?|korrigiere?");
 const WEB = anywhere("go to|navigate(?: to)?|visit|website|web ?page|web site|webseite|site|page|tab|tabs|link|url|book|order|buy|purchase|checkout|check out|add to cart|log ?in|sign ?in|sign up|search (?:for|on|the web)|google|geh(?:e)? (?:auf|zu)|seite|bestell\\p{L}*|buch\\p{L}*|kauf\\p{L}*|anmeld\\p{L}*|einloggen|warenkorb");
 
@@ -54,13 +66,32 @@ const QUESTION_LEAD = leading("what|what's|whats|why|how|who|whom|whose|when|whe
 // --- screen deixis ---------------------------------------------------------
 const SCREEN_NOUNS = "window|page|tab|screen|button|field|form|dialog|popup|error|message|email|e-mail|mail|text|paragraph|sentence|image|picture|photo|chart|graph|diagram|table|code|file|document|line|link|video|post|tweet|list|cell|column|row|slide|menu|icon|sheet|spreadsheet|website|site|article|chat|thread|comment|screenshot";
 const SCREEN_NOUNS_DE = "fenster|seite|tab|bildschirm|knopf|button|schaltfläche|schaltflaeche|feld|formular|dialog|fehler|fehlermeldung|meldung|nachricht|mail|e-mail|text|absatz|satz|bild|foto|diagramm|grafik|tabelle|code|datei|dokument|zeile|link|video|post|liste|zelle|spalte|folie|menü|menue|symbol|artikel|chat|kommentar";
-const STRONG_DEIXIS = anywhere([
-  `on (?:the |my |this )?screen`, `(?:this|that|these|those) (?:${SCREEN_NOUNS})s?`,
-  `what(?:'s| is| are) (?:this|that|these|those)(?: here)?`, `look at (?:this|that|it|the screen)`, `see (?:this|that|here)`,
-  `what do you see`, `what am i looking at`, `(?:the )?(?:selected|highlighted)(?: \\p{L}+)?`, `selection`, `currently open`,
-  `auf dem bildschirm`, `(?:dies|diese|dieser|dieses|diesen|diesem) (?:${SCREEN_NOUNS_DE})`, `was ist (?:das|dies)(?: hier| da)?(?=[?!.]*$)`,
-  `siehst du`, `markierte\\p{L}*`, `ausgewählte\\p{L}*`, `ausgewaehlte\\p{L}*`, `auswahl`, `das hier`, `hier oben`, `hier unten`,
-].join("|"));
+/**
+ * Strong deixis comes in two kinds with the same weight (STRONG_DEIXIS = SCREEN ∪ CONTENT):
+ * SCREEN_DEIXIS points at the screen itself ("this page", "on my screen", "what do you see");
+ * CONTENT_DEIXIS can just as well point at content the user attached ("the selection", "this image",
+ * "what is this?"), so a host whose shelf holds such content lets the shelf take the reference
+ * (contextScope's `deixis-content` reason). Nouns of either kind belong to exactly one list.
+ */
+const CONTENT_NOUNS = "text|paragraph|sentence|image|picture|photo|code|line|chart|graph|diagram|table|list";
+const CONTENT_NOUNS_DE = "text|absatz|satz|bild|foto|code|zeile|diagramm|grafik|tabelle|liste";
+const SCREEN_ONLY_NOUNS = SCREEN_NOUNS.split("|").filter(noun => !CONTENT_NOUNS.split("|").includes(noun)).join("|");
+const SCREEN_ONLY_NOUNS_DE = SCREEN_NOUNS_DE.split("|").filter(noun => !CONTENT_NOUNS_DE.split("|").includes(noun)).join("|");
+const DEMONSTRATIVE_DE = "dies|diese|dieser|dieses|diesen|diesem";
+const SCREEN_DEIXIS_ALTERNATIVES = [
+  `on (?:the |my |this )?screen`, `(?:this|that|these|those) (?:${SCREEN_ONLY_NOUNS})s?`,
+  `look at (?:this|that|it|the screen)`, `see (?:this|that|here)`, `what do you see`, `what am i looking at`, `currently open`,
+  `auf dem bildschirm`, `(?:${DEMONSTRATIVE_DE}) (?:${SCREEN_ONLY_NOUNS_DE})`, `siehst du`, `das hier`, `hier oben`, `hier unten`,
+];
+const CONTENT_DEIXIS_ALTERNATIVES = [
+  `(?:this|that|these|those) (?:${CONTENT_NOUNS})s?`, `what(?:'s| is| are) (?:this|that|these|those)(?: here)?`,
+  `(?:the )?(?:selected|highlighted)(?: \\p{L}+)?`, `selection`,
+  `(?:${DEMONSTRATIVE_DE}) (?:${CONTENT_NOUNS_DE})`, `was ist (?:das|dies)(?: hier| da)?(?=[?!.]*$)`,
+  `markierte\\p{L}*`, `ausgewählte\\p{L}*`, `ausgewaehlte\\p{L}*`, `auswahl`,
+];
+export const SCREEN_DEIXIS = anywhere(SCREEN_DEIXIS_ALTERNATIVES.join("|"));
+export const CONTENT_DEIXIS = anywhere(CONTENT_DEIXIS_ALTERNATIVES.join("|"));
+const STRONG_DEIXIS = anywhere([...SCREEN_DEIXIS_ALTERNATIVES, ...CONTENT_DEIXIS_ALTERNATIVES].join("|"));
 const WEAK_DEIXIS = anywhere("this|these|those|here|dies|diese|dieser|dieses|diesen|diesem|hier|das da");
 /**
  * A definite on-screen noun ("summarize the page", "reply to the email", "fasse die Seite
@@ -140,6 +171,7 @@ function intentOf(text: string, words: number, ctx: ClassifyContext): { intent: 
   if ((ctx.surface === "editor" || ctx.surface === "terminal") && CODE_SURFACE_LEAD.test(strip)) {
     return { intent: "code", confidence: 0.6 };
   }
+  if (ACT_EDIT_LEAD.test(strip)) return act(0.75);
   if (DEICTIC_EDIT_LEAD.test(strip) && (STRONG_DEIXIS.test(strip) || WEAK_DEIXIS.test(strip) || DAS_PRONOUN.test(strip))) return act(0.7);
   if (browser && WEB.test(strip)) return { intent: "browse_web", confidence: 0.75 };
   if (text.endsWith("?")) return { intent: "answer", confidence: 0.75 };
@@ -155,12 +187,20 @@ function complexityOf(text: string, words: number): 0 | 1 | 2 {
   return 0;
 }
 
-function needsScreenOf(text: string, intent: AgentIntent): number {
-  if (STRONG_DEIXIS.test(text)) return 0.9;
-  if (intent === "act_in_app") return 0.8;
+/** needsScreen and why (reason codes from contracts/context.ts KNOWN_SCOPE_REASONS; none at 0.1). */
+export interface ScreenEvidence {
+  p: number;
+  reason?: "deixis-strong" | "act-in-app" | "deixis-weak" | "definite-noun";
+}
+
+/** needsScreen with its cause, over boundedUtterance() text (contextScope.ts reports the cause). */
+export function screenEvidence(text: string, intent: AgentIntent): ScreenEvidence {
+  if (STRONG_DEIXIS.test(text)) return { p: 0.9, reason: "deixis-strong" };
+  if (intent === "act_in_app") return { p: 0.8, reason: "act-in-app" };
   const cleaned = text.replace(NON_DEICTIC, " ");
-  if (WEAK_DEIXIS.test(cleaned) || DAS_PRONOUN.test(cleaned) || DEFINITE_SCREEN.test(cleaned)) return 0.6;
-  return 0.1;
+  if (WEAK_DEIXIS.test(cleaned) || DAS_PRONOUN.test(cleaned)) return { p: 0.6, reason: "deixis-weak" };
+  if (DEFINITE_SCREEN.test(cleaned)) return { p: 0.6, reason: "definite-noun" };
+  return { p: 0.1 };
 }
 
 function correctionOf(text: string): number {
@@ -169,10 +209,14 @@ function correctionOf(text: string): number {
   return 0;
 }
 
+/** normalizeUtterance over a bounded input: requests beyond ~170 words are complex anyway, and the bound bounds regex time. */
+export function boundedUtterance(text: string): string {
+  return normalizeUtterance(text.slice(0, 4_000)).slice(0, 1_000);
+}
+
 /** Classify one utterance (EN/DE). Pure; < 1 ms. */
 export function classifyUtterance(text: string, ctx: ClassifyContext = {}): Classification {
-  // Requests beyond ~170 words are complex anyway; bounding the input bounds regex time.
-  const normalized = normalizeUtterance(text.slice(0, 4_000)).slice(0, 1_000);
+  const normalized = boundedUtterance(text);
   const words = countWords(normalized);
   const subject = normalized.replace(PREFIX, "");
   const { intent, confidence } = intentOf(subject, countWords(subject), ctx);
@@ -183,7 +227,7 @@ export function classifyUtterance(text: string, ctx: ClassifyContext = {}): Clas
     intent,
     intentConfidence: confidence,
     complexity: complexityOf(normalized, words),
-    needsScreen: needsScreenOf(normalized, intent),
+    needsScreen: screenEvidence(normalized, intent).p,
     explicitDeep,
     explicitMax,
     explicitFast: !explicitDeep && EXPLICIT_FAST.test(normalized),

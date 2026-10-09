@@ -1,0 +1,82 @@
+{"id": "ken001", "lang": "en", "text": "what's the gist of this", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "ken002", "lang": "en", "text": "summarize the PR description", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "ken003", "lang": "en", "text": "why does the test fail", "gold": "window", "cat": "definite", "ambiguous": true}
+{"id": "ken004", "lang": "en", "text": "make the subject line catchier", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "ken005", "lang": "en", "text": "is there anything wrong in my code?", "gold": "window", "cat": "definite", "ambiguous": true}
+{"id": "ken006", "lang": "en", "text": "explain the regex on line 12", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "ken007", "lang": "en", "text": "what's the tracking number in the email", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "ken008", "lang": "en", "text": "turn these notes into a todo list", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "ken009", "lang": "en", "text": "write back that I agree", "gold": "window", "cat": "nonoun", "ambiguous": true}
+{"id": "ken010", "lang": "en", "text": "what's she asking for?", "gold": "window", "cat": "nonoun", "ambiguous": false}
+{"id": "ken011", "lang": "en", "text": "convert the table to markdown", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "ken012", "lang": "en", "text": "pick the best of the three options", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "ken013", "lang": "en", "text": "what's the call to action on the landing page", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "ken014", "lang": "en", "text": "summarize the meeting notes", "gold": "window", "cat": "definite", "ambiguous": true}
+{"id": "ken015", "lang": "en", "text": "who are the people in the meeting invite", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "ken016", "lang": "en", "text": "fill out the shipping address", "gold": "window", "cat": "act", "ambiguous": false}
+{"id": "ken017", "lang": "en", "text": "hit the submit button", "gold": "window", "cat": "act", "ambiguous": false}
+{"id": "ken018", "lang": "en", "text": "zoom in on the chart", "gold": "window", "cat": "act", "ambiguous": false}
+{"id": "ken019", "lang": "en", "text": "what does the yellow warning mean", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "ken020", "lang": "en", "text": "any typos in my draft?", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "ken021", "lang": "en", "text": "how do I fix the warning in Xcode", "gold": "window", "cat": "definite", "ambiguous": true}
+{"id": "ken022", "lang": "en", "text": "list all the dates mentioned", "gold": "window", "cat": "nonoun", "ambiguous": false}
+{"id": "ken023", "lang": "en", "text": "what's the conclusion", "gold": "window", "cat": "nonoun", "ambiguous": true}
+{"id": "ken024", "lang": "en", "text": "translate the comments to English", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "ken025", "lang": "en", "text": "extract the action items", "gold": "window", "cat": "nonoun", "ambiguous": false}
+{"id": "ken026", "lang": "en", "text": "is the price on the page with VAT?", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "ken027", "lang": "en", "text": "what does this command do", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "ken028", "lang": "en", "text": "how many rows are selected", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "kde029", "lang": "de", "text": "was ist hier los?", "gold": "window", "cat": "deixis", "ambiguous": false}
+{"id": "kde030", "lang": "de", "text": "fass mir den Artikel in drei Sätzen zusammen", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "kde031", "lang": "de", "text": "was will sie von mir", "gold": "window", "cat": "nonoun", "ambiguous": false}
+{"id": "kde032", "lang": "de", "text": "schreib zurück, dass ich zustimme", "gold": "window", "cat": "nonoun", "ambiguous": true}
+{"id": "kde033", "lang": "de", "text": "mach aus den Notizen eine Todo-Liste", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "kde034", "lang": "de", "text": "was bedeutet die gelbe Warnung", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "kde035", "lang": "de", "text": "welche Termine stehen in der Mail?", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "kde036", "lang": "de", "text": "übersetze die Kommentare ins Deutsche", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "kde037", "lang": "de", "text": "erklär mir den Befehl", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "kde038", "lang": "de", "text": "ist der Preis mit Mehrwertsteuer?", "gold": "window", "cat": "definite", "ambiguous": true}
+{"id": "kde039", "lang": "de", "text": "klick auf Absenden", "gold": "window", "cat": "act", "ambiguous": false}
+{"id": "kde040", "lang": "de", "text": "gibt es Tippfehler in meinem Entwurf?", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "kde041", "lang": "de", "text": "worauf bezieht sich das?", "gold": "window", "cat": "nonoun", "ambiguous": false}
+{"id": "kde042", "lang": "de", "text": "kürz den zweiten Absatz", "gold": "window", "cat": "definite", "ambiguous": false}
+{"id": "ken043", "lang": "en", "text": "what's the gist of the theory of relativity", "gold": "general", "cat": "trap", "ambiguous": false}
+{"id": "ken044", "lang": "en", "text": "write a PR description template", "gold": "general", "cat": "write-new", "ambiguous": false}
+{"id": "ken045", "lang": "en", "text": "how do I write a regex for email addresses", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "ken046", "lang": "en", "text": "what's the tracking status of my Amazon order", "gold": "general", "cat": "web", "ambiguous": true}
+{"id": "ken047", "lang": "en", "text": "create a todo list for moving house", "gold": "general", "cat": "write-new", "ambiguous": false}
+{"id": "ken048", "lang": "en", "text": "what's a good subject line for a newsletter", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "ken049", "lang": "en", "text": "how do I make a table in markdown", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "ken050", "lang": "en", "text": "explain the difference between let and var", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "ken051", "lang": "en", "text": "open the calculator", "gold": "general", "cat": "launcher", "ambiguous": false}
+{"id": "ken052", "lang": "en", "text": "show me the files on my desktop", "gold": "general", "cat": "files", "ambiguous": false}
+{"id": "ken053", "lang": "en", "text": "what's the conversion rate of euro to dollar", "gold": "general", "cat": "instant", "ambiguous": false}
+{"id": "ken054", "lang": "en", "text": "start a 25 minute focus timer", "gold": "general", "cat": "system", "ambiguous": false}
+{"id": "ken055", "lang": "en", "text": "find a good italian restaurant near me", "gold": "general", "cat": "web", "ambiguous": false}
+{"id": "ken056", "lang": "en", "text": "how do I zoom in on a Mac", "gold": "general", "cat": "trap", "ambiguous": false}
+{"id": "ken057", "lang": "en", "text": "what does the warning light on my car dashboard mean", "gold": "general", "cat": "trap", "ambiguous": false}
+{"id": "ken058", "lang": "en", "text": "write a message to the team that I'm out tomorrow", "gold": "general", "cat": "write-new", "ambiguous": false}
+{"id": "ken059", "lang": "en", "text": "read me today's news headlines", "gold": "general", "cat": "web", "ambiguous": false}
+{"id": "ken060", "lang": "en", "text": "what's on TV tonight", "gold": "general", "cat": "web", "ambiguous": false}
+{"id": "ken061", "lang": "en", "text": "translate 'thank you very much' to French", "gold": "general", "cat": "inline", "ambiguous": false}
+{"id": "ken062", "lang": "en", "text": "how do you spell necessary", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "ken063", "lang": "en", "text": "summarize the plot of Inception", "gold": "general", "cat": "trap", "ambiguous": false}
+{"id": "ken064", "lang": "en", "text": "open my last email", "gold": "general", "cat": "launcher", "ambiguous": true}
+{"id": "ken065", "lang": "en", "text": "what is a stack trace", "gold": "general", "cat": "trap", "ambiguous": false}
+{"id": "kde066", "lang": "de", "text": "was ist der Kern der Relativitätstheorie", "gold": "general", "cat": "trap", "ambiguous": false}
+{"id": "kde067", "lang": "de", "text": "schreib eine Vorlage für eine PR-Beschreibung", "gold": "general", "cat": "write-new", "ambiguous": false}
+{"id": "kde068", "lang": "de", "text": "wie schreibe ich einen Regex für E-Mail-Adressen", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "kde069", "lang": "de", "text": "erstelle eine Todo-Liste für den Umzug", "gold": "general", "cat": "write-new", "ambiguous": false}
+{"id": "kde070", "lang": "de", "text": "was ist eine gute Betreffzeile für einen Newsletter", "gold": "general", "cat": "knowledge", "ambiguous": false}
+{"id": "kde071", "lang": "de", "text": "öffne den Taschenrechner", "gold": "general", "cat": "launcher", "ambiguous": false}
+{"id": "kde072", "lang": "de", "text": "zeig mir die Dateien auf dem Schreibtisch", "gold": "general", "cat": "files", "ambiguous": false}
+{"id": "kde073", "lang": "de", "text": "starte einen Fokus-Timer für 25 Minuten", "gold": "general", "cat": "system", "ambiguous": false}
+{"id": "kde074", "lang": "de", "text": "wie zoome ich auf dem Mac", "gold": "general", "cat": "trap", "ambiguous": false}
+{"id": "kde075", "lang": "de", "text": "was bedeutet die Warnleuchte im Auto", "gold": "general", "cat": "trap", "ambiguous": false}
+{"id": "kde076", "lang": "de", "text": "schreib dem Team, dass ich morgen nicht da bin", "gold": "general", "cat": "write-new", "ambiguous": true}
+{"id": "kde077", "lang": "de", "text": "lies mir die Nachrichten von heute vor", "gold": "general", "cat": "web", "ambiguous": true}
+{"id": "kde078", "lang": "de", "text": "übersetze 'vielen Dank' ins Französische", "gold": "general", "cat": "inline", "ambiguous": false}
+{"id": "kde079", "lang": "de", "text": "fasse die Handlung von Inception zusammen", "gold": "general", "cat": "trap", "ambiguous": false}
+{"id": "kde080", "lang": "de", "text": "was ist ein Stacktrace", "gold": "general", "cat": "trap", "ambiguous": false}
+{"id": "kde081", "lang": "de", "text": "wie wird das Wetter am Wochenende", "gold": "general", "cat": "trap", "ambiguous": false}
+{"id": "kde082", "lang": "de", "text": "erinnere mich morgen an die Rechnung", "gold": "general", "cat": "system", "ambiguous": false}

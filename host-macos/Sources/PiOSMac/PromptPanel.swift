@@ -41,21 +41,58 @@ enum ComposerKeyPolicy {
         if modifiers.contains(.command) { return .secondary }
         return .plain
     }
+    /// Tab toggles the context chip (DESIGN2 §3.3): no modifiers, no marked IME text, and not while a
+    /// typed list preview owns the keys. The composer has no other use for Tab.
+    static func togglesContext(keyCode: UInt16, modifiers: NSEvent.ModifierFlags, composing: Bool, listPreview: Bool) -> Bool {
+        keyCode == 48 && modifiers.intersection([.command, .shift, .option, .control]).isEmpty && !composing && !listPreview
+    }
+    /// ⌫ in an empty composer removes the last attached chip. Never on key repeat: holding ⌫ to clear a
+    /// draft must stop at the empty composer, not go on to remove the attachments one by one.
+    static func removesAttachment(keyCode: UInt16, modifiers: NSEvent.ModifierFlags, composing: Bool, empty: Bool,
+                                  repeated: Bool = false) -> Bool {
+        keyCode == 51 && modifiers.intersection([.command, .shift, .option, .control]).isEmpty && !composing && empty && !repeated
+    }
 }
 private final class PromptEditor: NSTextView {
     var submit: ((CommandController.SubmitIntent) -> Void)?
     /// ↑/↓ move a visible result list's selection (command composer only).
     var navigate: ((CardCommand) -> Bool)?
     var dismiss: (() -> Void)?
+    /// Tab: toggle the context chip. False = not handled (no chip): the key keeps its default meaning.
+    var toggleContext: (() -> Bool)?
+    var listPreview: (() -> Bool)?
+    /// ⌫ in an empty composer: remove the last attachment. False = nothing to remove.
+    var removeAttachment: (() -> Bool)?
     override func keyDown(with event: NSEvent) {
         if let intent = ComposerKeyPolicy.intent(keyCode: event.keyCode, modifiers: event.modifierFlags, composing: hasMarkedText()) {
             submit?(intent); return
         }
+        if ComposerKeyPolicy.togglesContext(keyCode: event.keyCode, modifiers: event.modifierFlags, composing: hasMarkedText(),
+                                            listPreview: listPreview?() == true), toggleContext?() == true { return }
+        if ComposerKeyPolicy.removesAttachment(keyCode: event.keyCode, modifiers: event.modifierFlags, composing: hasMarkedText(),
+                                               empty: string.isEmpty, repeated: event.isARepeat), removeAttachment?() == true { return }
         if event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty, !hasMarkedText(),
            [UInt16(125), 126].contains(event.keyCode), navigate?(event.keyCode == 125 ? .next : .previous) == true { return }
         super.keyDown(with: event)
     }
     override func cancelOperation(_ sender: Any?) { dismiss?() }
+    /// Drops on the bar go to the context shelf (a chip), not into the draft: the editor takes no drags.
+    override func updateDragTypeRegistration() { unregisterDraggedTypes() }
+}
+
+/// The panel's root: drags anywhere over the bar or the reader reach the context shelf.
+private final class DropRootView: FlippedView {
+    weak var dropTarget: ShelfDropTarget? {
+        didSet {
+            if let dropTarget { dropTarget.register(self) } else { unregisterDraggedTypes() }
+        }
+    }
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation { dropTarget?.draggingEntered(sender) ?? [] }
+    override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation { dropTarget?.draggingUpdated(sender) ?? [] }
+    override func draggingExited(_ sender: NSDraggingInfo?) { dropTarget?.draggingExited(sender) }
+    override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool { dropTarget?.prepareForDragOperation(sender) ?? false }
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool { dropTarget?.performDragOperation(sender) ?? false }
+    override func concludeDragOperation(_ sender: NSDraggingInfo?) { dropTarget?.concludeDragOperation(sender) }
 }
 
 /// The send slot while listening: an accent disc with a waveform. The input level only changes
@@ -111,6 +148,31 @@ final class ListeningIndicator: NSView {
     public var onSettings: (() -> Void)?
     public var onReaderDismiss: (() -> Void)?
     public var onDismissWork: (() -> Void)?
+    /// Tab or a click on the context chip: (follow-up composer?). The panel never decides the scope itself.
+    public var onToggleContext: ((Bool) -> Void)?
+    /// A drag from the chip or π: (anchor in AppKit screen points, ⌥ held → point at an element).
+    public var onTether: ((NSPoint, Bool) -> Void)?
+    /// The chip menu's "Point at an Element…" (click-to-pick) and "Grab an Area…".
+    public var onPointAtElement: ((NSPoint) -> Void)?
+    /// Where a pointing session started from the menu bar draws its tether from (the context chip).
+    public var contextChipAnchor: NSPoint { contextChip.screenCenter }
+    public var onGrabArea: (() -> Void)?
+    /// Shelf chips: remove (⊗, or the suggestion's dismiss), accept the clipboard suggestion, ⌫ on an empty
+    /// composer (false = nothing to remove).
+    public var onRemoveAttachment: ((String) -> Void)?
+    public var onAcceptSuggestion: (() -> Void)?
+    public var onRemoveLastAttachment: (() -> Bool)?
+    /// Real user edits in the follow-up composer (its chip is scored like the command composer's).
+    public var onFollowupEdit: ((String) -> Void)?
+    /// Copy Answer wrote the clipboard (the shelf does not suggest pi-os's own output).
+    public var onCopiedAnswer: (() -> Void)?
+    /// Drops on the bar or the reader (context shelf). Set once by the app.
+    public var dropTarget: ShelfDropTarget? {
+        didSet {
+            root.dropTarget = dropTarget
+            dropTarget?.onTargeted = { [weak self] targeted in self?.setDropTargeted(targeted) }
+        }
+    }
     public var presentsOnScreen = PromptPanel.defaultPresentsOnScreen
     /// Every accessibility notification the panel (and its card) posts; tests inject a recorder.
     public var announce: AccessibilityAnnouncer = Accessibility.system { didSet { cardView.announce = announce } }
@@ -139,6 +201,17 @@ final class ListeningIndicator: NSView {
     }
     var statusLine: String { responseStatus.stringValue }
     var activityText: String { activity.stringValue }
+    /// The context chip as shown (nil when hidden) and its frame in bar coordinates.
+    var displayedChip: ContextChipPresentation? { contextChip.isHidden ? nil : contextChip.presentation }
+    var displayedChipFrame: NSRect? { contextChip.isHidden ? nil : contextChip.frame }
+    var chipView: NSView { contextChip }
+    var displayedShelf: [ShelfChipPresentation] { shelfRow.isHidden ? [] : shelfRow.chips }
+    var shelfRowFrame: NSRect? { shelfRow.isHidden ? nil : shelfRow.frame }
+    var editorFrame: NSRect { (mode == .reader ? followupScroll : inputScroll).frame }
+    var sendSlotFrame: NSRect { (mode == .reader ? sendFollowup : ask).frame }
+    var readerHeader: String { sourceLabel.isHidden ? "" : sourceLabel.stringValue }
+    var questionText: String { questionLabel.isHidden ? "" : questionLabel.stringValue }
+    var dropHighlighted: Bool { dropTargeted && !dropOutline.isHidden }
     /// Offscreen snapshots: the root view and the two material frames (in root coordinates).
     public var snapshotRoot: NSView { root }
     /// Each surface's content view is listed too: vibrancy hosts are not drawn by `cacheDisplay`.
@@ -146,14 +219,29 @@ final class ListeningIndicator: NSView {
         (reading.isHidden ? [] : [(reading.frame, reading.radius, true, reading.embedded)]) + [(bar.frame, bar.radius, false, bar.embedded)]
     }
     private let panel: NonactivatingPanel
-    private let root = FlippedView()
+    private let root = DropRootView()
     private let bar = PanelSurface()
     private let reading = PanelSurface(role: .reading)
-    private let identity = NSButton(title: "π", target: nil, action: nil)
+    private let identity = IdentityButton(title: "π", target: nil, action: nil)
+    private let contextChip = ContextChipView()
+    private let shelfRow = ShelfChipsView()
+    private let shelfPopover = NSPopover()
+    private let dropOutline = DropOutlineView()
+    private var dropTargeted = false
+    /// The command composer's chip and the follow-up composer's chip (bound to the thread's pin).
+    private var commandChip: ContextChipPresentation?
+    private var followupChip: ContextChipPresentation?
+    private var shelfChips: [ShelfChipPresentation] = []
+    /// The shelf holds a selected text ("Ask about the selection…").
+    private var shelfSelection = false
+    /// The answer used the window (included, or the agent looked): the reader names the app only then.
+    private var sourceIncluded = false
+    /// "Pointing at Button “Send”" under the user's message.
+    private var pointing: String?
     private let trusted = PanelStyle.label("Trusted pi", size: 10, weight: .medium)
     private let input = PromptEditor()
     private let inputScroll = NSScrollView()
-    private let placeholder = PlaceholderLabel(labelWithString: "Ask about this window…")
+    private let placeholder = PlaceholderLabel(labelWithString: "Ask anything…")
     private let followup = PromptEditor()
     private let followupScroll = NSScrollView()
     private let followupPlaceholder = PlaceholderLabel(labelWithString: "Ask a follow-up…")
@@ -205,12 +293,18 @@ final class ListeningIndicator: NSView {
     private var listeningState = ListeningState.off
     private var instantPreview: InstantPreview?
     private var voiceHintShown = false
-    static let idlePlaceholder = "Ask about this window…"
+    static let idlePlaceholder = "Ask anything…"
+    /// The empty command composer's words: general, the included app, or the attached selection.
+    private var idlePlaceholder: String { ContextChipCopy.placeholder(commandChip, selection: shelfSelection) }
     private var cardSource: CardSource?
     private var streaming = false
     private enum CardSource { case instant, agent }
     private struct Source { let app: String; let title: String; let icon: NSImage? }
-    private struct SavedAnswer { let text: String; let question: String; let source: Source; let card: CardSpec?; let cardSource: CardSource? }
+    private struct SavedAnswer {
+        let text: String; let question: String; let source: Source; let card: CardSpec?; let cardSource: CardSource?
+        var included = false; var pulled = false; var pointing: String?
+    }
+    private var sourcePulled = false
     /// Typed list results sit above the bar while the composer keeps focus.
     private var previewCardVisible: Bool {
         guard mode == .prompt, case .list? = instantPreview else { return false }
@@ -234,7 +328,8 @@ final class ListeningIndicator: NSView {
         root.addSubview(reading); root.addSubview(bar)
         if let screen = NSScreen.main { workArea = Rect(screen.visibleFrame) }
         for view in [identity, trusted, inputScroll, placeholder, followupScroll, followupPlaceholder, previewLabel, listeningIndicator,
-                     ask, sendFollowup, activity, barStatus, progress, staticProgress, confirmIcon, hideWork, stop, openResult] {
+                     ask, sendFollowup, activity, barStatus, progress, staticProgress, confirmIcon, hideWork, stop, openResult,
+                     contextChip, shelfRow, dropOutline] {
             bar.embedded.addSubview(view)
         }
         for view in [appIcon, sourceLabel, questionLabel, responseStatus, answerScroll, cardView,
@@ -244,10 +339,34 @@ final class ListeningIndicator: NSView {
         identity.isBordered = false; identity.font = .systemFont(ofSize: 22, weight: .medium)
         identity.image = PanelStyle.symbol("chevron.down", size: 8)
         identity.imagePosition = .imageTrailing; identity.target = self; identity.action = #selector(showContext)
-        identity.setAccessibilityLabel("Pinned window and appearance")
+        identity.setAccessibilityLabel("Context and appearance")
+        identity.onDrag = { [weak self] anchor, option in self?.onTether?(anchor, option) }
         trusted.toolTip = "Global extensions and coding tools are not confined to this window."
-        configureEditor(input, scroll: inputScroll, placeholder: placeholder, label: "Ask about the pinned window")
-        configureEditor(followup, scroll: followupScroll, placeholder: followupPlaceholder, label: "Follow-up on the pinned window")
+        configureEditor(input, scroll: inputScroll, placeholder: placeholder, label: "Ask pi")
+        configureEditor(followup, scroll: followupScroll, placeholder: followupPlaceholder, label: "Ask a follow-up")
+        contextChip.isHidden = true
+        contextChip.onToggle = { [weak self] in
+            guard let self else { return }
+            self.onToggleContext?(self.mode == .reader)
+        }
+        contextChip.onDrag = { [weak self] anchor, option in self?.onTether?(anchor, option) }
+        contextChip.menuProvider = { [weak self] in self?.chipMenu() }
+        shelfRow.isHidden = true
+        shelfRow.onRemove = { [weak self] id in self?.onRemoveAttachment?(id) }
+        shelfRow.onAccept = { [weak self] in self?.onAcceptSuggestion?() }
+        shelfRow.onPreview = { [weak self] chip, view in self?.previewAttachment(chip, from: view) }
+        shelfPopover.behavior = .transient; shelfPopover.animates = false
+        for editor in [input, followup] {
+            editor.toggleContext = { [weak self, weak editor] in
+                guard let self, let editor else { return false }
+                let follow = editor === self.followup
+                guard (follow ? self.followupChip : self.commandChip).map({ $0.state != .hidden }) == true else { return false }
+                self.onToggleContext?(follow)
+                return true
+            }
+            editor.listPreview = { [weak self] in self?.previewCardVisible == true }
+            editor.removeAttachment = { [weak self] in self?.onRemoveLastAttachment?() ?? false }
+        }
         input.setAccessibilityHelp("Return to ask or run a quick command. Option-Return always asks pi. Shift-Return for a new line. Escape closes.")
         input.submit = { [weak self] in self?.submit($0) }; input.dismiss = { [weak self] in self?.escape() }
         input.navigate = { [weak self] command in
@@ -358,11 +477,17 @@ final class ListeningIndicator: NSView {
         let controller = NSViewController(), appearance = AppearanceViewController()
         let container = FlippedView(frame: NSRect(x: 0, y: 0, width: 300, height: 370))
         controller.view = container; controller.addChild(appearance)
-        let app = PanelStyle.label("Pinned: " + source.app, size: 12, weight: .semibold, color: .labelColor)
+        let chip = mode == .reader ? followupChip : commandChip
+        let included = chip.map { $0.state == .on || $0.state == .suggested } ?? false
+        let heading = chip == nil || chip?.state == .hidden ? "Active window: none"
+            : "Active window: " + ContextChipCopy.shortName(source.app) + (included ? " · Included" : " · Not included")
+        let app = PanelStyle.label(heading, size: 12, weight: .semibold, color: .labelColor)
+        // A long app name gives way in the middle: "Not included" stays readable.
+        app.lineBreakMode = .byTruncatingMiddle
         app.frame = NSRect(x: 22, y: 16, width: 256, height: 18); container.addSubview(app)
-        let title = PanelStyle.label(source.title, size: 11)
-        title.toolTip = source.title; title.frame = NSRect(x: 22, y: 37, width: 256, height: 17); container.addSubview(title)
-        let scope = PanelStyle.label(isTrusted ? "Trusted pi · tools are not window-confined" : capability + " · Target stays pinned", size: 10)
+        let title = PanelStyle.label(included ? source.title : ContextChipCopy.popoverIncludeHint, size: 11)
+        title.toolTip = included ? source.title : nil; title.frame = NSRect(x: 22, y: 37, width: 256, height: 17); container.addSubview(title)
+        let scope = PanelStyle.label(isTrusted ? "Trusted pi · tools are not window-confined" : capability + (included ? " · Stays on this window" : ""), size: 10)
         scope.frame = NSRect(x: 22, y: 57, width: 256, height: 17); container.addSubview(scope)
         appearance.view.frame = NSRect(x: 0, y: 78, width: 300, height: 292); container.addSubview(appearance.view)
         container.appearance = AppearanceSettings.shared.appearance
@@ -385,7 +510,7 @@ final class ListeningIndicator: NSView {
         print("[perf] hotkey-to-visible-proxy ms=\(Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000)"); fflush(stdout)
     }
     private func reset(_ mode: Mode) {
-        appearancePopover.close(); copyReset?.cancel(); copyReset = nil
+        appearancePopover.close(); shelfPopover.close(); copyReset?.cancel(); copyReset = nil
         progress.stopAnimation(nil); self.mode = mode
         panel.acceptsKeys = mode == .prompt || mode == .reader
         panel.setAccessibilityLabel(mode == .reader ? "pi-os answer" : mode == .prompt ? "pi-os question" : "pi-os task")
@@ -400,22 +525,26 @@ final class ListeningIndicator: NSView {
             ?? snapshot.monitors.first { $0.bounds.contains(snapshot.cursor) } ?? snapshot.monitors.first
         if let monitor { workArea = Placement.appKit(monitor.workArea, primaryHeight: primaryHeight); displayID = monitor.id }
         isTrusted = canControl && trustedCompatibility
-        capability = canControl ? (isTrusted ? "Trusted pi" : snapshot.browser != nil ? "Brave tab" : "Can act") : "Read-only"
+        // "Brave tab" only under the DevTools opt-in; an Accessibility pin acts like any native window.
+        capability = canControl ? (isTrusted ? "Trusted pi" : snapshot.browser?.mode == .cdp ? "Brave tab" : "Can act") : "Read-only"
         source = Source(app: snapshot.targetWindow?.processName ?? appName, title: snapshot.targetWindow?.title ?? "",
             icon: snapshot.targetWindow.flatMap { NSRunningApplication(processIdentifier: $0.processId)?.icon })
-        identity.toolTip = "Pinned: " + source.app + (source.title.isEmpty ? "" : " · " + source.title) + " — " + capability
+        identity.toolTip = "Context and appearance — " + capability
+        contextChip.icon = source.icon
+        commandChip = nil; followupChip = nil; sourceIncluded = false; pointing = nil
         followupEnabled = false; followup.string = ""; followup.undoManager?.removeAllActions()
         input.string = ""; input.typingAttributes = composerAttributes; input.undoManager?.removeAllActions()
         question = ""; retryStatus = nil; streamStatus = nil; presentedFailure = nil
-        listeningState = .off; instantPreview = nil; streaming = false; placeholder.stringValue = Self.idlePlaceholder
+        listeningState = .off; instantPreview = nil; streaming = false; placeholder.stringValue = idlePlaceholder
         voiceHintShown = false; placeholder.toolTip = nil
         clearCard()
         reset(.prompt); reveal(); panel.makeFirstResponder(input)
     }
     public func setDraft(_ text: String) { input.string = text; textDidChange(Notification(name: NSText.didChangeNotification)) }
     public func textDidChange(_ notification: Notification) {
-        if voiceHintShown, !input.string.isEmpty { voiceHintShown = false; placeholder.stringValue = Self.idlePlaceholder; placeholder.toolTip = nil }
+        if voiceHintShown, !input.string.isEmpty { voiceHintShown = false; placeholder.stringValue = idlePlaceholder; placeholder.toolTip = nil }
         if (notification.object as AnyObject?) === input, !programmaticEdit, mode == .prompt { onEdit?(input.string) }
+        if (notification.object as AnyObject?) === followup, mode == .reader { onFollowupEdit?(followup.string) }
         if mode == .prompt || mode == .reader { layoutCurrent() }
     }
     private func show(_ view: NSView, _ frame: NSRect) { view.frame = frame; view.isHidden = false }
@@ -568,7 +697,11 @@ final class ListeningIndicator: NSView {
         reading.isHidden = !(mode == .reader || previewCardVisible)
         let width: CGFloat = min(PanelMetrics.width, CGFloat(max(1, workArea.width - 24)))
         let warningWidth: CGFloat = isTrusted ? 66 : 0
-        let editorWidth = max(40, width - 116 - warningWidth)
+        // The chip sits left of the send slot; its width comes out of the editor's (DESIGN2 §3.2).
+        let chip = mode == .reader ? followupChip : commandChip
+        let chipWidth = ContextChipView.width(for: chip, larger: PanelStyle.preferences.largerText)
+        let editorWidth = max(40, width - 116 - warningWidth - (chipWidth > 0 ? chipWidth + 6 : 0))
+        let shelfHeight = shelfRowHeight
         switch mode {
         case .prompt:
             var trailing: CGFloat = 0
@@ -579,7 +712,7 @@ final class ListeningIndicator: NSView {
                 trailing = min(ceil(preview.text.size().width) + 18, room)
             }
             let composerWidth = max(40, editorWidth - trailing)
-            let barHeight = max(baseBarHeight, editorHeight(input, width: composerWidth) + 22)
+            let barHeight = max(baseBarHeight, editorHeight(input, width: composerWidth) + 22) + shelfHeight
             if previewCardVisible {
                 cardView.maximumHeight = PanelMetrics.previewCardMaximum
                 let cardHeight = max(1, cardView.fittingHeight(forWidth: width - 44))
@@ -596,7 +729,7 @@ final class ListeningIndicator: NSView {
                            preview: preview)
         case .reader:
             let hasComposer = presentedFailure == nil && followupEnabled
-            let barHeight = hasComposer ? max(baseBarHeight, editorHeight(followup, width: editorWidth) + 22) : baseBarHeight
+            let barHeight = hasComposer ? max(baseBarHeight, editorHeight(followup, width: editorWidth) + 22) + shelfHeight : baseBarHeight
             let scale = PanelStyle.textScale
             let textWidth = max(1, width - 44)
             let bodyHeight: CGFloat
@@ -611,7 +744,8 @@ final class ListeningIndicator: NSView {
                 }
                 rendered = renderedCache!.rendered; bodyHeight = renderedCache!.height
             }
-            let top: CGFloat = question.isEmpty ? 49 : 78
+            // A general answer has no app header: the question takes the header row.
+            let top: CGFloat = question.isEmpty || (!sourceIncluded && presentedFailure == nil) ? 49 : 78
             let requested: CGFloat
             if let failure = presentedFailure {
                 // Measured with the field's own cell: a layout-manager height is a point short per
@@ -664,21 +798,34 @@ final class ListeningIndicator: NSView {
         case .hidden: break
         }
         if mode != .toast && close.superview !== reading.embedded { reading.embedded.addSubview(close) }
+        if dropTargeted && (mode == .prompt || mode == .reader) {
+            dropOutline.radius = bar.radius
+            show(dropOutline, NSRect(origin: .zero, size: bar.bounds.size)); dropOutline.needsDisplay = true
+        }
         root.layoutSubtreeIfNeeded()
     }
-    private func layoutIdentity() {
-        show(identity, NSRect(x: 6, y: (bar.bounds.height - 42) / 2, width: 50, height: 42))
-        if isTrusted { show(trusted, NSRect(x: 58, y: (bar.bounds.height - 16) / 2, width: 66, height: 16)) }
+    /// The shelf row above the composer (only while something is attached or suggested).
+    private var shelfRowHeight: CGFloat {
+        guard !shelfChips.isEmpty, mode == .prompt || (mode == .reader && presentedFailure == nil && followupEnabled) else { return 0 }
+        return ShelfChipsView.rowHeight(larger: PanelStyle.preferences.largerText) + 8
+    }
+    /// `top`: the composer row starts below the shelf row.
+    private func layoutIdentity(top: CGFloat = 0) {
+        let h = bar.bounds.height - top
+        show(identity, NSRect(x: 6, y: top + (h - 42) / 2, width: 50, height: 42))
+        if isTrusted { show(trusted, NSRect(x: 58, y: top + (h - 16) / 2, width: 66, height: 16)) }
     }
     private func layoutComposer(_ editor: PromptEditor, scroll: NSScrollView, placeholder: NSTextField, send: PanelButton,
                                 width: CGFloat, trailing: CGFloat = 0, preview: InlinePreview? = nil) {
-        layoutIdentity()
+        let top = shelfRowHeight
+        layoutIdentity(top: top)
         let h = bar.bounds.height, w = bar.bounds.width, x: CGFloat = isTrusted ? 128 : 62
-        let editorH = min(editorHeight(editor, width: width), max(1, h - 22))
-        show(scroll, NSRect(x: x, y: (h - editorH) / 2, width: width, height: editorH))
+        let rowH = h - top
+        let editorH = min(editorHeight(editor, width: width), max(1, rowH - 22))
+        show(scroll, NSRect(x: x, y: top + (rowH - editorH) / 2, width: width, height: editorH))
         let measured = AnswerRenderer.measuredHeight(NSAttributedString(string: editor.string + " ", attributes: [.font: editor.font!]), width: width)
         editor.setFrameSize(NSSize(width: scroll.contentSize.width, height: max(editorH, measured)))
-        show(placeholder, NSRect(x: x, y: (h - (PanelStyle.preferences.largerText ? 25 : 20)) / 2,
+        show(placeholder, NSRect(x: x, y: top + (rowH - (PanelStyle.preferences.largerText ? 25 : 20)) / 2,
             width: width, height: PanelStyle.preferences.largerText ? 25 : 20))
         placeholder.isHidden = !editor.string.isEmpty
         let slot = NSRect(x: w - 44, y: h - 41, width: 34, height: 34)
@@ -687,6 +834,18 @@ final class ListeningIndicator: NSView {
         } else {
             send.isEnabled = !editor.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (mode == .prompt || followupEnabled)
             show(send, slot)
+        }
+        // The chip: trailing edge, left of the send slot, centred on it.
+        let chip = editor === followup ? followupChip : commandChip
+        let chipWidth = ContextChipView.width(for: chip, larger: PanelStyle.preferences.largerText)
+        if chipWidth > 0 {
+            let chipHeight = ContextChipView.height(larger: PanelStyle.preferences.largerText)
+            contextChip.update(chip)
+            show(contextChip, NSRect(x: slot.minX - 6 - chipWidth, y: slot.midY - chipHeight / 2, width: chipWidth, height: chipHeight))
+        }
+        if top > 0 {
+            show(shelfRow, NSRect(x: 14, y: 8, width: w - 28, height: ShelfChipsView.rowHeight(larger: PanelStyle.preferences.largerText)))
+            shelfRow.layoutSubtreeIfNeeded()
         }
         if editor === input, trailing > 0, let preview {
             previewLabel.font = preview.font; previewLabel.attributedStringValue = preview.text
@@ -715,10 +874,15 @@ final class ListeningIndicator: NSView {
     }
     private func layoutReader(rendered: NSAttributedString, bodyHeight: CGFloat, top: CGFloat) {
         let w = reading.bounds.width, h = reading.bounds.height
-        appIcon.image = source.icon ?? PanelStyle.symbol("macwindow", size: 14)
-        show(appIcon, NSRect(x: 20, y: 18, width: 14, height: 14))
-        sourceLabel.stringValue = source.app + (source.title.isEmpty ? "" : " · " + source.title); sourceLabel.toolTip = source.title
-        show(sourceLabel, NSRect(x: 42, y: 17, width: max(0, w - 127), height: 18))
+        // "Brave · title" only when the window was used; a general answer shows only the question.
+        let header = sourceIncluded || presentedFailure != nil
+        if header {
+            appIcon.image = (sourceIncluded ? source.icon : nil) ?? PanelStyle.symbol(sourceIncluded ? "macwindow" : "sparkle", size: 14)
+            show(appIcon, NSRect(x: 20, y: 18, width: 14, height: 14))
+            sourceLabel.stringValue = sourceIncluded ? source.app + (source.title.isEmpty ? "" : " · " + source.title) : "pi"
+            sourceLabel.toolTip = sourceIncluded ? source.title : nil
+            show(sourceLabel, NSRect(x: 42, y: 17, width: max(0, w - 127), height: 18))
+        }
         show(close, NSRect(x: w - 40, y: 8, width: 32, height: 34))
         if let failure = presentedFailure {
             failureIcon.image = PanelStyle.symbol(failure.symbol, size: 21)
@@ -735,8 +899,9 @@ final class ListeningIndicator: NSView {
         } else {
             show(copyButton, NSRect(x: w - 75, y: 8, width: 32, height: 34))
             if !question.isEmpty {
-                questionLabel.stringValue = question; questionLabel.toolTip = question
-                show(questionLabel, NSRect(x: 22, y: 51, width: w - 44, height: 19))
+                questionLabel.attributedStringValue = questionLine()
+                questionLabel.toolTip = question + (pointing.map { "\n" + Self.pointingPrefix + $0 } ?? "")
+                show(questionLabel, header ? NSRect(x: 22, y: 51, width: w - 44, height: 19) : NSRect(x: 22, y: 17, width: max(0, w - 107), height: 19))
             }
             if showingCard {
                 show(cardView, NSRect(x: 22, y: top, width: w - 44, height: max(0, h - top - 36)))
@@ -746,7 +911,8 @@ final class ListeningIndicator: NSView {
                 result.setFrameSize(NSSize(width: answerScroll.contentSize.width, height: max(bodyHeight, answerScroll.contentSize.height)))
             }
             let idle = cardSource == .instant ? (followupEnabled ? "Quick answer · Ask a follow-up" : "Quick answer")
-                : (answerRoute.map { $0 + " · " } ?? "") + (followupEnabled ? "Ready for a follow-up · Same pinned window" : "Saved answer · Conversation closed")
+                : (answerRoute.map { $0 + " · " } ?? "") + ContextChipCopy.footer(followup: followupEnabled, included: sourceIncluded,
+                                                                                    pulled: sourcePulled, appName: source.app)
             // While streaming, the bar carries the status; the reader footer stays quiet.
             responseStatus.stringValue = retryStatus ?? (streaming ? "" : idle)
             show(responseStatus, NSRect(x: 22, y: h - 25, width: w - 44, height: 17))
@@ -772,7 +938,7 @@ final class ListeningIndicator: NSView {
     public func restoreAfterFollowupFailure(_ error: Error, retry: Bool) {
         followupEnabled = retry
         guard let saved = lastAnswer else { showFailure(error); return }
-        source = saved.source; question = saved.question
+        restore(saved)
         retryStatus = retry ? "Follow-up failed — try again" : "Conversation ended — start a new task"
         responseStatus.toolTip = error.localizedDescription
         // An ended conversation took its context and file tokens with it: its card is read-only.
@@ -802,6 +968,99 @@ final class ListeningIndicator: NSView {
     public func showFailure(_ error: Error, present: Bool = true) {
         streaming = false; streamStatus = nil
         presentAnswer(error.localizedDescription, failure: FailurePresentation(error), save: true, present: present)
+    }
+
+    // MARK: Context chip, shelf and attention (DESIGN2 §3, DESIGN3 §A/§B)
+
+    private func restore(_ saved: SavedAnswer) {
+        source = saved.source; question = saved.question
+        sourceIncluded = saved.included; sourcePulled = saved.pulled; pointing = saved.pointing
+    }
+    /// The shelf's chips (and whether a selected text is attached, for the placeholder). Re-lays out the
+    /// bar without touching the first responder or the draft.
+    public func showShelf(_ chips: [ShelfChipPresentation], selection: Bool) {
+        guard chips != shelfChips || selection != shelfSelection else { return }
+        shelfChips = chips; shelfSelection = selection
+        shelfRow.update(chips)
+        if shelfPopover.isShown { shelfPopover.performClose(nil) }
+        refreshPlaceholder()
+        if mode == .prompt || mode == .reader { layoutCurrent() }
+    }
+    /// The answer used the window (the chip included it, or the agent looked: `pulled`). Only then does
+    /// the reader name the app.
+    public func setSourceIncluded(_ included: Bool, pulled: Bool = false) {
+        sourceIncluded = included || pulled; sourcePulled = pulled
+        if mode == .reader { layoutCurrent() }
+    }
+    /// "Pointing at Button “Send”" on the user's message (nil clears it).
+    public func setPointing(_ text: String?) { pointing = text; if mode == .reader { layoutCurrent() } }
+    static let pointingPrefix = "Pointing at "
+    private func questionLine() -> NSAttributedString {
+        let font = questionLabel.font ?? .systemFont(ofSize: 11)
+        let line = NSMutableAttributedString(string: question, attributes: [.font: font, .foregroundColor: PanelStyle.secondaryInk])
+        guard let pointing else { return line }
+        // Label ink (accent text at this size fails contrast and reads as a link); no symbol glyph for VoiceOver to spell out.
+        line.append(NSAttributedString(string: "  ·  " + Self.pointingPrefix + pointing,
+                                       attributes: [.font: NSFont.systemFont(ofSize: font.pointSize, weight: .medium),
+                                                    .foregroundColor: NSColor.labelColor]))
+        let paragraph = NSMutableParagraphStyle(); paragraph.lineBreakMode = .byTruncatingMiddle
+        line.addAttribute(.paragraphStyle, value: paragraph, range: NSRange(location: 0, length: line.length))
+        return line
+    }
+    /// A tether re-pinned the take: the bar and a later reader name the new window.
+    public func retarget(snapshot: Snapshot) {
+        source = Source(app: snapshot.targetWindow?.processName ?? source.app, title: snapshot.targetWindow?.title ?? "",
+                        icon: snapshot.targetWindow.flatMap { NSRunningApplication(processIdentifier: $0.processId)?.icon })
+        contextChip.icon = source.icon
+        if mode == .prompt || mode == .reader { layoutCurrent() }
+    }
+    /// The system area grab (`screencapture -i`) must not capture the bar: order it out without ending the
+    /// take, then bring it back with the draft and focus intact.
+    public func suspendForGrab() { appearancePopover.close(); shelfPopover.close(); panel.orderOut(nil) }
+    public func resumeAfterGrab() {
+        guard mode == .prompt || mode == .reader else { return }
+        reveal(takeKey: true)
+        panel.makeFirstResponder(mode == .prompt ? input : (followupEnabled ? followup : nil))
+    }
+    /// Previews and tests: the chip's app icon (production takes it from the pinned process).
+    public func setContextIcon(_ icon: NSImage?) { contextChip.icon = icon; contextChip.needsDisplay = true }
+    /// Previews: the drop outline as a drag over the bar shows it.
+    public func previewDropTargeted(_ targeted: Bool) { setDropTargeted(targeted) }
+    /// Commits the first frame of a just-ordered panel before slower key-down work (the Brave tab pin).
+    public func flushToScreen() {
+        guard presentsOnScreen, panel.isVisible else { return }
+        panel.displayIfNeeded(); CATransaction.flush()
+    }
+    private func refreshPlaceholder() {
+        guard mode == .prompt, listeningState == .off, !voiceHintShown else { return }
+        placeholder.stringValue = idlePlaceholder
+    }
+    private func setDropTargeted(_ targeted: Bool) {
+        guard targeted != dropTargeted else { return }
+        dropTargeted = targeted
+        if mode == .prompt || mode == .reader { layoutCurrent() }
+    }
+    private func chipMenu() -> NSMenu? {
+        let follow = mode == .reader
+        guard let chip = follow ? followupChip : commandChip, chip.state != .hidden else { return nil }
+        let menu = NSMenu(); menu.autoenablesItems = false
+        let name = ContextChipCopy.shortName(chip.appName)
+        let included = chip.state == .on || chip.state == .suggested
+        menu.addItem(ClosureMenuItem(included ? "Leave Out \(name)" : "Include \(name)") { [weak self] in self?.onToggleContext?(follow) })
+        if !follow {
+            menu.addItem(.separator())
+            let anchor = contextChip.screenCenter
+            menu.addItem(ClosureMenuItem("Point at an Element…") { [weak self] in self?.onPointAtElement?(anchor) })
+            menu.addItem(ClosureMenuItem("Grab an Area…") { [weak self] in self?.onGrabArea?() })
+        }
+        return menu
+    }
+    private func previewAttachment(_ chip: ShelfChipPresentation, from view: NSView) {
+        guard chip.kind != .suggestion else { return }
+        if shelfPopover.isShown { shelfPopover.performClose(nil); return }
+        shelfPopover.contentViewController = ShelfPreviewController(chip)
+        shelfPopover.contentViewController?.view.appearance = AppearanceSettings.shared.appearance
+        shelfPopover.show(relativeTo: view.bounds, of: view, preferredEdge: .maxY)
     }
 
     // MARK: Streaming agent answers
@@ -845,7 +1104,7 @@ final class ListeningIndicator: NSView {
         listeningState = state
         listeningIndicator.finishing = state == .finishing
         listeningIndicator.setAccessibilityLabel(state == .finishing ? "Transcribing" : "Listening")
-        placeholder.stringValue = state == .listening ? "Listening…" : Self.idlePlaceholder
+        placeholder.stringValue = state == .listening ? "Listening…" : idlePlaceholder
         voiceHintShown = false; placeholder.toolTip = nil
         if state == .off, let storage = input.textStorage, storage.length > 0 {
             // The transcript becomes ordinary editable text; typing continues in label ink.
@@ -973,7 +1232,8 @@ final class ListeningIndicator: NSView {
         } else { clearCard() }
         if save {
             let saved = SavedAnswer(text: text, question: question, source: source,
-                                    card: failure == nil ? card : nil, cardSource: failure == nil ? cardSource : nil)
+                                    card: failure == nil ? card : nil, cardSource: failure == nil ? cardSource : nil,
+                                    included: sourceIncluded, pulled: sourcePulled, pointing: pointing)
             latestResult = (saved, failure); if failure == nil { lastAnswer = saved }
         }
         followup.string = ""; followup.undoManager?.removeAllActions()
@@ -1009,12 +1269,12 @@ final class ListeningIndicator: NSView {
     }
     public func reopenLatestResult() {
         guard let (saved, failure) = latestResult else { return }
-        source = saved.source; question = saved.question
+        restore(saved)
         presentAnswer(saved.text, failure: failure, save: false, card: saved.card, cardSource: saved.cardSource, cardActions: false)
     }
     public func reopenLastAnswer() {
         guard let saved = lastAnswer else { return }
-        source = saved.source; question = saved.question
+        restore(saved)
         // Recalled cards are read-only: their thread or 10-minute file tokens may be gone.
         presentAnswer(saved.text, failure: nil, save: false, card: saved.card, cardSource: saved.cardSource, cardActions: false)
     }
@@ -1030,7 +1290,7 @@ final class ListeningIndicator: NSView {
     /// Test seam: whether the last reveal asked for keyboard focus (set even offscreen).
     private(set) var lastRevealTookKey = false
     public func hide() {
-        appearancePopover.close(); copyReset?.cancel(); copyReset = nil; progress.stopAnimation(nil)
+        appearancePopover.close(); shelfPopover.close(); copyReset?.cancel(); copyReset = nil; progress.stopAnimation(nil)
         changingState = true; panel.orderOut(nil); mode = .hidden; changingState = false
         streaming = false; streamStatus = nil
     }
@@ -1039,6 +1299,7 @@ final class ListeningIndicator: NSView {
     private func copyAnswer() {
         guard mode == .reader else { return }
         NSPasteboard.general.clearContents(); NSPasteboard.general.setString(originalAnswer, forType: .string)
+        onCopiedAnswer?()
         copyButton.image = PanelStyle.symbol("checkmark"); copyButton.setAccessibilityLabel("Copied")
         Accessibility.announce("Answer copied", on: copyButton, priority: .medium, using: announce)
         copyReset?.cancel()
@@ -1058,4 +1319,25 @@ final class ListeningIndicator: NSView {
 extension PromptPanel: CommandSurface {
     public var showsComposer: Bool { mode == .prompt }
     public func presentFailure(_ error: Error) { showFailure(error) }
+}
+
+extension PromptPanel: ContextChipSurface {
+    /// The command composer's chip, or the follow-up composer's (`isFollowup`). Suggestions change only the
+    /// accessibility value (silently); `announceContextChange` speaks a change the user made.
+    public func showContextChip(_ chip: ContextChipPresentation) {
+        if chip.isFollowup {
+            guard chip != followupChip else { return }
+            followupChip = chip
+        } else {
+            guard chip != commandChip else { return }
+            commandChip = chip
+        }
+        refreshPlaceholder()
+        if mode == .prompt || mode == .reader { layoutCurrent() }
+    }
+    public func announceContextChange() {
+        guard let chip = mode == .reader ? followupChip : commandChip, chip.state != .hidden, listeningState == .off else { return }
+        Accessibility.announce(ContextChipCopy.accessibilityLabel(chip) + ", " + ContextChipCopy.accessibilityValue(chip),
+                               on: contextChip, priority: .medium, using: announce)
+    }
 }

@@ -20,14 +20,37 @@ export function createSessionSettings(isolated: boolean, cwd = process.cwd(), ag
   return settings;
 }
 
+/**
+ * Lean pi-os identity for isolated macOS sessions (DESIGN2 §5.7). It replaces pi's coding-agent
+ * preamble, tool list, `<docs>` and `<cwd>`; the computer-use extension sends it, followed by the
+ * scope-neutral pi-os rules, as the complete system prompt. It never names the active window or the
+ * scope, so it is byte-identical for general and window turns (stable prompt-cache prefix); window and
+ * Brave guidance travel with the window tools instead.
+ */
+export const PI_OS_SYSTEM_PROMPT = [
+  "You are pi-os, a desktop assistant on the user's Mac. The user pressed the pi-os hotkey while working in another app and typed or spoke a request.",
+  "- Most requests are questions, explanations, writing or quick lookups: answer them directly, concisely and in plain text. Use a tool only when the request needs one.",
+  "- You see only what the request carries. A \"## Desktop context\" section (usually with a screenshot) means the user's active window is included; otherwise only the active app's name is known, so never claim to see its content. Material under \"Attached by the user\" is what the user explicitly added.",
+  "- A tool's description carries its rules; follow them while the tool is available.",
+].join("\n");
+
+export interface AgentResourceOptions {
+  /** Replaces pi's default base prompt (isolated macOS sessions pass PI_OS_SYSTEM_PROMPT). */
+  systemPrompt?: string;
+}
+
 export async function loadAgentResources(
   extensions: readonly InlineExtension[],
   cwd = process.cwd(),
   agentDir = getAgentDir(),
   isolated = false,
+  options: AgentResourceOptions = {},
 ): Promise<DefaultResourceLoader> {
   const loader = new DefaultResourceLoader({
     cwd, agentDir, extensionFactories: [...extensions],
+    // pi 1.0: a custom base prompt replaces the preamble, tool list, rules and docs sections
+    // (buildSystemPromptSections); a SYSTEM.md is then never discovered.
+    ...(options.systemPrompt !== undefined ? { systemPrompt: options.systemPrompt } : {}),
     // Project resources are never trusted on Mac, even with explicit GLOBAL compatibility.
     settingsManager: SettingsManager.create(cwd, agentDir, { projectTrusted: process.platform === "darwin" ? false : !isolated }),
     ...(isolated ? { noExtensions: true, noSkills: true, noPromptTemplates: true, noContextFiles: true } : {}),

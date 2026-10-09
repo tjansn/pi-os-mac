@@ -1,7 +1,7 @@
 import {
   MODEL_TIERS, modelKey, sameTarget, targetKey, tierRank,
   type AgentIntent, type Classification, type LatencyView, type ModelTier, type Profile, type RouteDecision,
-  type RouteInput, type RouteTarget, type RoutingCatalog, type RoutingSettings, type TierChoice,
+  type RouteInput, type RouteTarget, type RoutingCatalog, type RoutingSettings, type StatEntry, type TierChoice,
 } from "./types.js";
 
 /**
@@ -10,17 +10,21 @@ import {
  * route() consumes the result.
  */
 
-/** Base tier by intent for complexity 0/1/2. */
+/**
+ * Base tier by intent for complexity 0/1/2 (DESIGN2 §5.4, r2/latency.md §5.1). Ordinary answers,
+ * writing and simple UI work stay on quick: a fast-tier turn costs ~1 s more per turn and Sol@off ~3.3 s.
+ * Misses are caught by escalation (pi_os_escalate, ≥ 2 tool errors, > 8 tool results, corrections).
+ */
 export const BASE_TIERS: Readonly<Record<AgentIntent, readonly [ModelTier, ModelTier, ModelTier]>> = {
   calculate: ["quick", "quick", "fast"],
   search_computer: ["quick", "quick", "fast"],
   open_launch: ["quick", "quick", "fast"],
-  answer: ["quick", "fast", "standard"],
-  write: ["quick", "fast", "standard"],
-  act_in_app: ["fast", "standard", "standard"],
-  browse_web: ["fast", "standard", "standard"],
+  answer: ["quick", "quick", "standard"],
+  write: ["quick", "quick", "standard"],
+  act_in_app: ["quick", "fast", "standard"],
+  browse_web: ["quick", "fast", "standard"],
   code: ["standard", "standard", "deep"],
-  other: ["fast", "fast", "standard"],
+  other: ["quick", "quick", "fast"],
 };
 
 /** Expected answer length per intent, for ranking by end-to-end time. */
@@ -35,6 +39,17 @@ export const INTENT_TOOL_HINTS: Readonly<Partial<Record<AgentIntent, readonly st
 
 /** Local measurements are trusted from this many samples on. */
 export const TRUSTED_SAMPLES = 3;
+/** Bad news is believed at once: a single measurement this many times worse than the prior is trusted. */
+export const BAD_NEWS_FACTOR = 2;
+/**
+ * Cross-tier latency guard: a tier raised only by a soft signal (complexity 1) falls back to the tier
+ * without the signal when its model's expected TTFT is > DEMOTE_FACTOR× that tier's AND more than
+ * DEMOTE_MIN_S slower, or > DEMOTE_EXTRA_S above it. Sub-second gaps (Haiku 0.6 s vs Sonnet 1.3 s)
+ * never demote; Codex Sol@off (5 s) vs Luna (1.7 s) does.
+ */
+export const DEMOTE_FACTOR = 2;
+export const DEMOTE_MIN_S = 1;
+export const DEMOTE_EXTRA_S = 2;
 const LOW_CONFIDENCE = 0.5;
 const CORRECTION_THRESHOLD = 0.6;
 const SCREEN_THRESHOLD = 0.5;
@@ -44,13 +59,13 @@ const tierAt = (rank: number): ModelTier => MODEL_TIERS[Math.min(MODEL_TIERS.len
 
 /**
  * Tier implied by the classification alone, before settings/bias/follow-up
- * modifiers: base(intent, complexity), uncertainty floor, advisory floor.
+ * modifiers: base(intent, complexity), advisory floor. Low confidence is no
+ * floor (it sent every unmatched request to the slow fast tier, r2/latency.md §4).
  */
 export function intrinsicTier(c: Classification, selectionChars = 0): ModelTier {
   let base = BASE_TIERS[c.intent][c.complexity];
   if (c.intent === "write" && selectionChars > 2_000 && base === "quick") base = "fast";
   let rank = tierRank(base);
-  if (c.intentConfidence < LOW_CONFIDENCE) rank = Math.max(rank, tierRank("fast"));
   if (c.tierFloor) rank = Math.max(rank, tierRank(c.tierFloor));
   return tierAt(rank);
 }
@@ -67,45 +82,67 @@ interface Need {
   outTokens: number;
 }
 
-export function decide(input: RouteInput, catalog: RoutingCatalog, settings: RoutingSettings, options: DecideOptions = {}): RouteDecision {
-  const c = input.classification;
-  const reasons = [`intent=${c.intent}`, `conf=${c.intentConfidence.toFixed(2)}`, `cx=${c.complexity}`];
-  if (c.advisory) reasons.push(`advisory=${c.advisory.source}${c.advisory.raised.length ? `:${c.advisory.raised.join("+")}` : ""}`);
-
-  // Only a rule-derived label may select the instant lane (advisory hints never trigger actions).
-  if (!input.followup && (c.intent === "calculate" || c.intent === "open_launch") && c.intentConfidence >= 0.6
-      && !c.advisory?.raised.includes("intent") && options.instantOk?.(input)) {
-    return { lane: "instant", tier: "instant", alternates: [], ladder: [], toolsAdd: [], attachScreenshot: false,
-      bias: settings.bias, reasons: [...reasons, "instant"] };
-  }
-
+/** The decided tier and its cap: base tier plus settings, follow-up and explicit-word modifiers. */
+function tierFor(c: Classification, input: RouteInput, settings: RoutingSettings, reasons?: string[]): { tier: ModelTier; cap: ModelTier } {
   let rank = tierRank(intrinsicTier(c, input.selectionChars));
-  if (c.intentConfidence < LOW_CONFIDENCE) reasons.push("low-confidence");
-  if (c.tierFloor) reasons.push(`floor=${c.tierFloor}`);
+  if (c.intentConfidence < LOW_CONFIDENCE) reasons?.push("low-confidence");
+  if (c.tierFloor) reasons?.push(`floor=${c.tierFloor}`);
   if (!c.explicitDeep && (c.explicitFast || settings.bias === "speed")) {
     rank = Math.max(tierRank("quick"), rank - 1);
-    reasons.push(c.explicitFast ? "explicit-fast" : "bias=speed");
+    reasons?.push(c.explicitFast ? "explicit-fast" : "bias=speed");
   } else if (settings.bias === "quality") {
     rank = Math.max(rank, Math.min(tierRank("deep"), rank + 1));
-    reasons.push("bias=quality");
+    reasons?.push("bias=quality");
   }
   if (input.followup) {
     if (input.lastTier) rank = Math.max(rank, tierRank(input.lastTier));
     if (c.correction >= CORRECTION_THRESHOLD) {
       rank = Math.max(rank, tierRank(input.lastTier ?? "quick")) + 1;
-      reasons.push("correction");
+      reasons?.push("correction");
     }
   }
-  if (c.explicitDeep) { rank = Math.max(rank, tierRank("deep")); reasons.push("explicit-deep"); }
-  if (c.explicitMax) { rank = tierRank("max"); reasons.push("explicit-max"); }
+  if (c.explicitDeep) { rank = Math.max(rank, tierRank("deep")); reasons?.push("explicit-deep"); }
+  if (c.explicitMax) { rank = tierRank("max"); reasons?.push("explicit-max"); }
   const cap: ModelTier = c.explicitDeep || c.explicitMax ? "max" : settings.maxAutoTier;
-  if (rank > tierRank(cap)) reasons.push(`cap=${cap}`);
-  const tier = tierAt(Math.min(rank, tierRank(cap)));
+  if (rank > tierRank(cap)) reasons?.push(`cap=${cap}`);
+  return { tier: tierAt(Math.min(rank, tierRank(cap))), cap };
+}
 
-  const wantsScreenshot = input.hasScreenshot && (c.needsScreen >= SCREEN_THRESHOLD
-    || c.intent === "act_in_app" || (c.intent === "browse_web" && !input.browserCdp));
+/**
+ * Screenshot need. With a host scope: window attaches the screenshot when there is one, general never
+ * does. Without one (legacy requests): today's formula over the classification, unchanged.
+ */
+function wantsScreenshotFor(input: RouteInput): boolean {
+  if (!input.hasScreenshot) return false;
+  if (input.scope) return input.scope === "window";
+  const c = input.classification;
+  return c.needsScreen >= SCREEN_THRESHOLD || c.intent === "act_in_app" || (c.intent === "browse_web" && !input.browserCdp);
+}
+
+export function decide(input: RouteInput, catalog: RoutingCatalog, settings: RoutingSettings, options: DecideOptions = {}): RouteDecision {
+  const c = input.classification;
+  const reasons = [`intent=${c.intent}`, `conf=${c.intentConfidence.toFixed(2)}`, `cx=${c.complexity}`];
+  if (c.advisory) reasons.push(`advisory=${c.advisory.source}${c.advisory.raised.length ? `:${c.advisory.raised.join("+")}` : ""}`);
+  if (input.scope) reasons.push(`scope=${input.scope}`);
+  const scope = input.scope ? { scope: input.scope } : {};
+
+  // Only a rule-derived label may select the instant lane (advisory hints never trigger actions).
+  if (!input.followup && (c.intent === "calculate" || c.intent === "open_launch") && c.intentConfidence >= 0.6
+      && !c.advisory?.raised.includes("intent") && options.instantOk?.(input)) {
+    return { lane: "instant", tier: "instant", alternates: [], ladder: [], toolsAdd: [], attachScreenshot: false, vision: false,
+      ...scope, bias: settings.bias, reasons: [...reasons, "instant"] };
+  }
+
+  const decided = tierFor(c, input, settings, reasons);
+  const cap = decided.cap;
+  let tier = decided.tier;
+
+  const wantsScreenshot = wantsScreenshotFor(input);
+  if (input.hasImageAttachment) reasons.push("image-attachment");
+  // A window thread sees window images (attached now or captured by its tools); attachments are images too.
+  const wantsVision = wantsScreenshot || input.hasImageAttachment === true || input.scope === "window";
   const need: Need = {
-    vision: wantsScreenshot,
+    vision: wantsVision,
     minContext: Math.ceil(Math.max(0, input.estimatedPromptTokens) * 1.25),
     outTokens: OUT_TOKENS[c.intent] ?? 150,
   };
@@ -119,19 +156,36 @@ export function decide(input: RouteInput, catalog: RoutingCatalog, settings: Rou
   let stats = measured;
   let model: RouteTarget | undefined;
   for (const view of unblocked ? [measured, unblocked] : [measured]) {
-    for (const vision of wantsScreenshot ? [true, false] : [false]) {
+    for (const vision of wantsVision ? [true, false] : [false]) {
       model = pickNearest(tier, cap, { ...need, vision }, catalog, settings, view, reasons);
       if (!model) continue;
       need.vision = vision;
       stats = view;
-      if (wantsScreenshot && !vision) reasons.push("no-vision-model");
+      if (wantsVision && !vision) reasons.push("no-vision-model");
       if (view === unblocked) reasons.push("health-blocked");
       break;
     }
     if (model) break;
   }
   if (!model) reasons.push("no-usable-model");
-  const attachScreenshot = !!model && need.vision;
+
+  // Cross-tier latency guard: never pay a much slower model for a soft signal alone.
+  if (model && c.complexity === 1) {
+    const plain = tierFor({ ...c, complexity: 0 }, input, settings).tier;
+    if (tierRank(plain) < tierRank(tier)) {
+      const notes: string[] = [];
+      const alternative = pickNearest(plain, cap, need, catalog, settings, stats, notes);
+      const raisedTtft = targetTtft(model, catalog, measured);
+      const plainTtft = alternative && targetTtft(alternative, catalog, measured);
+      if (alternative && !sameTarget(alternative, model) && raisedTtft !== undefined && plainTtft !== undefined
+          && ((raisedTtft > DEMOTE_FACTOR * plainTtft && raisedTtft - plainTtft > DEMOTE_MIN_S) || raisedTtft - plainTtft > DEMOTE_EXTRA_S)) {
+        reasons.push(...notes, "latency-demote");
+        tier = plain;
+        model = alternative;
+      }
+    }
+  }
+  const attachScreenshot = !!model && need.vision && wantsScreenshot;
 
   const ladder: RouteTarget[] = [];
   for (let r = tierRank(tier) + 1; r <= tierRank(cap); r++) {
@@ -148,7 +202,8 @@ export function decide(input: RouteInput, catalog: RoutingCatalog, settings: Rou
   return {
     lane: "agent", tier, model, alternates, ladder,
     toolsAdd: [...(INTENT_TOOL_HINTS[c.intent] ?? [])],
-    attachScreenshot, bias: settings.bias, reasons,
+    attachScreenshot, vision: !!model && (catalog.candidates.get(modelKey(model.provider, model.id))?.vision ?? false),
+    ...scope, bias: settings.bias, reasons,
   };
 }
 
@@ -179,17 +234,40 @@ function usableFor(choice: TierChoice, need: Need, catalog: RoutingCatalog, sett
     && !stats?.blocked(choice.provider, choice.id);
 }
 
-/** Expected seconds to a complete short answer: TTFT + output / throughput (local EWMA once trusted). */
+/**
+ * Expected TTFT in seconds: the local EWMA once it has TRUSTED_SAMPLES samples, or from the first sample
+ * when that is ≥ BAD_NEWS_FACTOR× the prior (r2/latency.md §5.1: Tom's first 7.5 s Sol turn should have
+ * counted at once); good news waits for TRUSTED_SAMPLES.
+ */
+export function expectedTtft(p: Pick<Profile, "ttftS">, measured?: StatEntry): number {
+  if (!measured || measured.n < 1) return p.ttftS;
+  const ttft = measured.ttftMs / 1_000;
+  return measured.n >= TRUSTED_SAMPLES || ttft >= BAD_NEWS_FACTOR * p.ttftS ? ttft : p.ttftS;
+}
+
+/** Expected seconds to a complete short answer: TTFT + output / throughput (same trust rule, slower = worse). */
 export function expectedSeconds(p: Profile, outTokens: number, stats?: LatencyView): number {
   const measured = stats?.get(targetKey(p));
-  const ttft = measured && measured.n >= TRUSTED_SAMPLES ? measured.ttftMs / 1_000 : p.ttftS;
-  const tps = measured && measured.tpsN >= TRUSTED_SAMPLES ? measured.tps : p.tps;
+  const ttft = expectedTtft(p, measured);
+  const trustedTps = measured && measured.tpsN >= 1 && (measured.tpsN >= TRUSTED_SAMPLES || measured.tps * BAD_NEWS_FACTOR <= p.tps);
+  const tps = trustedTps ? measured.tps : p.tps;
   return ttft + outTokens / Math.max(1, tps);
 }
 
-/** All usable profiles of one tier, best first (curated before generic). */
+/**
+ * Expected TTFT of a routed target (also a tier override or a pin-only model): its prior with the trust
+ * rule, else any local measurement, else undefined (unknown: the latency guard then stays out of it).
+ */
+function targetTtft(target: TierChoice, catalog: RoutingCatalog, stats?: LatencyView): number | undefined {
+  const measured = stats?.get(targetKey(target));
+  const profile = catalog.profiles.find(p => sameTarget(p, target));
+  if (profile) return expectedTtft(profile, measured);
+  return measured && measured.n >= 1 ? measured.ttftMs / 1_000 : undefined;
+}
+
+/** All usable profiles of one tier, best first (curated before generic; pin-only priors never). */
 function rankTier(tier: ModelTier, need: Need, catalog: RoutingCatalog, settings: RoutingSettings, stats?: LatencyView): RouteTarget[] {
-  const usable = catalog.profiles.filter(p => p.tier === tier && usableFor(p, need, catalog, settings, stats));
+  const usable = catalog.profiles.filter(p => p.tier === tier && !p.pinOnly && usableFor(p, need, catalog, settings, stats));
   const cost = new Map(usable.map(p => [p, expectedSeconds(p, need.outTokens, stats)] as const));
   // The max tier is only reached on explicit request: there, intelligence comes first.
   const byQuality = settings.bias === "quality" || tier === "max";

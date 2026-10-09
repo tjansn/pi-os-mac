@@ -102,11 +102,17 @@ import XCTest
         panel.setFollowupEnabled(true)
         let route = try JSONDecoder().decode(HarnessClient.Status.Route.self, from: Data(#"{"tier":"fast","model":"gpt-6-luna","thinkingLevel":"off","auto":true}"#.utf8))
         panel.presentAgentAnswer("Done.", card: nil, route: Application.routeNote(route))
-        XCTAssertEqual(panel.statusLine, "Auto · gpt-6-luna · Ready for a follow-up · Same pinned window")
+        XCTAssertEqual(panel.statusLine, "Auto · gpt-6-luna · Ready for a follow-up", "a general answer names no window")
         let explicit = try JSONDecoder().decode(HarnessClient.Status.Route.self, from: Data(#"{"model":"gpt-6-astra","auto":false}"#.utf8))
         XCTAssertNil(Application.routeNote(explicit), "An explicit model needs no note"); XCTAssertNil(Application.routeNote(nil))
         panel.presentAgentAnswer("Done.", card: nil)
-        XCTAssertEqual(panel.statusLine, "Ready for a follow-up · Same pinned window")
+        XCTAssertEqual(panel.statusLine, "Ready for a follow-up")
+        panel.setSourceIncluded(true)
+        panel.presentAgentAnswer("Done.", card: nil)
+        XCTAssertEqual(panel.statusLine, "Ready for a follow-up · Fixture included")
+        panel.setSourceIncluded(false, pulled: true)
+        panel.presentAgentAnswer("Done.", card: nil)
+        XCTAssertEqual(panel.statusLine, "Ready for a follow-up · Looked at Fixture")
     }
 
     func testTheListeningDiscKeepsItsGlyphReadable() {
@@ -271,7 +277,7 @@ import XCTest
                     XCTAssertTrue(panel.composerHasFocus)
                     assertRenders(panel, "voice-hint-\(preset.rawValue)-\(larger)")
                     panel.setDraft("w")
-                    XCTAssertEqual(panel.placeholderText, "Ask about this window…", "The first keystroke clears it")
+                    XCTAssertEqual(panel.placeholderText, "Ask anything…", "The first keystroke clears it")
                     XCTAssertFalse(panel.showVoiceOffHint(VoiceOffHint.text), "Never over a draft")
                 }
             }
@@ -378,7 +384,7 @@ import XCTest
         XCTAssertFalse(panel.isStreaming)
         XCTAssertTrue(panel.cardActionsEnabled)
         XCTAssertEqual(panel.displayedAnswer, "Here are the two cheapest options.", "Copy Answer keeps responseText")
-        XCTAssertEqual(panel.statusLine, "Ready for a follow-up · Same pinned window")
+        XCTAssertEqual(panel.statusLine, "Ready for a follow-up")
     }
 
     func testConfirmationAndVoiceFailureStates() {

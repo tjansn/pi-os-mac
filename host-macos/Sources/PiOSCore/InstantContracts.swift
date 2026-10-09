@@ -47,9 +47,11 @@ public struct InstantResponse: Decodable, Equatable {
     public var elapsedMs: Double
     public var source: String
     public var decision: Decision
+    /// Advisory context scope (ContextChoice.swift). A malformed value is dropped, never fatal.
+    public var scope: InstantScope?
 
     private enum Keys: String, CodingKey {
-        case seq, elapsedMs, source, decision, intent, title, subtitle, card, relaxed, action, confirm, code, message, reason, hints
+        case seq, elapsedMs, source, decision, intent, title, subtitle, card, relaxed, action, confirm, code, message, reason, hints, scope
     }
 
     public init(from decoder: Decoder) throws {
@@ -57,6 +59,7 @@ public struct InstantResponse: Decodable, Equatable {
         seq = try c.decode(Int.self, forKey: .seq)
         elapsedMs = try c.decode(Double.self, forKey: .elapsedMs)
         source = try c.decode(String.self, forKey: .source)
+        scope = try? c.decodeIfPresent(InstantScope.self, forKey: .scope)
         let kind = try c.decode(String.self, forKey: .decision)
         switch kind {
         case "answer":

@@ -1,0 +1,11 @@
+{
+  "seq": 5,
+  "elapsedMs": 0,
+  "source": "grammar",
+  "decision": "fallthrough",
+  "reason": "no_match",
+  "scope": {
+    "window": 1.5,
+    "reasons": []
+  }
+}

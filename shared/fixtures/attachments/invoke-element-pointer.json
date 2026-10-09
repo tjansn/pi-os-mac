@@ -1,0 +1,58 @@
+{
+  "invocationId": "inv-ctx-0001",
+  "contextId": "ctx-123",
+  "invokedAt": "2026-10-05T09:00:00Z",
+  "retainSession": true,
+  "takeId": "take-7",
+  "prompt": "what is this?",
+  "attachments": [
+    {
+      "kind": "element",
+      "contextId": "ctx-123",
+      "role": "AXButton",
+      "label": "Like",
+      "bounds": {
+        "x": 412,
+        "y": 300.5,
+        "width": 64,
+        "height": 28
+      }
+    },
+    {
+      "kind": "element",
+      "contextId": "ctx-123",
+      "role": "AXStaticText",
+      "text": "E = mc^2",
+      "bounds": {
+        "x": -1200,
+        "y": 80,
+        "width": 220,
+        "height": 40
+      }
+    },
+    {
+      "kind": "element",
+      "contextId": "ctx-123",
+      "role": "AXTextField",
+      "subrole": "AXSecureTextField",
+      "label": "Password",
+      "bounds": {
+        "x": 100,
+        "y": 200,
+        "width": 240,
+        "height": 24
+      }
+    },
+    {
+      "kind": "element",
+      "contextId": "ctx-123",
+      "role": "AXGroup",
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "width": 800,
+        "height": 600
+      }
+    }
+  ]
+}

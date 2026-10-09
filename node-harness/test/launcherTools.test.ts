@@ -255,3 +255,13 @@ test("open_item surfaces host policy refusals and the executable downgrade to Re
   const result = await downgraded.run("open_item", { action: "openFile", ref: "f1" });
   assert.match(result.content[0].text, /^Revealed installer\.pkg \(revealed in Finder instead of opened/);
 });
+
+test("open_item accepts a ref the thread ledger issued for an attached file, and says so in its description", async () => {
+  const { tools, calls, files, run } = setup({}, (route) => route === "launcher.open" ? { ok: true, result: { status: "Opened the file", performed: "openFile" } } : { ok: true, result: {} });
+  assert.match(tools.get("open_item").description, /a file found by find_files or attached by the user \(ref\)/);
+  // agentRunner registers a shelf file the same way find_files registers a search hit.
+  const ref = files.register({ token: "tok_attached01", name: "Q3 report.pdf", path: "", isDirectory: false, isPackage: false });
+  await run("open_item", { action: "openFile", ref });
+  assert.deepEqual(calls.at(-1)!.args.action, { type: "openFile", token: "tok_attached01" });
+  await assert.rejects(run("open_item", { action: "openFile", ref: "tok_attached01" }), /unknown_ref: Use a ref returned by find_files or given for an attached file/);
+});

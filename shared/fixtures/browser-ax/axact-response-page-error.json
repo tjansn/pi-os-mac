@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "result": {
+    "performed": true,
+    "action": "setValue",
+    "verification": "Set the value of searchbox \"Search\".",
+    "pageError": "browser_stale"
+  }
+}

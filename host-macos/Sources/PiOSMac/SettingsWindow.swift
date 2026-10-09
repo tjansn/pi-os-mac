@@ -17,7 +17,7 @@ extension HarnessClient: ModelSettingsService {}
 /// Model settings stay Node-owned, exactly as on Windows. No shell or SDK in the UI.
 /// Voice settings are host-local (no harness); the classifier switch is Node-owned.
 @MainActor final class SettingsWindow: NSWindowController, NSWindowDelegate {
-    enum Page: Int, CaseIterable { case general, voice, classifier }
+    enum Page: Int, CaseIterable { case general, context, voice, classifier }
     private let harness: ModelSettingsService
     /// nil in fixtures/tests: notification permission is then simply unavailable.
     private let notifier: ResultNotifier?
@@ -32,7 +32,18 @@ extension HarnessClient: ModelSettingsService {}
     private var state: ModelSettingsState?
     private var visibleModels: [HarnessClient.Model] = []
     private var classifierSettings: ClassifierSettings?
-    private let tabs = NSSegmentedControl(labels: ["General", "Voice", "Classifier"], trackingMode: .selectOne, target: nil, action: nil)
+    private let tabs = NSSegmentedControl(labels: ["General", "Context", "Voice", "Classifier"], trackingMode: .selectOne, target: nil, action: nil)
+    /// Settings → Context (host-local, applied at once): the active-window chip, the shelf, Brave access.
+    private let contextDefaults: UserDefaults
+    private let activeWindow = NSSegmentedControl(labels: ContextSetting.allCases.map { ContextSettings.activeWindowTitles[$0] ?? $0.rawValue },
+                                                  trackingMode: .selectOne, target: nil, action: nil)
+    private let activeWindowNote = NSTextField(wrappingLabelWithString: "")
+    private let includeSelection = NSButton(checkboxWithTitle: "Add selected text when you open pi", target: nil, action: nil)
+    private let copyFallback = NSButton(checkboxWithTitle: "Use the app’s Copy when it doesn’t share its selection", target: nil, action: nil)
+    private let suggestClipboard = NSButton(checkboxWithTitle: "Suggest what you just copied (read only when you click it)", target: nil, action: nil)
+    private let braveAccess = NSPopUpButton()
+    private let braveBackground = NSButton(checkboxWithTitle: ContextSettings.backgroundTitle, target: nil, action: nil)
+    private let braveNote = NSTextField(wrappingLabelWithString: "")
     private var pages: [FlippedView] = []
     private let providers = NSPopUpButton()
     private let models = NSPopUpButton()
@@ -87,9 +98,25 @@ extension HarnessClient: ModelSettingsService {}
     }
     var voiceButtonLabels: [String] { [microphoneButton, speechButton, assetButton].filter { !$0.isHidden }.compactMap { $0.accessibilityLabel() } }
     var classifierPathText: [String] { [pythonPath.stringValue, modelPath.stringValue] }
+    var contextValues: ContextSettings { ContextSettings(defaults: contextDefaults) }
+    var activeWindowSegments: [String] { (0..<activeWindow.segmentCount).compactMap { activeWindow.label(forSegment: $0) } }
+    var activeWindowNoteText: String { activeWindowNote.stringValue }
+    var braveAccessTitles: [String] { braveAccess.itemTitles }
+    var braveNoteText: String { braveNote.stringValue }
+    var contextSwitchStates: [Bool] { [includeSelection, copyFallback, suggestClipboard, braveBackground].map { $0.state == .on } }
+    /// Test seams for the Context page's controls (as a click would).
+    func chooseActiveWindow(_ setting: ContextSetting) {
+        activeWindow.selectedSegment = ContextSetting.allCases.firstIndex(of: setting) ?? 1; activeWindowChanged()
+    }
+    func setContextSwitch(_ index: Int, on: Bool) {
+        let button = [includeSelection, copyFallback, suggestClipboard, braveBackground][index]
+        button.state = on ? .on : .off; contextSwitchChanged(button)
+    }
 
-    init(harness: ModelSettingsService, notifier: ResultNotifier?, voice: VoiceSystem, voiceSettings: VoiceSettings? = nil) {
+    init(harness: ModelSettingsService, notifier: ResultNotifier?, voice: VoiceSystem, voiceSettings: VoiceSettings? = nil,
+         contextDefaults: UserDefaults = .standard) {
         self.harness = harness; self.notifier = notifier; self.voice = voice; self.voiceSettings = voiceSettings ?? .shared
+        self.contextDefaults = contextDefaults
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 560, height: 708),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "pi-os Settings"; window.isReleasedWhenClosed = false
@@ -97,12 +124,13 @@ extension HarnessClient: ModelSettingsService {}
         window.delegate = self
         let view = FlippedView(frame: window.contentView!.bounds)
         window.contentView = view
-        tabs.frame = NSRect(x: 130, y: 14, width: 300, height: 26); tabs.selectedSegment = 0
+        tabs.frame = NSRect(x: 80, y: 14, width: 400, height: 26); tabs.selectedSegment = 0
         tabs.target = self; tabs.action = #selector(pageChanged); tabs.setAccessibilityLabel("Settings section")
         view.addSubview(tabs)
         pages = Page.allCases.map { _ in FlippedView(frame: NSRect(x: 0, y: 48, width: 560, height: 590)) }
         pages.forEach(view.addSubview)
-        buildGeneral(pages[0]); buildVoice(pages[1]); buildClassifier(pages[2])
+        buildGeneral(pages[Page.general.rawValue]); buildContext(pages[Page.context.rawValue])
+        buildVoice(pages[Page.voice.rawValue]); buildClassifier(pages[Page.classifier.rawValue])
         let permissions = NSButton(title: "Permissions…", target: self, action: #selector(openPermissions))
         permissions.bezelStyle = .rounded; permissions.frame = NSRect(x: 28, y: 656, width: 128, height: 32); view.addSubview(permissions)
         dismiss.target = self; dismiss.action = #selector(cancel)
@@ -126,6 +154,7 @@ extension HarnessClient: ModelSettingsService {}
         dismiss.title = general ? "Cancel" : "Done"
         dismiss.frame = general ? NSRect(x: 354, y: 656, width: 82, height: 32) : NSRect(x: 446, y: 656, width: 84, height: 32)
         if page == .voice { refreshVoice() }
+        if page == .context { refreshContext() }
     }
     @objc private func pageChanged() { show(page) }
 
@@ -168,9 +197,9 @@ extension HarnessClient: ModelSettingsService {}
         view.addSubview(compatibility)
         let caution = PanelStyle.label("Pinned-only is the default. Trusted code can act outside the chosen window.", size: 11)
         caution.frame = NSRect(x: 48, y: 430, width: 480, height: 20); view.addSubview(caution)
-        let browser = NSButton(title: "Brave Connection…", target: self, action: #selector(browserSetup))
+        let browser = NSButton(title: "Brave Access…", target: self, action: #selector(browserSetup))
         browser.bezelStyle = .rounded; browser.frame = NSRect(x: 28, y: 466, width: 170, height: 32); view.addSubview(browser)
-        let browserHint = PanelStyle.label("Use your live tab, without a separate profile.", size: 11)
+        let browserHint = PanelStyle.label("Your live tab through Accessibility — no approval prompts.", size: 11)
         browserHint.frame = NSRect(x: 210, y: 472, width: 320, height: 20); view.addSubview(browserHint)
         credentials.frame = NSRect(x: 28, y: 508, width: 502, height: 24)
         credentials.state = CredentialFields.allowed ? .on : .off
@@ -185,6 +214,104 @@ extension HarnessClient: ModelSettingsService {}
         field.font = .systemFont(ofSize: size); field.textColor = PanelStyle.secondaryInk; field.frame = frame
         view.addSubview(field); return field
     }
+    private func buildContext(_ view: FlippedView) {
+        let heading = PanelStyle.label("Context", size: 18, weight: .semibold, color: .labelColor)
+        heading.frame = NSRect(x: 28, y: 16, width: 300, height: 26); view.addSubview(heading)
+        _ = note("What pi sees with your question. Changes apply to the next question.", size: 12,
+                 NSRect(x: 28, y: 48, width: 502, height: 18), in: view)
+        let windowLabel = PanelStyle.label("Active window", size: 13, color: .labelColor)
+        windowLabel.frame = NSRect(x: 28, y: 84, width: 138, height: 22); view.addSubview(windowLabel)
+        activeWindow.frame = NSRect(x: 170, y: 80, width: 360, height: 28); activeWindow.setAccessibilityLabel("Active window")
+        activeWindow.target = self; activeWindow.action = #selector(activeWindowChanged); view.addSubview(activeWindow)
+        activeWindowNote.font = .systemFont(ofSize: 11); activeWindowNote.textColor = PanelStyle.secondaryInk
+        activeWindowNote.frame = NSRect(x: 28, y: 114, width: 502, height: 46); view.addSubview(activeWindowNote)
+
+        let shelfLabel = PanelStyle.label("Context shelf", size: 13, weight: .semibold, color: .labelColor)
+        shelfLabel.frame = NSRect(x: 28, y: 170, width: 300, height: 20); view.addSubview(shelfLabel)
+        _ = note(ContextSettings.shelfNote, NSRect(x: 28, y: 194, width: 502, height: 46), in: view)
+        let addLabel = PanelStyle.label("Add to pi", size: 13, color: .labelColor)
+        addLabel.frame = NSRect(x: 28, y: 250, width: 138, height: 22); view.addSubview(addLabel)
+        let chord = ProcessInfo.processInfo.environment["PI_OS_ADD_HOTKEY"].map { _ in "Custom (PI_OS_ADD_HOTKEY)" } ?? "⌃⌥⌘C"
+        let addValue = PanelStyle.label(chord, size: 13, weight: .medium, color: .labelColor)
+        addValue.frame = NSRect(x: 170, y: 250, width: 360, height: 22); addValue.setAccessibilityLabel("Add to pi shortcut: Control Option Command C")
+        view.addSubview(addValue)
+        for (index, button) in [includeSelection, copyFallback, suggestClipboard].enumerated() {
+            button.frame = NSRect(x: 28, y: [280, 308, 370][index], width: 502, height: 24)
+            button.target = self; button.action = #selector(contextSwitchChanged(_:)); view.addSubview(button)
+        }
+        _ = note(ContextSettings.copyNote, NSRect(x: 48, y: 334, width: 482, height: 30), in: view)
+
+        let braveLabel = PanelStyle.label("Brave", size: 13, weight: .semibold, color: .labelColor)
+        braveLabel.frame = NSRect(x: 28, y: 410, width: 300, height: 20); view.addSubview(braveLabel)
+        let accessLabel = PanelStyle.label("Brave access", size: 13, color: .labelColor)
+        accessLabel.frame = NSRect(x: 28, y: 438, width: 138, height: 22); view.addSubview(accessLabel)
+        braveAccess.addItems(withTitles: BraveAccess.allCases.map { ContextSettings.braveAccessTitles[$0] ?? $0.rawValue })
+        braveAccess.frame = NSRect(x: 170, y: 434, width: 190, height: 30); braveAccess.setAccessibilityLabel("Brave access")
+        braveAccess.target = self; braveAccess.action = #selector(braveAccessChanged); view.addSubview(braveAccess)
+        let inspect = NSButton(title: "Open brave://inspect…", target: self, action: #selector(openBraveInspect))
+        inspect.bezelStyle = .rounded; inspect.frame = NSRect(x: 366, y: 434, width: 164, height: 30)
+        inspect.setAccessibilityLabel("Open brave://inspect to switch off remote debugging"); view.addSubview(inspect)
+        braveBackground.frame = NSRect(x: 28, y: 472, width: 502, height: 24)
+        braveBackground.target = self; braveBackground.action = #selector(contextSwitchChanged(_:)); view.addSubview(braveBackground)
+        _ = note(ContextSettings.backgroundNote, NSRect(x: 48, y: 498, width: 482, height: 30), in: view)
+        braveNote.font = .systemFont(ofSize: 11); braveNote.textColor = PanelStyle.secondaryInk
+        braveNote.frame = NSRect(x: 28, y: 534, width: 502, height: 46); view.addSubview(braveNote)
+        refreshContext()
+    }
+    private func refreshContext() {
+        let values = contextValues
+        activeWindow.selectedSegment = ContextSetting.allCases.firstIndex(of: values.activeWindow) ?? 1
+        activeWindowNote.stringValue = ContextSettings.activeWindowNote(values.activeWindow)
+        includeSelection.state = values.includeSelection ? .on : .off
+        copyFallback.state = values.copyFallback ? .on : .off
+        suggestClipboard.state = values.suggestClipboard ? .on : .off
+        braveAccess.selectItem(at: BraveAccess.allCases.firstIndex(of: values.braveAccess) ?? 0)
+        // DevTools is an explicit opt-in that needs computer control, as in the Brave access sheet.
+        braveAccess.item(at: BraveAccess.allCases.firstIndex(of: .cdp) ?? 1)?.isEnabled = ControlAvailability.ready || values.braveAccess == .cdp
+        braveAccess.autoenablesItems = false
+        braveBackground.state = values.braveBackground ? .on : .off
+        braveBackground.isEnabled = values.braveAccess == .ax
+        braveNote.stringValue = ContextSettings.braveNote(values.braveAccess)
+    }
+    @objc private func activeWindowChanged() {
+        var values = contextValues
+        values.activeWindow = ContextSetting.allCases[max(0, min(ContextSetting.allCases.count - 1, activeWindow.selectedSegment))]
+        values.save(to: contextDefaults); refreshContext()
+    }
+    @objc private func contextSwitchChanged(_ sender: NSButton) {
+        var values = contextValues
+        switch sender {
+        case includeSelection: values.includeSelection = sender.state == .on
+        case copyFallback: values.copyFallback = sender.state == .on
+        case suggestClipboard: values.suggestClipboard = sender.state == .on
+        case braveBackground: values.braveBackground = sender.state == .on
+        default: return
+        }
+        values.save(to: contextDefaults); refreshContext()
+        if sender === braveBackground { onControlDisabled?() }
+    }
+    /// Accessibility applies at once; DevTools goes through the Brave access sheet (its warning and port).
+    @objc private func braveAccessChanged() {
+        let chosen = BraveAccess.allCases[max(0, min(BraveAccess.allCases.count - 1, braveAccess.indexOfSelectedItem))]
+        guard chosen != contextValues.braveAccess else { return }
+        if chosen == .cdp {
+            if contextDefaults === UserDefaults.standard { BrowserSetup.present { onControlDisabled?() } }
+        } else {
+            var values = contextValues
+            values.braveAccess = .ax
+            values.save(to: contextDefaults)
+            onControlDisabled?()
+        }
+        refreshContext()
+    }
+    /// Opens brave://inspect in Brave on the user's click (where remote debugging can be switched off).
+    /// pi-os never changes Brave's settings itself.
+    @objc private func openBraveInspect() {
+        guard let app = NSWorkspace.shared.urlForApplication(withBundleIdentifier: BrowserPolicy.bundleID),
+              let url = URL(string: "brave://inspect/#remote-debugging") else { NSSound.beep(); return }
+        NSWorkspace.shared.open([url], withApplicationAt: app, configuration: NSWorkspace.OpenConfiguration())
+    }
+
     private func buildVoice(_ view: FlippedView) {
         let heading = PanelStyle.label("Voice", size: 18, weight: .semibold, color: .labelColor)
         heading.frame = NSRect(x: 28, y: 16, width: 300, height: 26); view.addSubview(heading)

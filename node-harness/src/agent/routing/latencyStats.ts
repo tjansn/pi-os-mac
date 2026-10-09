@@ -7,7 +7,8 @@ import { targetKey, type LatencyView, type StatEntry, type TierChoice } from "./
 /**
  * Local latency telemetry and provider health for the Auto router
  * (routing.md §6.9). Ranking uses the EWMA of a model@level once it has
- * TRUSTED_SAMPLES samples (decide.ts), otherwise the public-API prior.
+ * TRUSTED_SAMPLES samples, or at once when it is far worse than the prior
+ * (decide.ts expectedTtft), otherwise the prior.
  *
  * Persisted to <supportDir>/routing-stats.json: model ids, sample counts,
  * EWMAs, error counts and health blocks. Never prompts, outputs or any content.
@@ -63,7 +64,7 @@ export interface LatencyStatsOptions {
   /** routing-stats.json path; undefined keeps the stats in memory only. */
   path?: string;
   now?: () => number;
-  /** EWMA weight of a new sample. */
+  /** EWMA weight of a new sample (default DEFAULT_STATS_ALPHA). */
   alpha?: number;
   /** Debounce for disk writes; 0 writes synchronously on every change. */
   persistDelayMs?: number;
@@ -72,6 +73,8 @@ export interface LatencyStatsOptions {
 }
 
 export const DEFAULT_STATS_FILE = "routing-stats.json";
+/** Backend latency moves within hours (latency.md §7: Sol 1.7 s one day, 2.3–11 s the next): weigh new samples heavily. */
+export const DEFAULT_STATS_ALPHA = 0.5;
 const KEY = /^[A-Za-z0-9._:/@+-]{1,240}$/;
 const MAX_FILE_BYTES = 262_144;
 /** Throughput from tiny answers is mostly overhead; ignore it. */
@@ -98,7 +101,7 @@ export class LatencyStats implements LatencyView {
 
   constructor(private readonly options: LatencyStatsOptions = {}) {
     this.now = options.now ?? Date.now;
-    this.alpha = options.alpha ?? 0.3;
+    this.alpha = options.alpha ?? DEFAULT_STATS_ALPHA;
     this.persistDelayMs = options.persistDelayMs ?? 2_000;
     this.maxEntries = options.maxEntries ?? 200;
     this.log = options.log ?? ((line) => console.log(line));

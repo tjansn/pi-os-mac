@@ -20,6 +20,11 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$ROOT/host-macos/.build/release/pi-os" "$APP/Contents/MacOS/pi-os"
 cp "$ROOT/host-macos/Resources/Info.plist" "$APP/Contents/Info.plist"
 cp "$ROOT/host-macos/Resources/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+# The on-device context scorer's weights (S6), inside the signed bundle: the app never looks outside it.
+# Without them the context chip runs on rules only.
+WEIGHTS="$ROOT/host-macos/Resources/context-scorer/context-scorer-weights.json"
+if [[ ! -f "$WEIGHTS" ]]; then echo "Missing $WEIGHTS" >&2; exit 1; fi
+cp "$WEIGHTS" "$APP/Contents/Resources/context-scorer-weights.json"
 if [[ "${PI_OS_BUNDLE_RUNTIME:-}" == "1" ]]; then
   "$ROOT/host-macos/scripts/bundle-runtime.sh" "$APP"
 else

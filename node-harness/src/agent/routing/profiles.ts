@@ -6,11 +6,20 @@ import { modelKey, type CandidateInfo, type ModelTier, type Profile, type Routin
  * estimates for everything else, so Auto works for any configured provider.
  *
  * Priors are Artificial Analysis public-API medians fetched 2026-10-02 (ttft s,
- * output tok/s, intelligence index). The ChatGPT/Codex backend differs, so
- * LatencyStats re-ranks with local measurements once it has n ≥ 3 samples.
+ * output tok/s, intelligence index), except on the ChatGPT/Codex backend, which
+ * differs: there the priors are the medians measured on 2026-10-05 (r2/latency.md
+ * §0, §3.3; new WebSocket per call, as pi-os runs): gpt-6-luna@off 1.70 s at
+ * ≈ 60 tok/s, gpt-6-sol@off 5.05 s at 33–41, gpt-6.1-sol@low 2.55 s. Unmeasured
+ * Codex models in a tier that holds a measured one carry the Luna-measured
+ * backend penalty (+1.0 s, half the throughput) so a public-API median never
+ * outranks a backend measurement. LatencyStats re-ranks with local measurements
+ * (decide.ts expectedTtft: at once when far worse than the prior).
  *
  * Codex facts (pi-ai 1.0 openai-codex catalog, CRITIC.md C13/F13):
- * - gpt-6-luna / gpt-6-sol map `off` to "none": the only sub-1.1 s Codex lane.
+ * - gpt-6-luna / gpt-6-sol map `off` to "none". Measured, Sol@off is ~3× slower than
+ *   Luna per turn and slower than the smarter gpt-6.1-sol@low (server-side queueing,
+ *   0 reasoning tokens): the fast tier is gpt-6.1-sol@low, and gpt-6-sol@off is
+ *   pin-only (a tier override may still choose it).
  * - gpt-6.1-sol / gpt-6-astra have NO `off`; `minimal` maps to "low" on every
  *   Codex model, so minimal is never a cheaper lane than low.
  * - gpt-5.3-codex-spark is text-only, Pro-only and reportedly retiring: never
@@ -20,20 +29,22 @@ import { modelKey, type CandidateInfo, type ModelTier, type Profile, type Routin
 type Prior = Omit<Profile, "source">;
 
 const prior = (tier: ModelTier, provider: string, id: string, thinkingLevel: ModelThinkingLevel,
-  ttftS: number, tps: number, ii: number): Prior => ({ tier, provider, id, thinkingLevel, ttftS, tps, ii });
+  ttftS: number, tps: number, ii: number, pinOnly = false): Prior =>
+  ({ tier, provider, id, thinkingLevel, ttftS, tps, ii, ...(pinOnly ? { pinOnly } : {}) });
 
 export const PRIOR_PROFILES: readonly Profile[] = [
   prior("quick", "anthropic", "claude-haiku-4-5", "off", 0.58, 95, 15),
-  prior("quick", "openai-codex", "gpt-6-luna", "off", 0.67, 130, 18),
+  prior("quick", "openai-codex", "gpt-6-luna", "off", 1.7, 60, 18), // measured
   prior("quick", "openai", "gpt-6-luna", "off", 0.67, 130, 18),
-  prior("quick", "openai-codex", "gpt-5.6-luna", "off", 0.78, 107, 16),
+  prior("quick", "openai-codex", "gpt-5.6-luna", "off", 1.8, 54, 16), // AA 0.78 s / 107 + backend penalty
   prior("quick", "openai", "gpt-5.6-luna", "off", 0.78, 107, 16),
   prior("fast", "anthropic", "claude-sonnet-5-5", "low", 1.31, 91, 36),
-  prior("fast", "openai-codex", "gpt-6-sol", "off", 1.01, 79, 29),
+  prior("fast", "openai-codex", "gpt-6.1-sol", "low", 2.6, 57, 42), // measured
+  prior("fast", "openai-codex", "gpt-6-sol", "off", 5.0, 40, 29, true), // measured; pin-only
   prior("fast", "openai", "gpt-6-sol", "off", 1.01, 79, 29),
-  prior("fast", "openai-codex", "gpt-5.6-terra", "low", 1.77, 80, 27),
+  prior("fast", "openai-codex", "gpt-5.6-terra", "low", 2.8, 40, 27), // AA 1.77 s / 80 + backend penalty
   prior("standard", "anthropic", "claude-sonnet-5-5", "medium", 1.23, 99, 41),
-  prior("standard", "openai-codex", "gpt-6.1-sol", "low", 2.9, 57, 42),
+  prior("standard", "openai-codex", "gpt-6.1-sol", "low", 2.6, 57, 42), // measured; the ladder skips the duplicate rung
   prior("standard", "openai", "gpt-6.1-sol", "low", 2.9, 57, 42),
   prior("deep", "openai-codex", "gpt-6.1-sol", "medium", 5.5, 54, 48),
   prior("deep", "openai", "gpt-6.1-sol", "medium", 5.5, 54, 48),
@@ -159,7 +170,9 @@ export function candidateInfo(model: Model<Api>): CandidateInfo {
  * Router catalog from AVAILABLE (auth-checked) models: `runtime.getAvailable()`
  * or `getAvailableSnapshot()`. Virtual models (pi-os/auto itself) are dropped.
  * Known models get the curated priors (only at levels the model supports);
- * unknown general chat models get generic family estimates.
+ * unknown general chat models get generic family estimates. A pin-only prior
+ * stays in the catalog (latency estimates for overrides) and also keeps generic
+ * estimates from re-adding its model.
  */
 export function buildRoutingCatalog(models: readonly Model<Api>[], priors: readonly Profile[] = PRIOR_PROFILES): RoutingCatalog {
   const candidates = new Map<string, CandidateInfo>();

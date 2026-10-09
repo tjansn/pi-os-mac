@@ -3,7 +3,9 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { contextScope } from "../src/agent/routing/contextScope.js";
 import { bindingToHostAction, type CardSpec } from "../src/contracts/cards.js";
+import { NO_CONTEXT_SCORER, type ContextScorer, type InstantScope } from "../src/contracts/context.js";
 import type { ClassifierHints, InstantPhase, InstantRequest, InstantResponse, IntentClassifier } from "../src/contracts/instant.js";
 import type { AppRecord, FileSearchResult } from "../src/contracts/launcher.js";
 import { AppIndexCache } from "../src/instant/apps.js";
@@ -34,8 +36,9 @@ function make(overrides: Partial<InstantDispatcherDeps> = {}) {
 }
 
 const request = (text: string, phase: InstantPhase = "final", extra: Partial<InstantRequest> = {}): InstantRequest => ({ text, phase, seq: 1, ...extra });
-const withoutTiming = (response: InstantResponse): Omit<InstantResponse, "elapsedMs"> => {
-  const { elapsedMs, ...rest } = response;
+/** The response without its timing and its advisory scope (asserted on its own below). */
+const withoutTiming = (response: InstantResponse): Omit<InstantResponse, "elapsedMs" | "scope"> => {
+  const { elapsedMs, scope: _scope, ...rest } = response;
   assert.equal(typeof elapsedMs, "number");
   return rest;
 };
@@ -59,7 +62,10 @@ test("golden: responses reproduce the shared instant fixtures", async () => {
   const golden = async (file: string, req: InstantRequest) => {
     const expected = readJson<InstantResponse>(`instant/${file}`);
     const { elapsedMs: _ignored, ...rest } = expected;
-    assert.deepEqual(withoutTiming(await dispatcher.dispatch(req)), rest, file);
+    const response = await dispatcher.dispatch(req);
+    assert.deepEqual(withoutTiming(response), rest, file);
+    // The shared fixtures predate `scope`; the dispatcher adds the rules v2 score of the text.
+    assert.deepEqual(response.scope, contextScope(req.text), file);
   };
   await golden("answer-calc.json", { text: "15% of 340", phase: "final", seq: 7 });
   await golden("act-web-search.json", { text: "search the web for best espresso grinder", phase: "final", seq: 9 });
@@ -75,7 +81,70 @@ test("golden: responses reproduce the shared instant fixtures", async () => {
   const currencyDispatcher = make({ fx });
   const expected = readJson<InstantResponse>("instant/answer-currency.json");
   const { elapsedMs: _e, ...rest } = expected;
-  assert.deepEqual(withoutTiming(await currencyDispatcher.dispatch({ text: "100 usd in eur", phase: "final", seq: 3 })), rest);
+  const currencyResponse = await currencyDispatcher.dispatch({ text: "100 usd in eur", phase: "final", seq: 3 });
+  assert.deepEqual(withoutTiming(currencyResponse), rest);
+  assert.deepEqual(currencyResponse.scope, contextScope("100 usd in eur"));
+});
+
+test("scope: every phase and decision carries the rules v2 score of the text", async () => {
+  const dispatcher = make({ budgets: { typingFileQuietMs: 0 } });
+  const cases: [string, InstantResponse["decision"][]][] = [
+    ["15% of 340", ["answer"]], ["find invoice", ["list"]], ["open figma", ["list", "act"]], ["empty the trash", ["refuse"]],
+    ["summarize this page", ["fallthrough"]], ["what's the capital of france", ["fallthrough"]], ["gib mir ein Rezept für Pfannkuchen", ["fallthrough"]],
+  ];
+  for (const [text, decisions] of cases) {
+    for (const phase of ["typing", "partial", "final"] as const) {
+      const response = await dispatcher.dispatch(request(text, phase));
+      assert.ok(decisions.includes(response.decision), `${text} (${phase}) ${response.decision}`);
+      assert.deepEqual(response.scope, contextScope(text), `${text} (${phase})`);
+    }
+  }
+  assert.equal((await dispatcher.dispatch(request("summarize this page", "partial"))).scope?.window, 0.9);
+  assert.equal((await dispatcher.dispatch(request("what's the capital of france", "typing"))).scope?.window, 0.1);
+  // The kill switch turns off the instant lane, not the chip's suggestions.
+  const off = await make({ enabled: () => false }).dispatch(request("summarize this page", "typing"));
+  assert.deepEqual([off.decision === "fallthrough" && off.reason, off.scope], ["disabled", contextScope("summarize this page")]);
+  // Timeouts and aborts still carry it: the score is computed before any engine work.
+  const controller = new AbortController();
+  const pending = make({ searchFiles: () => new Promise(() => {}) }).dispatch(request("find my resume"), controller.signal);
+  controller.abort();
+  const aborted = await pending;
+  assert.deepEqual([aborted.decision === "fallthrough" && aborted.reason, aborted.scope], ["timeout", contextScope("find my resume")]);
+});
+
+test("scope: the injected scorer decides; off, failing or off-contract scorers leave the field out and change nothing else", async () => {
+  const seen: string[] = [];
+  const fixed: ContextScorer = (text) => { seen.push(text); return { window: 0.42, reasons: ["fixture-code"] }; };
+  const custom = await make({ scorer: fixed }).dispatch(request("  Summarize THIS page  ", "typing"));
+  assert.deepEqual(custom.scope, { window: 0.42, reasons: ["fixture-code"] });
+  assert.deepEqual(seen, ["  Summarize THIS page  "], "the raw text, once per dispatch");
+  await make({ scorer: fixed }).dispatch(request("x".repeat(600)));
+  assert.equal(seen.at(-1)!.length, 600, "over-long text is still scored (it falls through to the agent)");
+
+  const baseline = withoutTiming(await make().dispatch(request("what's the capital of france")));
+  const broken: ContextScorer[] = [
+    NO_CONTEXT_SCORER,
+    () => { throw new Error("scorer"); },
+    () => ({ window: 2, reasons: [] }),
+    () => ({ window: 0.5, reasons: ["Not A Code"] }),
+    () => ({ window: 0.5, reasons: Array.from({ length: 9 }, () => "x") }),
+    () => "window" as unknown as InstantScope,
+  ];
+  for (const scorer of broken) {
+    const response = await make({ scorer }).dispatch(request("what's the capital of france"));
+    assert.ok(!("scope" in response), String(scorer));
+    assert.deepEqual(withoutTiming(response), baseline);
+  }
+  // Unreadable requests carry no scope (there is no text to score).
+  const dispatcher = make();
+  for (const bad of [{ text: 42, phase: "final", seq: 1 }, null, { text: "", phase: "typing", seq: 2 }, { text: "   ", phase: "typing", seq: 3 }]) {
+    assert.ok(!("scope" in await dispatcher.dispatch(bad as unknown as InstantRequest)), JSON.stringify(bad));
+  }
+  // A returned scope is a copy: a scorer mutating its own result later cannot change a sent response.
+  const shared: InstantScope = { window: 0.3, reasons: ["pronoun"] };
+  const copied = await make({ scorer: () => shared }).dispatch(request("make it shorter"));
+  shared.reasons.push("ui-verb");
+  assert.deepEqual(copied.scope, { window: 0.3, reasons: ["pronoun"] });
 });
 
 test("golden shapes: app act and file list match the fixture structure", async () => {

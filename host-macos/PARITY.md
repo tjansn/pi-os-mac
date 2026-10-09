@@ -19,6 +19,20 @@ and clicks are no longer vetoed by OS-wide Secure Keyboard Entry; only clearly m
 username/password fields are default-blocked, with explicit Settings opt-in. No OS
 security feature was disabled. See [BROWSER_INTEGRATION.md](BROWSER_INTEGRATION.md).
 
+## General by default, context shelf, pointing, Brave access — 2026-10-05 (offline-tested, not installed)
+
+| Feature | macOS | Windows |
+| --- | --- | --- |
+| Context scope | Opens general; context chip (off/suggested/on), Tab/click/⇧ + hotkey/menu; `context` on `/invoke` and `/followup` | Sends no `context`: legacy window behaviour, unchanged |
+| On-device scope scorer | NLContextualEmbedding + LR averaged with Node rules v2 (never alone) | Not applicable (no chip) |
+| Context shelf | ⌃⌥⌘C, hotkey selection, drops, area grab, clipboard suggestion; `attachments` on `/invoke` and `/followup` | Sends no `attachments`; unchanged |
+| Attention overlay | Tether onto a window (re-pin) or ⌥ element (read-only attachment) | Not planned in this pass |
+| Brave | Accessibility by default (no dialog, background AX actions), DevTools opt-in | Unchanged (Windows has no Brave AX route) |
+| Hotkey conflict check | Fixed (NSEvent masks, unstored defaults) | Not applicable |
+
+Node keeps both keys optional; a Windows request is parsed exactly as before. Live acceptance on the Mac
+is pending (see [STATUS.md](STATUS.md)).
+
 ## Voice magic on macOS — 2026-10-02 (offline-tested, not installed)
 
 | Feature | macOS | Windows |

@@ -118,7 +118,7 @@ test("user: an expired decision is ignored; the virtual level sets the fallback 
   handle.setDecision(codexDecision("denk gründlich nach"));
   now = 10 * 60_000;
   const route = runtime.definition!.route({ model: {} as Model<Api>, thinkingLevel: "low", reason: "user", messages: [user("click the submit button")] }) as ModelRoute;
-  assert.equal(`${route.model.id}@${route.thinkingLevel}`, "gpt-6-luna@off", "speed bias: act_in_app fast → quick");
+  assert.equal(`${route.model.id}@${route.thinkingLevel}`, "gpt-6-luna@off", "speed bias: act_in_app stays quick");
 });
 
 test("auth: unauthenticated targets are skipped; nothing usable throws a clear error instead of a credential leak", () => {
@@ -154,6 +154,19 @@ test("user: an attached image skips text-only targets in the pool", () => {
   assert.equal(label(driver.route("user", [user("plain text")])), "openai-codex/gpt-5.3-codex-spark@off", "text-only is fine without an image");
 });
 
+test("fallback: an image in the user message (screenshot or attachment) needs a vision model even without a decision", () => {
+  const runtime = new FakeRuntime(CODEX, new Set(["openai-codex"]));
+  const spark = { provider: "openai-codex", id: "gpt-5.3-codex-spark", thinkingLevel: "off" as const };
+  const events: RouteEvent[] = [];
+  registerAutoModel(runtime, { settings: () => ({ ...DEFAULT_ROUTING_SETTINGS, tierOverrides: { quick: spark } }), onRoute: event => events.push(event) });
+  const route = (message: UserMessage) => runtime.definition!.route({ model: {} as Model<Api>, thinkingLevel: "medium", reason: "user", messages: [message] }) as ModelRoute;
+  assert.equal(label(route(user("what's the capital of france", true))), "openai-codex/gpt-6-luna@off");
+  assert.equal(events.at(-1)?.cause, "fallback");
+  assert.ok(events.at(-1)?.reasons.includes("image-attachment"), "decided for vision, not only filtered in the pool");
+  assert.ok(!events.at(-1)?.reasons.includes("no-vision-model"));
+  assert.equal(label(route(user("what's the capital of france"))), "openai-codex/gpt-5.3-codex-spark@off");
+});
+
 function startQuick(driver: Driver) {
   driver.handle.setDecision(codexDecision("what's the capital of france"));
   driver.route("user", [user("what's the capital of france")]);
@@ -168,39 +181,40 @@ test("continuation: sticky without rewriting state; pi_os_escalate moves one run
   assert.equal(label(sticky), "openai-codex/gpt-6-luna@off");
   assert.equal(sticky.state, undefined, "unchanged state is not re-appended to the session");
 
+  // Fast and standard share gpt-6.1-sol@low (one rung); gpt-6-sol@off is no longer on the ladder.
   history.push(assistant(luna()), toolResult("e1", ESCALATE_TOOL_NAME));
-  assert.equal(label(driver.route("continuation", history)), "openai-codex/gpt-6-sol@off");
+  assert.equal(label(driver.route("continuation", history)), "openai-codex/gpt-6.1-sol@low");
   assert.equal(driver.events.at(-1)?.cause, "escalate:tool");
   assert.deepEqual(driver.routerState.consumed, ["e1"]);
   // The same tool result is not acted on again.
-  assert.equal(label(driver.route("continuation", history)), "openai-codex/gpt-6-sol@off");
-
-  history.push(assistant(model("openai-codex", "gpt-6-sol")), toolResult("e2", ESCALATE_TOOL_NAME));
   assert.equal(label(driver.route("continuation", history)), "openai-codex/gpt-6.1-sol@low");
+
+  history.push(assistant(model("openai-codex", "gpt-6.1-sol")), toolResult("e2", ESCALATE_TOOL_NAME));
+  assert.equal(label(driver.route("continuation", history)), "openai-codex/gpt-6.1-sol@medium");
   history.push(assistant(model("openai-codex", "gpt-6.1-sol")), toolResult("e3", ESCALATE_TOOL_NAME));
-  assert.equal(label(driver.route("continuation", history)), "openai-codex/gpt-6.1-sol@low", "cap: 2 escalations per user turn");
+  assert.equal(label(driver.route("continuation", history)), "openai-codex/gpt-6.1-sol@medium", "cap: 2 escalations per user turn");
   assert.equal(driver.routerState.escalations, 2);
 
   // A new user turn resets the budget.
   driver.handle.setDecision(codexDecision("what's the capital of spain", { followup: true, lastTier: driver.handle.lastTier() }));
   driver.route("user", [...history, assistant(model("openai-codex", "gpt-6.1-sol")), user("and spain?")]);
   assert.equal(driver.routerState.escalations, 0);
-  assert.equal(driver.routerState.tier, "standard", "follow-up keeps the escalated tier");
+  assert.equal(driver.routerState.tier, "deep", "follow-up keeps the escalated tier");
 });
 
 test("continuation: repeated tool errors or a long turn escalate quick/fast tiers only, once per fresh evidence", () => {
   const driver = new Driver(CODEX, ["openai-codex"]);
   startQuick(driver);
   const history: Message[] = [user("q"), assistant(luna()), toolResult("a", "desktop_act", true), assistant(luna()), toolResult("b", "desktop_act", true)];
-  assert.equal(label(driver.route("continuation", history)), "openai-codex/gpt-6-sol@off");
+  assert.equal(label(driver.route("continuation", history)), "openai-codex/gpt-6.1-sol@low");
   assert.equal(driver.events.at(-1)?.cause, "escalate:errors");
-  assert.equal(label(driver.route("continuation", history)), "openai-codex/gpt-6-sol@off", "same errors do not escalate twice");
+  assert.equal(label(driver.route("continuation", history)), "openai-codex/gpt-6.1-sol@low", "same errors do not escalate twice");
 
   const long = new Driver(CODEX, ["openai-codex"]);
   startQuick(long);
   const many: Message[] = [user("q")];
   for (let i = 0; i < 9; i++) many.push(assistant(luna()), toolResult(`r${i}`, "desktop_get_context"));
-  assert.equal(label(long.route("continuation", many)), "openai-codex/gpt-6-sol@off");
+  assert.equal(label(long.route("continuation", many)), "openai-codex/gpt-6.1-sol@low");
   assert.equal(long.events.at(-1)?.cause, "escalate:long-turn");
 
   const standard = new Driver(CODEX, ["openai-codex"]);

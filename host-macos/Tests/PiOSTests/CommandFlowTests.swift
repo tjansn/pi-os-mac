@@ -62,13 +62,23 @@ import XCTest
     var performed: [(action: HostAction, contextId: String?, confirmed: Bool)] = []
     var performResult: Result<String, DomainError> = .success("Opened Figma")
     var preparation: TakePreparation?
+    /// Context-flow tests: each take gets a chip (and, with `lazyCapture`, a lazy window capture).
+    var makeContext: (() -> ContextChipController)?
+    var lazyCapture: (() -> Task<Void, Error>)?
+    private(set) var lastContext: ContextChipController?
     /// Mirrors the panel: a take shows the composer; cancel, agent work and results replace it.
     weak var surface: RecordingSurface?
     func beginTake() -> CommandTake? {
         guard !refuseTakes else { return nil }
         begun += 1; surface?.showsComposer = true
-        let prepared = preparation ?? TakePreparation(warm: Task {}, capture: Task {})
-        return CommandTake(contextId: "ctx-\(begun)", takeId: "take-\(begun)", contextualStrings: ["TextEdit", "Notes.md"], preparation: prepared)
+        let prepared = preparation ?? lazyCapture.map { TakePreparation(warm: Task {}, startCapture: $0) }
+            ?? TakePreparation(warm: Task {}, capture: Task {})
+        let context = makeContext?()
+        context?.onStartCapture = { [weak prepared] in prepared?.startCapture() }
+        context?.start()
+        lastContext = context
+        return CommandTake(contextId: "ctx-\(begun)", takeId: "take-\(begun)", contextualStrings: ["TextEdit", "Notes.md"],
+                           preparation: prepared, context: context)
     }
     func cancelTake() { cancels += 1; surface?.showsComposer = false }
     func revealWork() { reveals += 1 }
@@ -148,6 +158,17 @@ import XCTest
         XCTAssertTrue(surface.failures.isEmpty)
         await settle()
         XCTAssertTrue(harness.requests.isEmpty)
+    }
+
+    func testALostShiftChordReleaseNeverSwallowsTheNextPress() {
+        press(); scheduler.advance(0.1); controller.hotkeyReleased()
+        // ⇧ + hotkey over the open composer includes the window; its release edge never arrives.
+        controller.hotkeyPressed(includeWindow: true)
+        escape()
+        press(); scheduler.advance(0.1); controller.hotkeyReleased()
+        XCTAssertEqual(host.begun, 2)
+        XCTAssertEqual(voice.calls.last, .abandon, "this tap's release is a gesture, not the lost ⇧ release")
+        XCTAssertFalse(surface.listening.contains(.listening), "a hold never starts listening by itself")
     }
 
     func testVoiceOffIsExactlyTodaysTap() {
@@ -384,7 +405,11 @@ import XCTest
         controller.cardAction(.openFile(token: "tok_3fa8c2d1e9b0"), fromAgent: false); await settle()
         XCTAssertEqual(surface.failures, ["token_expired"], "…and a failure is shown, not swallowed")
         XCTAssertTrue(Application.canType(control: true, browserPinned: false))
-        XCTAssertFalse(Application.canType(control: true, browserPinned: true), "⌘Return copies over a pinned Brave tab")
+        XCTAssertFalse(Application.canType(control: true, browserPinned: true), "⌘Return copies over a DevTools Brave pin")
+        // S4: every Brave take now carries an `ax` hint; only the DevTools opt-in routes typing through the browser.
+        XCTAssertFalse(Application.browserRouteOnly(BrowserHint(pinned: true, mode: .ax, background: true)))
+        XCTAssertFalse(Application.browserRouteOnly(nil))
+        XCTAssertTrue(Application.browserRouteOnly(BrowserHint(pinned: true, mode: .cdp)))
         XCTAssertFalse(Application.canType(control: false, browserPinned: false))
     }
 

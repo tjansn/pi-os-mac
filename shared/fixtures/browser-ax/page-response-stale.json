@@ -1,0 +1,7 @@
+{
+  "ok": false,
+  "error": {
+    "code": "browser_stale",
+    "message": "The pinned tab's page is loading. Read it again before acting."
+  }
+}

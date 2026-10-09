@@ -27,20 +27,26 @@ test("Brave route replaces native mutations in the actual isolated SDK tool set"
     assert(!session.agent.state.tools.some(t => t.name === "desktop_act" || t.name === "bash"));
     const schema = JSON.stringify(session.agent.state.tools.find(t => t.name === "browser_act")!.parameters);
     for (const forbidden of ['"contextId"', '"targetId"', '"url"', '"script"', '"method"', '"port"']) assert(!schema.includes(forbidden));
+    // DevTools guidance comes from the tools' promptGuidelines; nothing nudges a connection.
+    assert.match(session.systemPrompt, /- In Brave DevTools mode browser_act replaces native input for the pinned tab; desktop_act is not available in this task\./);
+    assert.match(session.systemPrompt, /Each browser_act consumes every earlier ref and returns a fresh compact snapshot/);
+    assert.doesNotMatch(session.systemPrompt, /first to connect|Pinned Brave tab \(CDP\)/i);
   } finally { session.dispose(); await browser.dispose(); }
 });
 
 test("read-only sessions never register browser authority; browser guidance forbids native fallback", () => {
   const browser = new BrowserSession({} as HostClient, "ctx-fixed");
   for (const readOnly of [true, false]) {
-    const tools: string[] = []; let before: any;
+    const tools = new Map<string, any>(); let before: any;
     createComputerUseExtension("ctx-fixed", {} as HostClient, "/captures", readOnly, "darwin", undefined, browser).factory({
       on(name: string, callback: any) { if (name === 'before_agent_start') before = callback; },
-      registerTool(tool: any) { tools.push(tool.name); },
+      registerTool(tool: any) { tools.set(tool.name, tool); },
     } as unknown as ExtensionAPI);
-    assert.equal(tools.includes('browser_act'), !readOnly);
-    assert(!tools.includes('desktop_act'));
-    if (!readOnly) assert.match(before({ systemPrompt: '' }).systemPrompt, /desktop_act is not available/);
+    assert.equal(tools.has('browser_act'), !readOnly);
+    assert(!tools.has('desktop_act'));
+    // The guidance travels with the tools; the system prompt carries no browser text of its own.
+    assert.doesNotMatch(before({ systemPrompt: '' }).systemPrompt, /browser_snapshot|browser_act|first to connect/);
+    if (!readOnly) assert.match(tools.get('browser_act').promptGuidelines.join("\n"), /desktop_act is not available in this task/);
   }
 });
 
@@ -69,6 +75,9 @@ test("browser_act is model-only and sequential and returns {verification, snapsh
   assert.deepEqual(result.details, {});
   assert.equal(formatActResult({ performed: true, verification: "Action dispatched once. Take browser_snapshot and verify.", snapshotError: "browser_stale" }),
     "Action dispatched once. Take browser_snapshot and verify. No post-action snapshot is available (browser_stale); earlier refs are consumed.");
-  assert.match(BROWSER_GUIDANCE, /Each browser_act consumes every earlier ref and returns a fresh compact snapshot/);
-  assert.doesNotMatch(BROWSER_GUIDANCE, /After EACH browser_act, take a fresh snapshot/);
+  const guidance = [...tools.values()].flatMap(tool => tool.promptGuidelines ?? []).join("\n");
+  assert.match(act.promptGuidelines.join("\n"), /Each browser_act consumes every earlier ref and returns a fresh compact snapshot/);
+  assert.doesNotMatch(guidance, /After EACH browser_act, take a fresh snapshot|first to connect/i);
+  assert.match(snapshot.promptGuidelines.join("\n"), /the first call opens a connection that Brave asks the user to approve/);
+  assert.equal(BROWSER_GUIDANCE, "");
 });

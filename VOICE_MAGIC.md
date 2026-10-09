@@ -78,6 +78,43 @@ asset download, Spotlight results inside protected folders, real Codex time-to-f
 per Auto tier, Bluetooth headset route changes, VoiceOver end to end. The macOS CI job cannot
 build this host on the macOS 26.5 SDK (the Whisper UI already needed the macOS 27 SDK).
 
+## Pass 2 (2026-10-05): general by default, the context shelf, pointing, dialog-free Brave
+
+Branch `feat/context-shelf`. Tom's requests: open *generally* and pull the window in only when meant;
+reach Brave in the background without “Allow remote debugging?”; faster everything; drag the agent's
+attention to a window or element (the reference video); pull selected text or images in with a
+copy-like action. How to use it: [README](README.md#on-macos-general-by-default-the-context-shelf-and-pointing).
+
+```
+key-down ─► identity pin only (CG window, focused element; fingerprint at insert) ─► bar visible
+  │  after the bar: Brave AX tab pin · Node warm-up + prepare · the hotkey's live selection (AX only)
+  ├─ typing / partials ─► POST /instant ─► scope {window, reasons} (rules v2) ─┐
+  │                       on-device scorer (NLContextualEmbedding + LR, ~8 ms) ─┴─► chip off / suggested / on
+  │                       first transition to window ─► lazy SCK capture (+ Brave AX digest in Node)
+  ├─ Tab / click / ⇧+hotkey / menu / tether ─► explicit, sticky for the take
+  ├─ ⌃⌥⌘C · drops · area grab · clipboard “+” · ⌥-point ─► context shelf (chips, ⊗)
+  └─ Return ─► POST /invoke {context: what the chip shows, attachments: the shelf}
+        general: no capture, no window JSON, app name + use_active_window (pull)
+        window:  screenshot + compact window JSON (+ Brave page digest), Luna-first Auto tiers
+```
+
+| Decision | Taken |
+|---|---|
+| Active window default (D-T1) | **Suggest**; *Only when I ask* / *Always include* in Settings → Context |
+| Who decides at Return | The host: the chip's state is the wire `context`; Node resolves scope only for clients without a chip (Windows sends none: legacy) |
+| Local scorer (D-T5) | Ships; averaged with the rules, never alone; no lock (an OS framework call); weights bundled by `build-app.sh` |
+| Brave (D-T2/D-T4) | Accessibility by default, background element actions on, DevTools opt-in; Tom can switch off brave://inspect remote debugging |
+| Shelf selection | AX first; else the app's Copy with a byte-identical clipboard restore (never with password-manager/Handoff content) |
+| Pointing (v1) | One actionable window per question; elements are read-only context, never secure fields |
+
+**Verified offline** (S12 integration, 2026-10-05; re-run after the final-review fixes on
+wp2/f1-axwire): `swift test` 477/477, `swift build` 0 warnings, guarded `npm test` 515/515,
+`npm run test:macos` 1/1; offscreen snapshots of every new state in all presets, light/dark,
+standard and Larger text. Node parses `context`/`attachments` on /invoke and /followup
+(wp2/n4-server, 21a93e0), and the Brave Accessibility browser tools are wired into agent sessions
+(83daffc). **Not yet live:** everything in [host-macos/STATUS.md](host-macos/STATUS.md) (signed
+build, coordinated desktop, fixtures only).
+
 ## Next steps
 
 Fine-tune and calibrate Laya before letting it route; number-pick and corrections for voice;

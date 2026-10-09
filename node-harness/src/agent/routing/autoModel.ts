@@ -259,6 +259,8 @@ export function registerAutoModel(runtime: AutoModelRuntime, deps: AutoModelDeps
     followup: state !== undefined || request.previous !== undefined,
     surface: "other",
     hasScreenshot: lastUserHasImage(request.messages),
+    // Whatever the image is (screenshot or attachment), the model must be able to see it.
+    hasImageAttachment: lastUserHasImage(request.messages),
     selectionChars: 0,
     browserCdp: false,
     estimatedPromptTokens: estimateTokens(request.messages),

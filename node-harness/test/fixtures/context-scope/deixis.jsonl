@@ -1,0 +1,60 @@
+{"id": "dx001", "text": "what is the capital of France", "gold": "general"}
+{"id": "dx002", "text": "what's the weather tomorrow in Berlin", "gold": "general"}
+{"id": "dx003", "text": "write a haiku about autumn", "gold": "general"}
+{"id": "dx004", "text": "how do I center a div in css", "gold": "general"}
+{"id": "dx005", "text": "what does HTTP 418 mean", "gold": "general"}
+{"id": "dx006", "text": "who wrote the book 1984", "gold": "general"}
+{"id": "dx007", "text": "translate good morning into German", "gold": "general"}
+{"id": "dx008", "text": "what's the best laptop for programming", "gold": "general"}
+{"id": "dx009", "text": "explain quantum entanglement simply", "gold": "general"}
+{"id": "dx010", "text": "write an email to my boss asking for friday off", "gold": "general"}
+{"id": "dx011", "text": "how many days until christmas", "gold": "general"}
+{"id": "dx012", "text": "give me a recipe for pancakes", "gold": "general"}
+{"id": "dx013", "text": "what is the difference between TCP and UDP", "gold": "general"}
+{"id": "dx014", "text": "plan a 3 day trip to Rome", "gold": "general"}
+{"id": "dx015", "text": "what's a good name for a cat", "gold": "general"}
+{"id": "dx016", "text": "remind me how git rebase works", "gold": "general"}
+{"id": "dx017", "text": "summarize the plot of Dune", "gold": "general"}
+{"id": "dx018", "text": "what time is it in Tokyo", "gold": "general"}
+{"id": "dx019", "text": "is it going to rain this weekend", "gold": "general"}
+{"id": "dx020", "text": "how do I make a table in markdown", "gold": "general"}
+{"id": "dx021", "text": "wie wird das Wetter morgen", "gold": "general"}
+{"id": "dx022", "text": "was ist die Hauptstadt von Frankreich", "gold": "general"}
+{"id": "dx023", "text": "schreib eine Mail an Anna wegen Freitag", "gold": "general"}
+{"id": "dx024", "text": "erklär mir Quantenphysik", "gold": "general"}
+{"id": "dx025", "text": "wie spät ist es in New York", "gold": "general"}
+{"id": "dx026", "text": "übersetze guten Morgen ins Englische", "gold": "general"}
+{"id": "dx027", "text": "wer hat das Buch 1984 geschrieben", "gold": "general"}
+{"id": "dx028", "text": "gib mir ein Rezept für Pfannkuchen", "gold": "general"}
+{"id": "dx029", "text": "was ist der Unterschied zwischen TCP und UDP", "gold": "general"}
+{"id": "dx030", "text": "wie funktioniert git rebase", "gold": "general"}
+{"id": "dx031", "text": "summarize this page", "gold": "window"}
+{"id": "dx032", "text": "summarize the article", "gold": "window"}
+{"id": "dx033", "text": "what does this error mean", "gold": "window"}
+{"id": "dx034", "text": "explain the error", "gold": "window"}
+{"id": "dx035", "text": "reply to the email", "gold": "window"}
+{"id": "dx036", "text": "translate this", "gold": "window"}
+{"id": "dx037", "text": "make it shorter", "gold": "window"}
+{"id": "dx038", "text": "rewrite the paragraph to sound more formal", "gold": "window"}
+{"id": "dx039", "text": "click the like button", "gold": "window"}
+{"id": "dx040", "text": "scroll down", "gold": "window"}
+{"id": "dx041", "text": "what's on my screen", "gold": "window"}
+{"id": "dx042", "text": "who is the author of this article", "gold": "window"}
+{"id": "dx043", "text": "is this correct", "gold": "window"}
+{"id": "dx044", "text": "fix the bug", "gold": "window"}
+{"id": "dx045", "text": "what am I looking at", "gold": "window"}
+{"id": "dx046", "text": "compare these two options", "gold": "window"}
+{"id": "dx047", "text": "fill in the form", "gold": "window"}
+{"id": "dx048", "text": "check the grammar of what I wrote", "gold": "window"}
+{"id": "dx049", "text": "what's the price of the second one", "gold": "window"}
+{"id": "dx050", "text": "tl;dr", "gold": "window"}
+{"id": "dx051", "text": "fass die Seite zusammen", "gold": "window"}
+{"id": "dx052", "text": "was bedeutet die Fehlermeldung", "gold": "window"}
+{"id": "dx053", "text": "antworte auf die Mail", "gold": "window"}
+{"id": "dx054", "text": "übersetz das ins Englische", "gold": "window"}
+{"id": "dx055", "text": "wer ist das", "gold": "window"}
+{"id": "dx056", "text": "was steht hier", "gold": "window"}
+{"id": "dx057", "text": "kürz den Text", "gold": "window"}
+{"id": "dx058", "text": "klick auf den Like Button", "gold": "window"}
+{"id": "dx059", "text": "stimmt das so", "gold": "window"}
+{"id": "dx060", "text": "fasse den Artikel zusammen", "gold": "window"}

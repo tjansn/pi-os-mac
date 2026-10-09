@@ -1,0 +1,14 @@
+{
+  "invocationId": "inv-ctx-0001",
+  "contextId": "ctx-123",
+  "invokedAt": "2026-10-05T09:00:00Z",
+  "retainSession": true,
+  "takeId": "take-7",
+  "prompt": "click Like on the first post",
+  "context": {
+    "scope": "window",
+    "pull": "allowed",
+    "source": "setting",
+    "scopeHint": 0.85
+  }
+}

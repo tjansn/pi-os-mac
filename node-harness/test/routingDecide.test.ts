@@ -6,11 +6,13 @@ import { test } from "node:test";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import {
-  BASE_TIERS, buildRouteInput, buildRoutingCatalog, decide, DEFAULT_ROUTING_SETTINGS, distinctThinkingLevels,
-  isLocalModel, PRIOR_PROFILES, quickestTarget, sizeClass, targetKey,
+  BAD_NEWS_FACTOR, BASE_TIERS, buildRouteInput, buildRoutingCatalog, classifyUtterance, decide, DEFAULT_ROUTING_SETTINGS,
+  distinctThinkingLevels, expectedSeconds, expectedTtft, isLocalModel, PRIOR_PROFILES, quickestTarget, routeContextFromSnapshot,
+  sizeClass, targetKey, TRUSTED_SAMPLES,
   type AgentIntent, type Classification, type LatencyView, type RouteInput, type RoutingCatalog, type RoutingSettings,
   type StatEntry,
 } from "../src/agent/routing/index.js";
+import type { DesktopContextSnapshot } from "../src/hostClient.js";
 
 // Catalogs come from the installed pi-ai 1.0 built-ins (no auth, no network): exactly what
 // runtime.getAvailable() returns for a user signed in to that provider only.
@@ -55,10 +57,16 @@ test("Tom's openai-codex auth: EN/DE utterances map to the documented ladder (ba
     ["what's the capital of france", "quick openai-codex/gpt-6-luna@off"],
     ["wer hat die wm 2014 gewonnen", "quick openai-codex/gpt-6-luna@off"],
     ["kurz: was ist eine wärmepumpe", "quick openai-codex/gpt-6-luna@off"],
-    ["why is the sky blue", "fast openai-codex/gpt-6-sol@off"],
-    ["click the blue submit button", "fast openai-codex/gpt-6-sol@off"],
-    ["klick auf den blauen button", "fast openai-codex/gpt-6-sol@off"],
-    ["hmm", "fast openai-codex/gpt-6-sol@off"],
+    // Ordinary answers, writing and simple UI work stay on Luna (r2/latency.md §5.1).
+    ["why is the sky blue", "quick openai-codex/gpt-6-luna@off"],
+    ["explain the difference between TCP and UDP", "quick openai-codex/gpt-6-luna@off"],
+    ["write an email to my boss asking for friday off", "quick openai-codex/gpt-6-luna@off"],
+    ["click the blue submit button", "quick openai-codex/gpt-6-luna@off"],
+    ["klick auf den blauen button", "quick openai-codex/gpt-6-luna@off"],
+    ["make the first line bold", "quick openai-codex/gpt-6-luna@off"],
+    ["hmm", "quick openai-codex/gpt-6-luna@off"],
+    // Multi-step UI work: the fast tier is gpt-6.1-sol@low, never gpt-6-sol@off.
+    ["click the settings tab and then turn on dark mode", "fast openai-codex/gpt-6.1-sol@low"],
     ["write a python function that parses iso dates", "standard openai-codex/gpt-6.1-sol@low"],
     ["think hard about how to restructure my week", "deep openai-codex/gpt-6.1-sol@medium"],
     ["denk gründlich nach: wie sollte ich meine finanzen planen", "deep openai-codex/gpt-6.1-sol@medium"],
@@ -70,7 +78,7 @@ test("Tom's openai-codex auth: EN/DE utterances map to the documented ladder (ba
 test("anthropic-only auth: the same utterances route to Claude models", () => {
   const table: [string, string][] = [
     ["what's the capital of france", "quick anthropic/claude-haiku-4-5@off"],
-    ["click the blue submit button", "fast anthropic/claude-sonnet-5-5@low"],
+    ["click the blue submit button", "quick anthropic/claude-haiku-4-5@off"],
     ["write a python function that parses iso dates", "standard anthropic/claude-sonnet-5-5@medium"],
     ["denk gründlich nach: wie sollte ich meine finanzen planen", "deep anthropic/claude-opus-5-5@medium"],
     ["ultrathink: prove that the square root of two is irrational", "max anthropic/claude-opus-5-5@high"],
@@ -145,11 +153,13 @@ test("auth filtering: Codex-only availability never yields another provider, an 
   }
 });
 
-test("tier ordering: low confidence is never quick, explicit fast/speed lower one tier, quality raises", () => {
+test("tier ordering: low confidence is no floor (only logged), explicit fast/speed lower one tier, quality raises", () => {
   for (const intent of INTENTS) {
     const d = decide({ ...input("x"), classification: classification(intent, 0, { intentConfidence: 0.3 }) }, TOM, S);
-    assert.notEqual(d.tier, "quick", intent);
+    assert.equal(d.tier, BASE_TIERS[intent][0], intent);
+    assert.ok(d.reasons.includes("low-confidence"), intent);
   }
+  assert.equal(pick("hmm", TOM).tier, "quick", "an unmatched utterance is not sent to a slower tier");
   assert.equal(pick("click the blue submit button", TOM, settings({ bias: "speed" })).tier, "quick");
   assert.equal(pick("what's the capital of france", TOM, settings({ bias: "quality" })).tier, "fast");
   assert.equal(pick("quick: click the submit button", TOM).tier, "quick");
@@ -172,14 +182,13 @@ test("follow-ups never downgrade mid-thread; a correction goes one tier above th
   assert.equal(pick("thanks, and what about spain", TOM, S, { followup: true, lastTier: "standard" }).tier, "standard");
   assert.equal(pick("no, that's wrong", TOM, S, { followup: true, lastTier: "standard" }).tier, "deep");
   assert.equal(pick("nein, das stimmt nicht", TOM, S, { followup: true, lastTier: "fast" }).tier, "standard");
-  assert.equal(pick("no, that's wrong", TOM, S, { followup: false }).tier, "fast", "correction only counts for follow-ups");
+  assert.equal(pick("no, that's wrong", TOM, S, { followup: false }).tier, "quick", "correction only counts for follow-ups");
 });
 
 test("ladder rises above the decided tier up to the cap; alternates stay in the tier", () => {
   const d = pick("what's the capital of france", TOM);
-  assert.deepEqual(d.ladder.map(targetKey), [
-    "openai-codex/gpt-6-sol@off", "openai-codex/gpt-6.1-sol@low", "openai-codex/gpt-6.1-sol@medium",
-  ]);
+  // fast and standard are the same target: the duplicate rung is skipped.
+  assert.deepEqual(d.ladder.map(targetKey), ["openai-codex/gpt-6.1-sol@low", "openai-codex/gpt-6.1-sol@medium"]);
   assert.ok(d.ladder.every(r => r.tier !== "quick"));
   assert.equal(d.alternates[0] && targetKey(d.alternates[0]), "openai-codex/gpt-5.6-luna@off");
   assert.ok(d.alternates.every(a => a.tier === "quick"));
@@ -240,10 +249,14 @@ class FixtureStats implements LatencyView {
   blocked(provider: string, id: string) { return this.blockedIds.includes(`${provider}/${id}`); }
 }
 
-test("local measurements re-rank within a tier once trusted (n >= 3); health blocks skip a model", () => {
-  const slowLuna = { n: 5, ttftMs: 4_000, tpsN: 5, tps: 130 };
-  assert.equal(decide(input("what's the capital of france"), TOM, S, { stats: new FixtureStats({ "openai-codex/gpt-6-luna@off": slowLuna }) }).model?.id, "gpt-5.6-luna");
-  assert.equal(decide(input("what's the capital of france"), TOM, S, { stats: new FixtureStats({ "openai-codex/gpt-6-luna@off": { ...slowLuna, n: 2, tpsN: 2 } }) }).model?.id, "gpt-6-luna");
+test("local measurements re-rank within a tier once trusted (n >= 3, or at once when ≥ 2× the prior); health blocks skip a model", () => {
+  const capital = (entries: Record<string, StatEntry>) => decide(input("what's the capital of france"), TOM, S, { stats: new FixtureStats(entries) }).model?.id;
+  const luna = "openai-codex/gpt-6-luna@off";
+  assert.equal(capital({ [luna]: { n: 5, ttftMs: 4_000, tpsN: 5, tps: 60 } }), "gpt-5.6-luna");
+  // Bad news is believed from the first sample (4.0 s ≥ 2 × 1.7 s); milder news waits for n = 3.
+  assert.equal(capital({ [luna]: { n: 1, ttftMs: 4_000, tpsN: 0, tps: 0 } }), "gpt-5.6-luna");
+  assert.equal(capital({ [luna]: { n: 2, ttftMs: 3_000, tpsN: 0, tps: 0 } }), "gpt-6-luna");
+  assert.equal(capital({ [luna]: { n: 3, ttftMs: 3_000, tpsN: 0, tps: 0 } }), "gpt-5.6-luna");
   const blocked = new FixtureStats({}, ["openai-codex/gpt-6-luna"]);
   assert.equal(decide(input("what's the capital of france"), TOM, S, { stats: blocked }).model?.id, "gpt-5.6-luna");
 });
@@ -255,9 +268,9 @@ test("health blocks demote but never refuse: a provider-wide block on the only p
   assert.ok(d.reasons.includes("health-blocked"));
   assert.ok(d.ladder.length > 0, "the ladder is kept for the router's own health checks");
   // A healthy model still wins over a blocked better-ranked one, and vision is kept when possible.
-  const partial = new FixtureStats({}, ["openai-codex/gpt-6-sol"]);
+  const partial = new FixtureStats({}, ["openai-codex/gpt-6-luna"]);
   const click = decide(input("click the blue submit button"), TOM, S, { stats: partial });
-  assert.notEqual(click.model?.id, "gpt-6-sol");
+  assert.equal(click.model?.id, "gpt-5.6-luna");
   assert.equal(click.attachScreenshot, true);
   assert.ok(!click.reasons.includes("health-blocked"));
 });
@@ -300,4 +313,171 @@ test("decide is fast (< 1 ms per call) and carries no request text in its reason
   for (let i = 0; i < 500; i++) d = pick(text, TOM);
   assert.ok((performance.now() - start) / 501 < 1);
   assert.doesNotMatch(JSON.stringify(d), /copper|robin|secret/);
+});
+
+// --- pass 2: tier table, fast tier, trust rule, latency guard, scope and image attachments ---------------------
+
+test("tier table (DESIGN2 §5.4): answers, writing, other and simple UI work are quick; complexity 1 UI work is fast", () => {
+  assert.deepEqual(BASE_TIERS, {
+    calculate: ["quick", "quick", "fast"],
+    search_computer: ["quick", "quick", "fast"],
+    open_launch: ["quick", "quick", "fast"],
+    answer: ["quick", "quick", "standard"],
+    write: ["quick", "quick", "standard"],
+    act_in_app: ["quick", "fast", "standard"],
+    browse_web: ["quick", "fast", "standard"],
+    code: ["standard", "standard", "deep"],
+    other: ["quick", "quick", "fast"],
+  });
+});
+
+test("the Codex fast tier is gpt-6.1-sol@low for every bias; gpt-6-sol@off is out of Auto unless a tier override pins it", () => {
+  // Each bias reaches the fast tier from a different starting point: act cx1, code cx0 lowered, answer cx0 raised.
+  const onFast: [RoutingSettings["bias"], Classification][] = [
+    ["balanced", classification("act_in_app", 1)], ["speed", classification("code", 0)], ["quality", classification("answer", 0)]];
+  for (const [bias, c] of onFast) {
+    const d = decide({ ...input("x"), classification: c }, TOM, settings({ bias }));
+    assert.equal(`${d.tier} ${d.model && targetKey(d.model)}`, "fast openai-codex/gpt-6.1-sol@low", bias);
+  }
+  assert.ok(TOM.profiles.some(p => targetKey(p) === "openai-codex/gpt-6-sol@off" && p.pinOnly), "the measured prior stays for overrides");
+  for (const [routeInput, s] of everyCase()) {
+    const d = decide(routeInput, TOM, s);
+    for (const target of [d.model, ...d.ladder, ...d.alternates]) {
+      assert.notEqual(target && targetKey(target), "openai-codex/gpt-6-sol@off", JSON.stringify(routeInput.classification));
+    }
+  }
+  const pinned = settings({ tierOverrides: { fast: { provider: "openai-codex", id: "gpt-6-sol", thinkingLevel: "off" } } });
+  assert.equal(label("plan my week", TOM, pinned), "fast openai-codex/gpt-6-sol@off", "a hard signal (complexity 2 on other) reaches the pinned model");
+  // The public OpenAI API keeps its Artificial Analysis priors.
+  assert.ok(PRIOR_PROFILES.some(p => targetKey(p) === "openai/gpt-6-sol@off" && p.tier === "fast" && !p.pinOnly));
+});
+
+test("Codex priors are the 2026-10-05 measurements (r2/latency.md): Luna 1.7 s / 60 tok/s, Sol@off 5.0 s / 40, 6.1-Sol@low 2.6 s", () => {
+  const prior = (key: string, tier: string) => PRIOR_PROFILES.find(p => targetKey(p) === key && p.tier === tier)!;
+  assert.deepEqual([prior("openai-codex/gpt-6-luna@off", "quick").ttftS, prior("openai-codex/gpt-6-luna@off", "quick").tps], [1.7, 60]);
+  assert.deepEqual([prior("openai-codex/gpt-6-sol@off", "fast").ttftS, prior("openai-codex/gpt-6-sol@off", "fast").tps], [5.0, 40]);
+  assert.equal(prior("openai-codex/gpt-6.1-sol@low", "fast").ttftS, 2.6);
+  assert.equal(prior("openai-codex/gpt-6.1-sol@low", "standard").ttftS, 2.6);
+  // Unmeasured Codex models in the same tiers never outrank the measured ones on a public-API median.
+  assert.ok(prior("openai-codex/gpt-5.6-luna@off", "quick").ttftS >= 1.7);
+  assert.ok(prior("openai-codex/gpt-5.6-terra@low", "fast").ttftS >= 2.6);
+});
+
+test("trust rule: a measurement counts from n = 1 when ≥ 2× the prior, otherwise from n = 3", () => {
+  const p = { ttftS: 2, tps: 60 };
+  assert.equal(expectedTtft(p), 2);
+  assert.equal(expectedTtft(p, { n: 1, ttftMs: 4_000, tpsN: 0, tps: 0 }), 4, "bad news at once");
+  assert.equal(expectedTtft(p, { n: 1, ttftMs: 3_900, tpsN: 0, tps: 0 }), 2);
+  assert.equal(expectedTtft(p, { n: 2, ttftMs: 500, tpsN: 0, tps: 0 }), 2, "good news waits");
+  assert.equal(expectedTtft(p, { n: TRUSTED_SAMPLES, ttftMs: 500, tpsN: 0, tps: 0 }), 0.5);
+  assert.equal(BAD_NEWS_FACTOR, 2);
+  const profile = TOM.profiles.find(q => targetKey(q) === "openai-codex/gpt-6-luna@off")!;
+  const stats = (entry: StatEntry) => new FixtureStats({ "openai-codex/gpt-6-luna@off": entry });
+  assert.equal(expectedSeconds(profile, 60), 1.7 + 1);
+  assert.equal(expectedSeconds(profile, 60, stats({ n: 0, ttftMs: 0, tpsN: 1, tps: 30 })), 1.7 + 2, "half the prior throughput counts at once");
+  assert.equal(expectedSeconds(profile, 60, stats({ n: 0, ttftMs: 0, tpsN: 1, tps: 120 })), 1.7 + 1);
+});
+
+test("latency guard: a tier raised only by complexity 1 falls back when its model is > 2× and > 1 s (or > 2 s) slower", () => {
+  const multiStep = "click the settings tab and then turn on dark mode";
+  // Both fast-tier candidates measured slow once (≥ 2× their priors: believed at once).
+  const slowSol = new FixtureStats({
+    "openai-codex/gpt-6.1-sol@low": { n: 1, ttftMs: 6_000, tpsN: 0, tps: 0 },
+    "openai-codex/gpt-5.6-terra@low": { n: 1, ttftMs: 6_000, tpsN: 0, tps: 0 },
+  });
+  const demoted = decide(input(multiStep), TOM, S, { stats: slowSol });
+  assert.equal(demoted.tier, "quick");
+  assert.equal(demoted.model && targetKey(demoted.model), "openai-codex/gpt-6-luna@off");
+  assert.ok(demoted.reasons.includes("latency-demote"));
+  assert.deepEqual(demoted.ladder.map(targetKey).slice(0, 1), ["openai-codex/gpt-6.1-sol@low"], "escalation still reaches the fast tier");
+  // Measured priors alone keep 6.1-Sol@low (2.6 s vs 1.7 s); a pinned Sol@off (5.0 s) is demoted.
+  assert.equal(label(multiStep, TOM), "fast openai-codex/gpt-6.1-sol@low");
+  const pinned = settings({ tierOverrides: { fast: { provider: "openai-codex", id: "gpt-6-sol", thinkingLevel: "off" } } });
+  assert.equal(label(multiStep, TOM, pinned), "quick openai-codex/gpt-6-luna@off");
+  // Never for hard signals, explicit words, a follow-up's tier or the quality bias.
+  assert.equal(decide(input("fix the failing unit tests"), TOM, S, { stats: slowSol }).tier, "standard");
+  assert.equal(decide(input(`think hard: ${multiStep}`), TOM, S, { stats: slowSol }).tier, "deep");
+  assert.equal(decide(input(multiStep, { followup: true, lastTier: "fast" }), TOM, S, { stats: slowSol }).tier, "fast");
+  assert.ok(!decide(input(multiStep), TOM, settings({ bias: "quality" }), { stats: slowSol }).reasons.includes("latency-demote"));
+  // Anthropic priors: Sonnet@low 1.31 s is > 2× Haiku's 0.58 s but only 0.73 s slower: no demotion.
+  const anthropic = decide(input(multiStep), ANTHROPIC, S);
+  assert.notEqual(anthropic.model && targetKey(anthropic.model), "anthropic/claude-haiku-4-5@off");
+  assert.ok(!anthropic.reasons.includes("latency-demote"));
+});
+
+const SNAPSHOT = {
+  id: "ctx", capturedAt: "2026-10-05T00:00:00Z", cursor: { x: 0, y: 0 }, monitors: [], foregroundWindow: null, windowUnderCursor: null,
+  targetWindow: { hwnd: "1", processId: 1, processName: "Brave Browser", title: "Fixture", bounds: { x: 0, y: 0, width: 1, height: 1 } },
+  browser: { name: "Brave", mode: "ax", pinned: true },
+  screenshot: { kind: "file", filePath: "/tmp/fixture.png" },
+} as unknown as DesktopContextSnapshot;
+const SPARK_QUICK = settings({ tierOverrides: { quick: { provider: "openai-codex", id: "gpt-5.3-codex-spark", thinkingLevel: "off" } } });
+
+test("scope: general never attaches a screenshot or needs vision; window attaches it and needs a vision model", () => {
+  const general = routeContextFromSnapshot(SNAPSHOT, "general");
+  assert.deepEqual(general, { surface: "browser", hasScreenshot: false, browserCdp: false, scope: "general" });
+  const deictic = buildRouteInput("what does this error mean", general);
+  assert.equal(deictic.scope, "general");
+  assert.ok(deictic.estimatedPromptTokens < 6_000 + 1_500, "no image tokens are estimated");
+  for (const extra of [{}, { hasScreenshot: true }]) {
+    const d = decide({ ...deictic, ...extra }, TOM, SPARK_QUICK);
+    assert.equal(d.attachScreenshot, false);
+    assert.equal(d.scope, "general");
+    assert.ok(d.reasons.includes("scope=general"));
+    assert.equal(d.model && targetKey(d.model), "openai-codex/gpt-5.3-codex-spark@off", "a text-only model is fine for a general turn");
+    assert.equal(d.vision, false);
+  }
+  const window = buildRouteInput("what's the capital of france", routeContextFromSnapshot(SNAPSHOT, "window"));
+  const attached = decide(window, TOM, SPARK_QUICK);
+  assert.equal(attached.attachScreenshot, true, "window scope attaches whatever the words say");
+  assert.equal(attached.model && targetKey(attached.model), "openai-codex/gpt-6-luna@off");
+  assert.equal(attached.vision, true);
+  // Window scope without a screenshot (no Screen Recording): text-only turn, still on a vision model.
+  const noCapture = decide({ ...window, hasScreenshot: false }, TOM, SPARK_QUICK);
+  assert.equal(noCapture.attachScreenshot, false);
+  assert.equal(noCapture.model?.id, "gpt-6-luna");
+});
+
+test("scope: the agent pulling the window in routes the general thread as window; legacy requests have no scope", () => {
+  const general = routeContextFromSnapshot(SNAPSHOT, "general");
+  assert.equal(buildRouteInput("and now in german", general, { followup: true, pulled: true }).scope, "window");
+  assert.equal(buildRouteInput("and now in german", general, { followup: true, pulled: false }).scope, "general");
+  const legacy = buildRouteInput("and now in german", routeContextFromSnapshot(SNAPSHOT), { pulled: true });
+  assert.equal(legacy.scope, undefined);
+  assert.equal(decide(legacy, TOM, S).scope, undefined);
+  const pulled = decide(buildRouteInput("and now in german", { ...general, hasScreenshot: false }, { followup: true, pulled: true }), TOM, SPARK_QUICK);
+  assert.equal(pulled.model?.id, "gpt-6-luna", "the thread holds window images: a vision model");
+});
+
+test("legacy requests (no scope): the screenshot formula is exactly today's", () => {
+  const texts = ["what's the capital of france", "what is this error", "click the blue submit button", "summarize the page", "make it shorter",
+    "go to the pricing page", "translate this to german", "write an email to my boss", "fass das zusammen", "hmm", "gib mir ein rezept",
+    "gib deine adresse ein", "make the first line bold"];
+  for (const surface of ["other", "browser"] as const) for (const browserCdp of [false, true]) for (const text of texts) {
+    const routeInput = input(text, { surface, browserCdp });
+    const c = classifyUtterance(text, { surface, browserCdp });
+    const formula = c.needsScreen >= 0.5 || c.intent === "act_in_app" || (c.intent === "browse_web" && !browserCdp);
+    assert.equal(decide(routeInput, TOM, S).attachScreenshot, formula, `${text} ${surface} cdp=${browserCdp}`);
+    assert.equal(decide({ ...routeInput, hasScreenshot: false }, TOM, S).attachScreenshot, false);
+  }
+});
+
+test("image attachments force a vision-capable model and never attach the screenshot by themselves", () => {
+  const general = routeContextFromSnapshot(SNAPSHOT, "general");
+  const routeInput = buildRouteInput("what's in this picture", general, { hasImageAttachment: true });
+  assert.equal(routeInput.hasImageAttachment, true);
+  assert.ok(routeInput.estimatedPromptTokens >= 6_000 + 1_500, "the image is estimated");
+  const d = decide(routeInput, TOM, SPARK_QUICK);
+  assert.equal(d.model?.id, "gpt-6-luna", "the text-only override is skipped");
+  assert.equal(d.vision, true);
+  assert.equal(d.attachScreenshot, false);
+  assert.ok(d.reasons.includes("image-attachment"));
+  // No image-capable model at all: run text-only, and say so (callers then drop the image).
+  const textOnly = buildRoutingCatalog([fixtureModel("acme", "acme-text-1", { baseUrl: "https://api.acme.invalid/v1", input: ["text"] })]);
+  const blind = decide(routeInput, textOnly, S);
+  assert.equal(blind.model?.id, "acme-text-1");
+  assert.equal(blind.vision, false);
+  assert.ok(blind.reasons.includes("no-vision-model"));
+  // The legacy path too: an attachment needs vision even when no screenshot is wanted.
+  assert.equal(decide({ ...input("what's the capital of france"), hasImageAttachment: true }, TOM, SPARK_QUICK).model?.id, "gpt-6-luna");
 });

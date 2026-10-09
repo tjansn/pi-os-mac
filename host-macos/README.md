@@ -189,6 +189,89 @@ explained in plain sentences. `PI_OS_LAYA_PYTHON` / `PI_OS_LAYA_MODEL_DIR` remai
 but they only reach an app started from Terminal or `run-dev.sh`. Bundled builds ship the
 helper script (`Resources/sidecars/laya/laya_intent_sidecar.py`), never a model.
 
+## General by default, the context shelf and pointing
+
+Branch `feat/context-shelf` (2026-10-05), built and tested offline, **not installed**.
+
+**The bar opens general.** Key-down pins only the window's identity (CG window, process
+fingerprint at insert, and the focused element, which can only be read before the bar takes
+keys). There is no screenshot and no DevTools connection at key-down; the Brave tab pin runs
+right after the bar is on screen. The placeholder is *Ask anything…*.
+
+**The context chip** sits left of the send button and shows the frontmost app:
+
+| State | Looks | Means |
+|---|---|---|
+| off | the app icon in a quiet circle | not included (the agent may still look if you refer to it, unless you excluded it) |
+| suggested | icon + name, accent outline | your words refer to the screen (Node rules v2 `scope`, averaged with the on-device scorer; the local score never decides alone) |
+| on | icon + name, accent fill | included: Tab/click, ⇧ + hotkey, *Ask About This Window…*, a tether, or *Always include* |
+
+What the chip shows at Return is what `/invoke` carries (`context: {scope, pull, source,
+scopeHint}`). An off chip still allows the agent to look (`pull: "allowed"`, the bar then says
+*Looking at …*) unless Tab left the window out (tooltip “pi won’t look”, the icon struck
+through) or the setting is *Only when I ask*. The window is captured only when the chip first becomes suggested or on (usually
+while you are still typing), never for a general question, which never waits for or fails on a
+capture. A window question whose capture fails continues without the screenshot and says so.
+**Tab** toggles the chip (not while IME text is marked or a typed list owns the keys); a click
+does the same; the choice sticks for the take. **⇧ + the hotkey** (⌃⌥⌘⇧Space) opens included,
+tap or hold; over an open bar it includes the window. The reader names the app only when the
+window was included (or the agent looked: “Looked at Brave”); the follow-up composer carries the
+same chip, bound to the thread's window and starting from the record's `included` (on after the
+agent looked, off after you narrowed): it widens a general thread only on a strong,
+screen-anchored reference (“this page”, a UI verb) and never narrows one by itself. Only the
+harness captures for a follow-up. *Settings →
+Context → Active window*: *Only when I ask* / *Suggest* (default) / *Always include*. With an
+attachment on the shelf, “this”, “the selection” or “this image” mean the attachment and the
+window is not suggested; a pointed-at element of the window includes it instead.
+
+**The context shelf** (chips above the composer, in memory only):
+
+- **⌃⌥⌘C “Add to pi”** (second Carbon chord, no Input Monitoring; `PI_OS_ADD_HOTKEY` overrides):
+  the frontmost app is taken at the press, before anything of pi-os appears. The selection is
+  read through Accessibility (WebKit/Chromium text markers included); when an app does not share
+  it (Electron, images), its own **Edit ▸ Copy** runs and the previous clipboard is put back
+  byte-identical, unless another app wrote meanwhile or the clipboard holds password-manager,
+  concealed or Handoff content (then nothing is touched). *Settings → Context → Use the app's Copy*
+  turns that fallback off, and read-only mode never uses it (it is input). The menu bar's *Add
+  Selection to pi* runs the same path. A non-activating *Added to pi* note confirms (or says “Nothing
+  selected · Grab an area?” with a **Grab Area** button); the bar is not opened.
+- **The pi hotkey with text selected** adds it as a removable chip (Accessibility only, never the
+  clipboard). It belongs to that question: Escape removes it again. *Settings → Context → Add
+  selected text when you open pi*.
+- **Drag and drop** onto the bar, the reader or the menu-bar π: files (references; their
+  contents are not read, but when the question is sent each gets a launcher token for that
+  question's context, so the agent can open or reveal it for you), image files and images
+  (re-encoded ≤ 1280 px into pi-os's own PNGs; the user's file is untouched), links (as text,
+  never fetched) and text. A drop never activates pi-os. Finder ⌘C and ⌃⌥⌘C in Finder give the
+  same file references and images.
+- **Grab an Area…** (chip menu or the menu-bar *Add Screen Area to pi…*): the system's
+  `screencapture -i` selection (Esc cancels); the bar steps aside meanwhile.
+- **Clipboard suggestion:** something copied while pi-os runs shows as a dashed chip; only its
+  types are looked at until you click **+**. pi-os's own copies (Copy Answer, copy actions) are
+  never suggested.
+
+Click a chip to see exactly what will be sent; **⊗** removes it; **⌫** in an empty composer
+removes the last one. Caps: 8 items, 4 images, 20,000 characters per text, 40,000 in total. The
+shelf empties after 15 idle minutes, when its question is sent (the PNGs stay until that thread
+closes, because Node reads them after `/invoke` returns), or with **Clear Attachments** in the
+menu-bar menu, which also shows the count. Attachments are untrusted data in the prompt, never
+instructions or click authority, and an image makes Auto pick a vision model.
+
+**Pointing (attention overlay).** Drag the chip (or π) onto any window: a transparent,
+non-activating overlay draws a line from the bar (straight under Reduce Motion) and a purple frame
+around the window under the pointer; dropping re-pins the question on that window with full
+identity (fingerprint, Brave tab pin, ownership checks) and includes it. Hold **⌥** while dragging,
+or choose **Point at an Element…** in the chip's menu (or the menu bar; VoiceOver: show menu on the
+chip) and click once, to attach one element: an orange frame with its role, then a chip
+“⌖ Button “Send”” and “Pointing at …” on your message. An element of the question's window
+includes that window (a suggestion that goes with the element chip). An element of another
+window makes that window the question's window, unless you included the current one or pointed
+at it already: then the element goes with a read-only chip of its own window, so the agent knows
+which app it is in. Pointing works on a new question, not in the follow-up composer. Secure and
+username/password fields are never read (one field rule for native apps and Brave web content:
+names, native and DOM ids, label elements). One actionable window per question; acting
+still goes through that window's normal gated tools.
+
 ## Text input
 
 Native typing preserves Unicode and normalizes LF/CRLF/CR to single line breaks,
@@ -199,30 +282,31 @@ clipboard substitution is used. Brave multiline fill uses verified `Input.insert
 and refuses single-line fields before input. Details and regression boundaries:
 [`docs/desktop-input-semantics.md`](../docs/desktop-input-semantics.md).
 
-## Live Brave connection
+## Brave access
 
-The repository now integrates live-session CDP through **π → Brave Connection…**
-(also available in Settings), with explicit opt-in and a configurable local debugging
-port. Enable Brave's own setting at `brave://inspect/#remote-debugging`, then enable
-this connection in pi-os. Debugging grants broad browser access; read the warning.
-No new profile, cookie export or browser restart is used.
+**Accessibility (default, no prompts).** The hotkey pins Brave's selected tab through macOS
+Accessibility: pi reads the page (`browser.page`: title, URL, text, headings, controls; field
+values of credential fields are never read) with no “Allow remote debugging?” dialog, no
+“controlled by automated test software” banner and no focus change. **Act in Brave in the
+background** (default on) presses buttons and fills fields through element-addressed AX actions
+(`browser.axAct`) while Brave stays behind your app; every identity, deletion, credential, budget
+and uncertain-input check still runs, and native clicks and typing keep their focus checks.
+⌘Return types a value into a Brave window like into any other (only a DevTools pin copies instead).
+Credential fields are recognized by what Accessibility exposes (a secure field, its name or label
+element, its native or DOM id), the same rule for pointing, ⌃⌥⌘C and native typing. Unlike the
+DevTools page script, Accessibility does not expose a field's `name` or `autocomplete`
+(`username`, `current-password`, `new-password`), so a login field marked only that way is not
+recognized on this route.
 
-The hotkey pins the selected native tab before the prompt. The agent receives
-`browser_snapshot` / `browser_act` for semantic page references instead of
-`desktop_act`; identity/permission/field-local credential/deletion checks still apply. Duplicate
-URL/window matches, tab changes and uncertain writes fail closed. Only HTTP(S)
-main-page/open-shadow DOM controls, same-tab links, text entry and scrolling are
-supported initially. Frames, canvas, browser settings, downloads and new-tab/external-protocol
-links are not yet supported. No silent native-input or
-separate-profile fallback occurs. This is not a guaranteed no-delete sandbox.
+**DevTools (opt-in).** *Settings → Context → Brave access: DevTools* (or **Brave Access…** in the
+menu-bar menu) keeps the old CDP connection: Brave asks for approval on every connection and shows
+the automation banner while connected. Build 11's switch is not carried over.
 
-**Installation status:** build 12 is installed. Browser-specific build-11 evidence below
-is historical; the browser adapter itself was not changed by Whisper. Its default production-browser candidate
-fixture passed 20 checks including multiline input and turn-bound reference invalidation.
-The enabled-mode rerun stopped at the connection boundary (`browser_unavailable`),
-before CDP attachment. Earlier build 10 passed 18 signed installed-host browser checks
-and both candidate credential modes; those reports remain historical. Brave connection is enabled on Tom's machine under his explicit approval.
-See [BROWSER_INTEGRATION.md](BROWSER_INTEGRATION.md) for exact evidence and remaining limits.
+**Switch remote debugging off.** pi no longer needs Brave's *Allow remote debugging for this
+browser instance* (brave://inspect/#remote-debugging; *Open brave://inspect…* in Settings opens
+it). Switching it off closes Brave's local debugging port; pi-os never changes Brave's settings
+itself. See [BROWSER_INTEGRATION.md](BROWSER_INTEGRATION.md) for the routes, limits and the
+history of the CDP builds.
 
 ### Username and password fields
 
@@ -316,6 +400,9 @@ They stage complete bundles instead of merging old/new files. An incompatible co
 requirement is blocked; a deliberate one-time migration requires
 `PI_OS_ALLOW_SIGNING_CHANGE=1` and a scoped Screen Recording repair afterward.
 The default development build still references this checkout's Node harness.
+`build-app.sh` copies the on-device context scorer's weights into `Contents/Resources`
+before signing (the app never looks for them outside its bundle; without them the chip
+runs on the Node rules only).
 After Swift changes, rebuild/refresh; repo builds do not update installed binaries.
 The Windows stable install is separate and still uses `refresh-install.ps1` on Windows.
 
@@ -347,7 +434,8 @@ remains a release gate; a successful build alone is not a distribution claim.
 
 | Environment variable | Meaning |
 |---|---|
-| `PI_OS_HOTKEY` | Chord override; e.g. `Ctrl+Shift+F9`. Exclusive Carbon registration and known system-shortcut conflict diagnostics. Unknown third-party shortcut precedence still requires manual testing. |
+| `PI_OS_HOTKEY` | Chord override; e.g. `Ctrl+Shift+F9`. Exclusive Carbon registration and known system-shortcut conflict diagnostics (now comparing the symbolic-hotkey plist's NSEvent masks, plus unstored macOS defaults such as ⇧⌘4). Its ⇧ variant is registered too (opens with the window included). Unknown third-party shortcut precedence still requires manual testing. |
+| `PI_OS_ADD_HOTKEY` | “Add to pi” chord; default `Ctrl+Option+Cmd+C`. A chord that cannot be registered is reported under Diagnostics and never blocks the main hotkey. |
 | `PI_OS_NODE_PATH` | Explicit absolute Node executable path; overrides bundled/build-time configuration. |
 | `PI_OS_NODE_ENTRY` | Explicit absolute built `node-harness/dist/index.js`. |
 | `PI_OS_NODE_WARM_TTL_SECONDS` | One-shot warm retention after result/normal cancellation; default 120 (600 while push-to-talk is on), range 0–3600; an explicit value always wins. With voice off, prompt cancellation stops an unused child immediately; with voice on it keeps the TTL. |
@@ -359,7 +447,7 @@ remains a release gate; a successful build alone is not a distribution claim.
 | `PI_OS_ECHO=1` | TCC-free prompt/echo UI probe: **no capture and no Node**. |
 | `PI_OS_AGENT=0` | Real pinned screenshot + host/harness round trip, but **no model call**. |
 | `PI_OS_READ_ONLY=1` | Explicitly suppress computer control, even with grants. |
-| `PI_OS_PERF=1` | Diagnostic timings without prompt/title/image content: panel ordering, visible-occlusion proxy, SCK enumeration/capture and actual image dimensions. |
+| `PI_OS_PERF=1` | Diagnostic timings without prompt/title/image content: panel ordering, visible-occlusion proxy, the Brave tab pin after the panel (`brave-pin-after-panel`), the lazy window capture (`capture.window`), SCK enumeration/capture and actual image dimensions. |
 
 For environment-based probes, use `host-macos/scripts/run-dev.sh`; remember its
 shell-inherited TCC caveat. Normal bundle launches use the build-time development paths.
@@ -428,7 +516,10 @@ swift run --package-path host-macos pi-os-ui-preview listening --dark   # script
 # Also: draft, working, short, long, error, failed, instant-calc, instant-files, instant-answer,
 # instant-list, card, streaming, confirmation, voice-denied, voice-unavailable, speech-denied,
 # asset-missing, big-1/2/3, instant-unit, hint-web, confirm-hint, voice-hint, auto-settings,
-# voice-settings, classifier-settings. Settings use a mock catalog and a scripted voice service (no TCC).
+# voice-settings, classifier-settings, context-settings, chip-off, chip-suggested, chip-on, chip-on-draft,
+# shelf, shelf-empty-draft, shelf-suggestion, drop-target, reader-general, reader-included,
+# reader-pointing, followup-shelf; snapshot-only composites: tether, element, added-toast, nothing-toast.
+# Settings use a mock catalog and a scripted voice service (no TCC).
 ```
 
 **Offscreen snapshots** render every new state into PNGs without ever showing a window,

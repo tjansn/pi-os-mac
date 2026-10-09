@@ -1,4 +1,5 @@
 import type { HarnessConfig } from "./config.js";
+import type { BrowserHint } from "./contracts/browser.js";
 import type {
   AppIndexResult, FileSearchRequest, FileSearchResult, LauncherOpenRequest, LauncherOpenResult,
 } from "./contracts/launcher.js";
@@ -71,7 +72,7 @@ export interface DesktopContextSnapshot {
   selectedDesktopItemsTruncated?: boolean;
   screenshot?: ScreenshotRef | null;
   /** Selected native Brave tab pinned before the panel; no endpoint/capability exposed. */
-  browser?: { name: "Brave"; mode: "cdp"; pinned: boolean };
+  browser?: BrowserHint;
   monitors: MonitorSummary[];
 }
 
@@ -117,6 +118,14 @@ interface ToolResponsePayload {
   error?: { code?: unknown; message?: unknown };
 }
 
+/** A transport-level answer (400/401/404/500) instead of a tool outcome; `status` 400 means the host refused the request unread. */
+export class HostHttpError extends Error {
+  constructor(readonly status: number, toolName: string) {
+    super(`Host returned HTTP ${status} for ${toolName}`);
+    this.name = "HostHttpError";
+  }
+}
+
 export class HostClient {
   constructor(private readonly config: HarnessConfig) {}
 
@@ -139,7 +148,7 @@ export class HostClient {
 
     if (!response.ok) {
       // Transport-level problem (400/401/404/500).
-      throw new Error(`Host returned HTTP ${response.status} for ${toolName}`);
+      throw new HostHttpError(response.status, toolName);
     }
 
     const payload = (await response.json()) as ToolResponsePayload;

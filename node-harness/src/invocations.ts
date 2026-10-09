@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
+import type { AttachmentSummary } from "./contracts/attachments.js";
 import type { CardSpec } from "./contracts/cards.js";
+import type { ContextRecord } from "./contracts/context.js";
 
 /**
  * In-memory invocation registry backing GET /invocations/{id} and the SSE
@@ -64,6 +66,13 @@ export interface InvocationRecord {
   route?: InvocationRoute;
   /** How the request was entered; never the transcript metadata itself. */
   input?: { mode: "text" | "voice" };
+  /**
+   * The thread's context scope, for requests that carried `context` (absent: legacy). `pulled`: the
+   * agent called use_active_window in this thread. Kept across follow-ups.
+   */
+  context?: ContextRecord;
+  /** This turn's attachments, content-free: kinds, origins and sizes only (never text, labels, names or paths). */
+  attachments?: AttachmentSummary[];
   /** Per-stage milliseconds (contextMs, sessionMs, ttftMs, totalMs, …). */
   timings?: Record<string, number>;
   /** Why the invocation failed/aborted/timed out; terminal failure states only. */
@@ -160,7 +169,7 @@ export class InvocationStore {
       r.prompt = wellFormed(prompt); r.state = "queued";
       delete r.startedAt; delete r.finishedAt; delete r.activity; delete r.partialText;
       delete r.responseText; delete r.failureMessage; delete r.card; delete r.cardComplete;
-      delete r.route; delete r.timings; delete r.input;
+      delete r.route; delete r.timings; delete r.input; delete r.attachments;
     });
     return true;
   }
@@ -219,6 +228,26 @@ export class InvocationStore {
     this.mutate(id, (r) => {
       if (input) r.input = { mode: input.mode };
       else delete r.input;
+    });
+  }
+
+  /** The thread's scope summary; an unchanged value is no new revision. */
+  setContext(id: string, context: ContextRecord | undefined): void {
+    const record = this.records.get(id);
+    const next = context && { scope: context.scope, source: context.source, pulled: context.pulled, included: context.included };
+    if (!record || JSON.stringify(record.context) === JSON.stringify(next)) return;
+    this.mutate(id, (r) => {
+      if (next) r.context = next;
+      else delete r.context;
+    });
+  }
+
+  /** This turn's attachment summaries (content-free by construction: summarizeAttachments). */
+  setAttachments(id: string, attachments: readonly AttachmentSummary[] | undefined): void {
+    if (!attachments?.length && this.records.get(id)?.attachments === undefined) return;
+    this.mutate(id, (r) => {
+      if (attachments?.length) r.attachments = attachments.map(summary => ({ ...summary }));
+      else delete r.attachments;
     });
   }
 

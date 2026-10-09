@@ -1,0 +1,9 @@
+{
+  "prompt": "now reply to the email",
+  "context": {
+    "scope": "window",
+    "pull": "allowed",
+    "source": "suggested",
+    "scopeHint": 0.75
+  }
+}

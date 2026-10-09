@@ -1,0 +1,25 @@
+{
+  "invocationId": "inv-ctx-0001",
+  "contextId": "ctx-123",
+  "invokedAt": "2026-10-05T09:00:00Z",
+  "retainSession": true,
+  "takeId": "take-7",
+  "prompt": "summarize these",
+  "attachments": [
+    {
+      "kind": "file",
+      "name": "report.xlsx",
+      "uti": "org.openxmlformats.spreadsheetml.sheet",
+      "token": "tok_3fa8c2d1e9b0",
+      "byteSize": 86016,
+      "origin": "drop"
+    },
+    {
+      "kind": "file",
+      "name": "notes.md",
+      "uti": "net.daringfireball.markdown",
+      "path": "/Users/fixture/Documents/notes.md",
+      "origin": "clipboard"
+    }
+  ]
+}

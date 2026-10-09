@@ -5,8 +5,10 @@ import PiOSCore
 /// Only public AX attributes/actions. No private CGWindowID ↔ AX bridge.
 public enum DesktopAX {
     final class Budget {
-        let deadline: Date
+        private(set) var deadline: Date
         init(_ seconds: TimeInterval) { deadline = Date().addingTimeInterval(seconds) }
+        /// A pin's retained page elements share one budget; each route call restarts it.
+        func restart(_ seconds: TimeInterval) { deadline = Date().addingTimeInterval(seconds) }
         func read(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
             let remaining = deadline.timeIntervalSinceNow
             guard remaining > 0 else { return nil }

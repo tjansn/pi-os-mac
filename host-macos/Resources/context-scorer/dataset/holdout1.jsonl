@@ -1,0 +1,74 @@
+{"id": "hen001", "lang": "en", "text": "what's this website about?", "gold": "window"}
+{"id": "hen002", "lang": "en", "text": "explain the stack trace", "gold": "window"}
+{"id": "hen003", "lang": "en", "text": "reply and say thanks", "gold": "window"}
+{"id": "hen004", "lang": "en", "text": "condense this into three bullet points", "gold": "window"}
+{"id": "hen005", "lang": "en", "text": "what are the key points here?", "gold": "window"}
+{"id": "hen006", "lang": "en", "text": "who is the sender", "gold": "window"}
+{"id": "hen007", "lang": "en", "text": "is the link in this email safe?", "gold": "window"}
+{"id": "hen008", "lang": "en", "text": "what language is this written in", "gold": "window"}
+{"id": "hen009", "lang": "en", "text": "rate my essay", "gold": "window"}
+{"id": "hen010", "lang": "en", "text": "what's the error in the console", "gold": "window"}
+{"id": "hen011", "lang": "en", "text": "help me answer this", "gold": "window"}
+{"id": "hen012", "lang": "en", "text": "what do these numbers mean?", "gold": "window"}
+{"id": "hen013", "lang": "en", "text": "can you read the screen for me", "gold": "window"}
+{"id": "hen014", "lang": "en", "text": "press the blue button", "gold": "window"}
+{"id": "hen015", "lang": "en", "text": "open the second link", "gold": "window"}
+{"id": "hen016", "lang": "en", "text": "explain what the selected command does", "gold": "window"}
+{"id": "hen017", "lang": "en", "text": "summarise the thread", "gold": "window"}
+{"id": "hen018", "lang": "en", "text": "check the grammar", "gold": "window"}
+{"id": "hen019", "lang": "en", "text": "what's the shipping cost on this order", "gold": "window"}
+{"id": "hen020", "lang": "en", "text": "give me feedback on my slide", "gold": "window"}
+{"id": "hen021", "lang": "en", "text": "add a comment saying LGTM", "gold": "window"}
+{"id": "hen022", "lang": "en", "text": "type my address into the field", "gold": "window"}
+{"id": "hde023", "lang": "de", "text": "was soll ich darauf antworten?", "gold": "window"}
+{"id": "hde024", "lang": "de", "text": "erkläre mir den Stacktrace", "gold": "window"}
+{"id": "hde025", "lang": "de", "text": "fasse den Thread zusammen", "gold": "window"}
+{"id": "hde026", "lang": "de", "text": "was kostet der Versand hier", "gold": "window"}
+{"id": "hde027", "lang": "de", "text": "ist das Angebot gut?", "gold": "window"}
+{"id": "hde028", "lang": "de", "text": "übersetz mal die Seite", "gold": "window"}
+{"id": "hde029", "lang": "de", "text": "wo muss ich hier klicken?", "gold": "window"}
+{"id": "hde030", "lang": "de", "text": "lies das vor", "gold": "window"}
+{"id": "hde031", "lang": "de", "text": "prüf die Grammatik", "gold": "window"}
+{"id": "hde032", "lang": "de", "text": "was steht in der Mail von Anna?", "gold": "window"}
+{"id": "hde033", "lang": "de", "text": "klick auf den blauen Knopf", "gold": "window"}
+{"id": "hde034", "lang": "de", "text": "schreib dem eine nette Antwort", "gold": "window"}
+{"id": "hde035", "lang": "de", "text": "worum geht's?", "gold": "window"}
+{"id": "hde036", "lang": "de", "text": "mach daraus eine Stichpunktliste", "gold": "window"}
+{"id": "hde037", "lang": "de", "text": "erklär mir die Grafik", "gold": "window"}
+{"id": "hen038", "lang": "en", "text": "what's the population of Canada", "gold": "general"}
+{"id": "hen039", "lang": "en", "text": "write a birthday message for my sister", "gold": "general"}
+{"id": "hen040", "lang": "en", "text": "open Spotify and play my daily mix", "gold": "general"}
+{"id": "hen041", "lang": "en", "text": "what's 3 to the power of 12", "gold": "general"}
+{"id": "hen042", "lang": "en", "text": "find the PDF Anna sent me last week", "gold": "general"}
+{"id": "hen043", "lang": "en", "text": "how do I undo a git commit?", "gold": "general"}
+{"id": "hen044", "lang": "en", "text": "set the volume to 30%", "gold": "general"}
+{"id": "hen045", "lang": "en", "text": "what's a good recipe for dinner tonight", "gold": "general"}
+{"id": "hen046", "lang": "en", "text": "translate 'where is the train station' into Italian", "gold": "general"}
+{"id": "hen047", "lang": "en", "text": "explain how the page cache works in Linux", "gold": "general"}
+{"id": "hen048", "lang": "en", "text": "what's the best screen size for a laptop?", "gold": "general"}
+{"id": "hen049", "lang": "en", "text": "how do I fix a merge conflict", "gold": "general"}
+{"id": "hen050", "lang": "en", "text": "write a summary of the French Revolution", "gold": "general"}
+{"id": "hen051", "lang": "en", "text": "what does the fox say", "gold": "general"}
+{"id": "hen052", "lang": "en", "text": "open the settings", "gold": "general"}
+{"id": "hen053", "lang": "en", "text": "what's the error rate of covid tests?", "gold": "general"}
+{"id": "hen054", "lang": "en", "text": "lock the screen", "gold": "general"}
+{"id": "hen055", "lang": "en", "text": "show me photos from my trip to Lisbon", "gold": "general"}
+{"id": "hen056", "lang": "en", "text": "draft an out-of-office message", "gold": "general"}
+{"id": "hen057", "lang": "en", "text": "how tall is the Eiffel Tower", "gold": "general"}
+{"id": "hen058", "lang": "en", "text": "make me a packing list for skiing", "gold": "general"}
+{"id": "hde059", "lang": "de", "text": "wie hoch ist der Mount Everest", "gold": "general"}
+{"id": "hde060", "lang": "de", "text": "schreib eine Geburtstagsnachricht für meine Schwester", "gold": "general"}
+{"id": "hde061", "lang": "de", "text": "öffne Spotify", "gold": "general"}
+{"id": "hde062", "lang": "de", "text": "rechne 19 Prozent Mehrwertsteuer auf 250 Euro", "gold": "general"}
+{"id": "hde063", "lang": "de", "text": "wie mache ich einen Git-Commit rückgängig", "gold": "general"}
+{"id": "hde064", "lang": "de", "text": "was heißt Fenster auf Englisch?", "gold": "general"}
+{"id": "hde065", "lang": "de", "text": "erkläre mir die Relativitätstheorie", "gold": "general"}
+{"id": "hde066", "lang": "de", "text": "fasse die Handlung von Faust zusammen", "gold": "general"}
+{"id": "hde067", "lang": "de", "text": "stell die Lautstärke auf 30 Prozent", "gold": "general"}
+{"id": "hde068", "lang": "de", "text": "was koche ich heute Abend?", "gold": "general"}
+{"id": "hde069", "lang": "de", "text": "suche das PDF von Anna von letzter Woche", "gold": "general"}
+{"id": "hde070", "lang": "de", "text": "wie lang ist die Seite eines Quadrats mit 49 Quadratmetern Fläche", "gold": "general"}
+{"id": "hde071", "lang": "de", "text": "schreib eine Abwesenheitsnotiz", "gold": "general"}
+{"id": "hde072", "lang": "de", "text": "wann fährt der nächste Zug nach Hamburg?", "gold": "general"}
+{"id": "hde073", "lang": "de", "text": "sperr den Bildschirm", "gold": "general"}
+{"id": "hde074", "lang": "de", "text": "erklär mir den Unterschied zwischen RAM und SSD", "gold": "general"}

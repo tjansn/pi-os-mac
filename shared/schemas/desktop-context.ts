@@ -82,6 +82,21 @@ export interface UiaElementSummary {
   parentPath?: UiaElementPathEntry[];
 }
 
+/**
+ * macOS Brave transport for the pinned tab: `ax` = host Accessibility routes (`browser.page`, and
+ * `browser.axAct` when `background` is true), `cdp` = DevTools opt-in, `extension` = MV3 extension
+ * (stage C). Absent on Windows and for every non-Brave target.
+ */
+export type BrowserMode = "ax" | "cdp" | "extension";
+
+export interface BrowserHint {
+  name: "Brave";
+  mode: BrowserMode;
+  pinned: boolean;
+  /** `ax` only: background element actions (`browser.axAct`) are enabled for this context. */
+  background?: boolean;
+}
+
 export interface EnvironmentInfo {
   keyboardLayout?: string;
   desktopName?: string;
@@ -105,7 +120,7 @@ export interface DesktopContextSnapshot {
   selectedDesktopItemsTruncated?: boolean;
   screenshot?: ScreenshotRef;
   /** Optional macOS Brave route. Private endpoint/tab capabilities are not part of this snapshot. */
-  browser?: { name: "Brave"; mode: "cdp"; pinned: boolean };
+  browser?: BrowserHint;
   monitors: MonitorSummary[];
   environment?: EnvironmentInfo;
 }

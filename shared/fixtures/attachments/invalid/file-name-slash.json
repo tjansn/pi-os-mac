@@ -1,0 +1,16 @@
+{
+  "invocationId": "inv-ctx-0001",
+  "contextId": "ctx-123",
+  "invokedAt": "2026-10-05T09:00:00Z",
+  "retainSession": true,
+  "takeId": "take-7",
+  "prompt": "x",
+  "attachments": [
+    {
+      "kind": "file",
+      "name": "a/b.pdf",
+      "token": "tok_3fa8c2d1e9b0"
+    }
+  ],
+  "_expect": "invalid_label"
+}

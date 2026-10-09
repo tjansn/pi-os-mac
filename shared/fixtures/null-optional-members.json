@@ -1,0 +1,199 @@
+{
+  "_doc": "Explicit JSON null on an OPTIONAL member counts as absent on both sides (Swift decodeIfPresent semantics; Node drops the key). `wire` must parse to exactly `normalized`. Required members stay required.",
+  "context": {
+    "wire": {
+      "scope": "window",
+      "pull": "allowed",
+      "source": "user",
+      "scopeHint": null
+    },
+    "normalized": {
+      "scope": "window",
+      "pull": "allowed",
+      "source": "user"
+    }
+  },
+  "attachments": {
+    "wire": [
+      {
+        "kind": "text",
+        "text": "quoted",
+        "truncated": null,
+        "origin": null,
+        "source": {
+          "app": "Notes",
+          "title": null,
+          "url": null
+        }
+      },
+      {
+        "kind": "text",
+        "text": "plain",
+        "source": null
+      },
+      {
+        "kind": "file",
+        "name": "a.txt",
+        "uti": null,
+        "token": null,
+        "path": "/Users/fixture/a.txt",
+        "byteSize": null,
+        "origin": null
+      },
+      {
+        "kind": "element",
+        "contextId": "ctx-123",
+        "role": "AXTextField",
+        "subrole": null,
+        "label": null,
+        "text": null,
+        "bounds": {
+          "x": 1,
+          "y": 2,
+          "width": 3,
+          "height": 4
+        }
+      }
+    ],
+    "normalized": [
+      {
+        "kind": "text",
+        "text": "quoted",
+        "source": {
+          "app": "Notes"
+        }
+      },
+      {
+        "kind": "text",
+        "text": "plain"
+      },
+      {
+        "kind": "file",
+        "name": "a.txt",
+        "path": "/Users/fixture/a.txt"
+      },
+      {
+        "kind": "element",
+        "contextId": "ctx-123",
+        "role": "AXTextField",
+        "bounds": {
+          "x": 1,
+          "y": 2,
+          "width": 3,
+          "height": 4
+        }
+      }
+    ]
+  },
+  "browserHint": {
+    "wire": {
+      "name": "Brave",
+      "mode": "ax",
+      "pinned": true,
+      "background": null
+    },
+    "normalized": {
+      "name": "Brave",
+      "mode": "ax",
+      "pinned": true
+    }
+  },
+  "pageRequest": {
+    "wire": {
+      "contextId": "ctx-123",
+      "maxChars": null,
+      "maxControls": null
+    },
+    "normalized": {
+      "contextId": "ctx-123"
+    }
+  },
+  "pageResult": {
+    "wire": {
+      "title": "t",
+      "url": null,
+      "text": "",
+      "headings": [
+        {
+          "label": "h",
+          "level": null
+        }
+      ],
+      "links": [],
+      "controls": [
+        {
+          "label": "Like",
+          "role": "button",
+          "ref": "e1",
+          "pressed": null,
+          "checked": null,
+          "disabled": null
+        }
+      ],
+      "fields": [
+        {
+          "label": "Password",
+          "role": "textbox",
+          "ref": "e2",
+          "secure": true,
+          "value": null,
+          "disabled": null
+        }
+      ],
+      "truncated": false
+    },
+    "normalized": {
+      "title": "t",
+      "text": "",
+      "headings": [
+        {
+          "label": "h"
+        }
+      ],
+      "links": [],
+      "controls": [
+        {
+          "label": "Like",
+          "role": "button",
+          "ref": "e1"
+        }
+      ],
+      "fields": [
+        {
+          "label": "Password",
+          "role": "textbox",
+          "ref": "e2",
+          "secure": true
+        }
+      ],
+      "truncated": false
+    }
+  },
+  "axActRequest": {
+    "wire": {
+      "contextId": "ctx-123",
+      "ref": "e1",
+      "action": "press",
+      "value": null
+    },
+    "normalized": {
+      "contextId": "ctx-123",
+      "ref": "e1",
+      "action": "press"
+    }
+  },
+  "axActResult": {
+    "wire": {
+      "performed": true,
+      "action": "press",
+      "verification": "Pressed button \"Like\".",
+      "page": null,
+      "pageError": null
+    },
+    "normalized": {
+      "performed": true,
+      "action": "press",
+      "verification": "Pressed button \"Like\"."
+    }
+  }
+}

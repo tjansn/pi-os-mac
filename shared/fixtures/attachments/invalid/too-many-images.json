@@ -1,0 +1,41 @@
+{
+  "invocationId": "inv-ctx-0001",
+  "contextId": "ctx-123",
+  "invokedAt": "2026-10-05T09:00:00Z",
+  "retainSession": true,
+  "takeId": "take-7",
+  "prompt": "x",
+  "attachments": [
+    {
+      "kind": "image",
+      "path": "/Users/fixture/Library/Application Support/pi-os/captures/shelf-i0.png",
+      "width": 840,
+      "height": 600
+    },
+    {
+      "kind": "image",
+      "path": "/Users/fixture/Library/Application Support/pi-os/captures/shelf-i1.png",
+      "width": 840,
+      "height": 600
+    },
+    {
+      "kind": "image",
+      "path": "/Users/fixture/Library/Application Support/pi-os/captures/shelf-i2.png",
+      "width": 840,
+      "height": 600
+    },
+    {
+      "kind": "image",
+      "path": "/Users/fixture/Library/Application Support/pi-os/captures/shelf-i3.png",
+      "width": 840,
+      "height": 600
+    },
+    {
+      "kind": "image",
+      "path": "/Users/fixture/Library/Application Support/pi-os/captures/shelf-i4.png",
+      "width": 840,
+      "height": 600
+    }
+  ],
+  "_expect": "too_many_images"
+}

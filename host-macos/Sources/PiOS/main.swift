@@ -24,6 +24,18 @@ import PiOSMac
                         service: LauncherService(tokens: tokens, apps: index, system: InertSystemControls(), effects: InertLauncherEffects()))
 }
 
+/// Production browser.page / browser.axAct routes over an in-memory Brave tab built from
+/// shared/fixtures/browser-ax (page-response.json, page-request.json's contextId): no AX, TCC or Brave.
+func conformanceBrowser(_ directory: URL, token: String) throws -> Task<DesktopService, Never> {
+    struct Envelope<T: Decodable>: Decodable { let result: T }
+    struct Request: Decodable { let arguments: BrowserPageRequest }
+    let page = try JSONDecoder().decode(Envelope<BrowserPageResult>.self,
+                                        from: Data(contentsOf: directory.appendingPathComponent("page-response.json"))).result
+    let contextId = try JSONDecoder().decode(Request.self,
+                                             from: Data(contentsOf: directory.appendingPathComponent("page-request.json"))).arguments.contextId
+    return Task { await DesktopService.browserConformance(token: token, contextId: contextId, page: page) }
+}
+
 // A TCC-free real NWListener fixture for Node hostClient/fetch conformance tests.
 // Explicit CLI-only mode: it cannot enter the app's real desktop service.
 if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--conformance" {
@@ -35,6 +47,7 @@ if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--conformance"
         let launcher = try env["PI_OS_LAUNCHER_FIXTURES"].map { directory in
             try MainActor.assumeIsolated { try conformanceLauncher(URL(fileURLWithPath: directory, isDirectory: true)) }
         }
+        let browser = try env["PI_OS_BROWSER_FIXTURES"].map { try conformanceBrowser(URL(fileURLWithPath: $0, isDirectory: true), token: token) }
         let server = try LoopbackServer(port: port, cancelsOnDisconnect: LoopbackServer.launcherReads) { request in
             if request.method == "GET", request.path == "/health" { return .json(["service": "macos-conformance"]) }
             guard HostRoutes.authorized(request.headers["x-harness-token"], token: token) else {
@@ -44,6 +57,9 @@ if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--conformance"
             // Fixture effects are inert, so the agent route is exercised as if control were enabled.
             if request.method == "POST", let launcher, let name = LauncherRoutes.name(forPath: request.path) {
                 return await LauncherRoutes.handle(name, body: request.body, backend: launcher, controlEnabled: true)
+            }
+            if request.method == "POST", let browser, ["/tools/browser.page", "/tools/browser.axAct"].contains(request.path) {
+                return await browser.value.handle(request)
             }
             guard request.method == "POST", request.path.hasPrefix("/tools/"),
                   HostRoutes.names.contains(String(request.path.dropFirst(7))) else {

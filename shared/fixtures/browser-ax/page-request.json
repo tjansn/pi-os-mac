@@ -1,0 +1,7 @@
+{
+  "arguments": {
+    "contextId": "ctx-123",
+    "maxChars": 12000,
+    "maxControls": 300
+  }
+}

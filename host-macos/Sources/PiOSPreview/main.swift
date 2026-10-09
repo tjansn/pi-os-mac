@@ -41,9 +41,98 @@ func previewSnapshot(_ frame: NSRect, _ h: CGFloat) -> Snapshot {
             bounds: Placement.appKit(screenRect, primaryHeight: h), workArea: work)])
 }
 
+// MARK: Context chip, shelf and attention fixtures (display only; nothing is captured or read)
+
+/// A drawn stand-in app icon: layered macOS 26 app icons do not render into offscreen bitmaps (live windows are fine).
+let previewIcon = NSImage(size: NSSize(width: 32, height: 32), flipped: false) { rect in
+    let tile = NSBezierPath(roundedRect: rect.insetBy(dx: 2, dy: 2), xRadius: 7, yRadius: 7)
+    NSGradient(colors: [NSColor(calibratedRed: 0.98, green: 0.98, blue: 0.99, alpha: 1), NSColor(calibratedRed: 0.86, green: 0.88, blue: 0.92, alpha: 1)])?
+        .draw(in: tile, angle: -90)
+    NSColor(calibratedWhite: 0.55, alpha: 1).setStroke(); tile.lineWidth = 1; tile.stroke()
+    NSColor(calibratedRed: 0.20, green: 0.45, blue: 0.95, alpha: 1).setFill()
+    for line in 0..<3 { NSRect(x: 9, y: 20 - CGFloat(line) * 5, width: line == 2 ? 9 : 14, height: 2).fill() }
+    return true
+}
+func chip(_ state: ChipState, followup: Bool = false) -> ContextChipPresentation {
+    ContextChipPresentation(appName: "TextEdit", bundleId: "com.apple.TextEdit", state: state, isFollowup: followup)
+}
+/// A small shelf PNG in the temporary directory (a gradient chart), so image chips show real pixels.
+let previewImagePath: String = {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("pi-os-preview-shelf-chart.png")
+    let image = NSImage(size: NSSize(width: 84, height: 60), flipped: false) { rect in
+        NSColor(calibratedRed: 0.93, green: 0.95, blue: 0.99, alpha: 1).setFill(); rect.fill()
+        for (index, height) in [18.0, 34, 26, 48, 40].enumerated() {
+            NSColor.systemBlue.withAlphaComponent(0.75).setFill()
+            NSRect(x: 8 + Double(index) * 15, y: 6, width: 10, height: height).fill()
+        }
+        return true
+    }
+    if let tiff = image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff), let png = rep.representation(using: .png, properties: [:]) {
+        try? png.write(to: url)
+    }
+    return url.path
+}()
+let shelfText = ShelfChipPresentation(id: "item-1", kind: .text, title: "“Pricing – Acme: the Team plan…”", symbol: "text.quote",
+                                      accessibilityLabel: "Selected text from Brave, 1,240 characters", removeLabel: "Remove selected text",
+                                      previewText: "Pricing – Acme: the Team plan costs 12 € per seat and month.")
+let shelfImage = ShelfChipPresentation(id: "item-2", kind: .image, title: "840×600", symbol: "photo",
+                                       accessibilityLabel: "Screen area, 840 by 600 pixels", removeLabel: "Remove screen area", imagePath: previewImagePath)
+let shelfElement = ShelfChipPresentation(id: "item-3", kind: .element, title: "Button “Send”", symbol: "scope",
+                                         accessibilityLabel: "Pointing at Button “Send”", removeLabel: "Stop pointing at Button “Send”")
+let shelfFile = ShelfChipPresentation(id: "item-4", kind: .file, title: "Q3 report.xlsx", symbol: "doc",
+                                      accessibilityLabel: "File Q3 report.xlsx, reference only", removeLabel: "Remove file Q3 report.xlsx")
+
 /// Drives one named state on a panel. Returns false for an unknown state.
 @MainActor func apply(_ mode: String, to panel: PromptPanel) -> Bool {
+    panel.setContextIcon(previewIcon)
     switch mode {
+    case "chip-off": panel.showContextChip(chip(.off))
+    case "chip-suggested":
+        panel.setDraft("summarize this page")
+        panel.showContextChip(chip(.suggested))
+    case "chip-on": panel.showContextChip(chip(.on))
+    case "chip-on-draft":
+        panel.setDraft("make the second paragraph shorter")
+        panel.showContextChip(chip(.on))
+    case "shelf":
+        panel.showContextChip(chip(.off))
+        panel.showShelf([shelfText, shelfImage, shelfElement], selection: true)
+        panel.setDraft("what does this mean?")
+    case "shelf-empty-draft":
+        panel.showContextChip(chip(.off))
+        panel.showShelf([shelfText, shelfImage, shelfElement, shelfFile], selection: true)
+    case "shelf-suggestion":
+        panel.showContextChip(chip(.off))
+        panel.showShelf([shelfText, ShelfChipPresentation.suggestion(.image, items: 1)], selection: true)
+    case "drop-target":
+        panel.showContextChip(chip(.off))
+        panel.previewDropTargeted(true)
+    case "reader-general":
+        panel.setQuestion("explain the difference between TCP and UDP")
+        panel.setFollowupEnabled(true)
+        panel.presentAgentAnswer("**TCP** is connection-oriented and reliable: it orders and retransmits. **UDP** sends independent datagrams with no delivery guarantee, which keeps latency low.", card: nil)
+        panel.showContextChip(chip(.off, followup: true))
+    case "reader-included":
+        panel.setQuestion("summarize this document")
+        panel.setSourceIncluded(true)
+        panel.setFollowupEnabled(true)
+        panel.presentAgentAnswer(answer, card: nil)
+        panel.showContextChip(chip(.on, followup: true))
+    case "reader-pointing":
+        panel.setQuestion("what does this button do?")
+        panel.setSourceIncluded(true)
+        panel.setPointing("Button “Send”")
+        panel.setFollowupEnabled(true)
+        panel.presentAgentAnswer("It sends the draft to everyone in the **To** field. Nothing was clicked.", card: nil)
+        panel.showContextChip(chip(.on, followup: true))
+        panel.showShelf([], selection: false)
+    case "followup-shelf":
+        panel.setQuestion("summarize this document")
+        panel.setSourceIncluded(true)
+        panel.setFollowupEnabled(true)
+        panel.presentAgentAnswer("The notes propose a quieter assistant: one shortcut, a clear boundary, an answer.", card: nil)
+        panel.showContextChip(chip(.on, followup: true))
+        panel.showShelf([shelfImage], selection: false)
     case "prompt", "appearance": break
     case "draft": panel.setDraft("What are the main ideas here?")
     case "multiline": panel.setDraft("Summarize the main ideas in this document.\nKeep it short, and tell me what to do next.")
@@ -125,7 +214,10 @@ func previewSnapshot(_ frame: NSRect, _ h: CGFloat) -> Snapshot {
                               "instant-answer", "instant-list", "card", "streaming", "confirmation", "voice-denied", "prompt", "answer",
                               "big-1", "big-2", "big-3", "instant-unit", "hint-web", "confirm-hint", "voice-hint",
                               "voice-unavailable", "speech-denied", "asset-missing"]
-    static let settingsStates = ["auto-settings", "voice-settings", "classifier-settings"]
+    static let contextStates = ["chip-off", "chip-suggested", "chip-on", "chip-on-draft", "shelf", "shelf-empty-draft", "shelf-suggestion",
+                                "drop-target", "reader-general", "reader-included", "reader-pointing", "followup-shelf"]
+    static let compositeStates = ["tether", "element", "added-toast", "nothing-toast"]
+    static let settingsStates = ["auto-settings", "voice-settings", "classifier-settings", "context-settings"]
     static let presets = ["system", "frost", "contrast", "graphite"]
 
     static func run(directory: URL, only: Set<String>?, larger: Bool = false) async {
@@ -138,7 +230,7 @@ func previewSnapshot(_ frame: NSRect, _ h: CGFloat) -> Snapshot {
                 defaults.setVolatileDomain(["appearancePreset": preset, "appearanceLargerText": larger], forName: UserDefaults.argumentDomain)
                 NotificationCenter.default.post(name: Notification.Name("PiOSAppearanceChanged"), object: nil)
                 var sheet: [(String, NSBitmapImageRep)] = []
-                for state in panelStates where only?.contains(state) ?? true {
+                for state in panelStates + contextStates where only?.contains(state) ?? true {
                     let panel = PromptPanel()
                     panel.presentsOnScreen = false
                     let frame = NSRect(x: 0, y: 0, width: 1440, height: 900)
@@ -151,13 +243,26 @@ func previewSnapshot(_ frame: NSRect, _ h: CGFloat) -> Snapshot {
                 }
                 if preset == "system" || only != nil {
                     for state in settingsStates where only?.contains(state) ?? true {
-                        let page = state == "voice-settings" ? "voice" : state == "classifier-settings" ? "classifier" : "general"
+                        let page = state == "voice-settings" ? "voice" : state == "classifier-settings" ? "classifier"
+                            : state == "context-settings" ? "context" : "general"
                         let (view, keep) = await ModelSettingsPreview.offscreen(page: page)
                         let image = render(view: view, dark: dark)
                         withExtendedLifetime(keep) {
                             written += write(image, directory.appendingPathComponent("\(state)-\(dark ? "dark" : "light").png"))
                         }
                     }
+                }
+                for state in compositeStates where only?.contains(state) ?? true {
+                    let image: NSBitmapImageRep?
+                    switch state {
+                    case "tether": image = renderTether(element: false, dark: dark)
+                    case "element": image = renderTether(element: true, dark: dark)
+                    case "added-toast": image = renderToast("Added to pi", symbol: "checkmark.circle.fill", action: nil, dark: dark)
+                    default: image = renderToast("Nothing selected · Grab an area?", symbol: "selection.pin.in.out", action: "Grab Area", dark: dark)
+                    }
+                    guard let image else { continue }
+                    sheet.append((state, image))
+                    written += write(image, directory.appendingPathComponent("\(state)-\(preset)-\(dark ? "dark" : "light")\(larger ? "-large" : "").png"))
                 }
                 if !sheet.isEmpty {
                     written += write(contactSheet(sheet, dark: dark), directory.appendingPathComponent("sheet-\(preset)-\(dark ? "dark" : "light")\(larger ? "-large" : "").png"))
@@ -169,7 +274,7 @@ func previewSnapshot(_ frame: NSRect, _ h: CGFloat) -> Snapshot {
 
     /// Native glass/vibrancy only exist in the window server, so the snapshot paints a neutral
     /// desktop and an approximation of each material, then draws the real view tree on top.
-    static func render(panel: PromptPanel, dark: Bool) -> NSBitmapImageRep {
+    static func render(panel: PromptPanel, dark: Bool, backdrop drawsBackdrop: Bool = true) -> NSBitmapImageRep {
         let root = panel.snapshotRoot
         root.layoutSubtreeIfNeeded()
         let margin: CGFloat = 36
@@ -177,7 +282,7 @@ func previewSnapshot(_ frame: NSRect, _ h: CGFloat) -> Snapshot {
         let rep = bitmap(size)
         let surfaces = panel.snapshotSurfaces.map { ($0, cache($0.content)) }
         draw(into: rep) { context in
-            backdrop(NSRect(origin: .zero, size: size), dark: dark)
+            if drawsBackdrop { backdrop(NSRect(origin: .zero, size: size), dark: dark) }
             for (surface, content) in surfaces {
                 // Flipped root → unflipped bitmap.
                 let rect = NSRect(x: margin + surface.frame.minX, y: margin + root.bounds.height - surface.frame.maxY,
@@ -190,6 +295,87 @@ func previewSnapshot(_ frame: NSRect, _ h: CGFloat) -> Snapshot {
                 content.draw(in: NSRect(x: rect.minX, y: rect.minY, width: surface.content.bounds.width, height: surface.content.bounds.height))
                 NSGraphicsContext.restoreGraphicsState()
             }
+        }
+        return rep
+    }
+    /// The "Added to pi" confirmation, rendered like the bar (never ordered on screen).
+    static func renderToast(_ text: String, symbol: String, action: String?, dark: Bool) -> NSBitmapImageRep {
+        let toast = ShelfToast()
+        toast.presentsOnScreen = false
+        toast.announce = { _, _, _ in }
+        toast.show(text, symbol: symbol, action: action.map { ($0, {}) })
+        // The toast follows the preset's appearance (Frost and Contrast are light by design), as in the app.
+        let root = toast.snapshotRoot, surface = toast.snapshotSurface
+        root.layoutSubtreeIfNeeded()
+        let margin: CGFloat = 36
+        let size = NSSize(width: root.bounds.width + margin * 2, height: root.bounds.height + margin * 2)
+        let rep = bitmap(size)
+        let content = cache(surface.content)
+        draw(into: rep) { _ in
+            backdrop(NSRect(origin: .zero, size: size), dark: dark)
+            let rect = NSRect(x: margin + surface.frame.minX, y: margin, width: surface.frame.width, height: surface.frame.height)
+            surface.content.effectiveAppearance.performAsCurrentDrawingAppearance { material(rect, radius: surface.radius, reading: false) }
+            NSGraphicsContext.saveGraphicsState()
+            NSBezierPath(roundedRect: rect, xRadius: surface.radius, yRadius: surface.radius).addClip()
+            content.draw(in: NSRect(x: rect.minX, y: rect.minY, width: surface.content.bounds.width, height: surface.content.bounds.height))
+            NSGraphicsContext.restoreGraphicsState()
+        }
+        toast.hide()
+        return rep
+    }
+    /// The attention tether over a fake window (purple frame) or ⌥ element (orange frame with its role tag),
+    /// from the bar's chip: the overlay's own offscreen renderer on a fixture desktop. Nothing is hit-tested.
+    static func renderTether(element: Bool, dark: Bool) -> NSBitmapImageRep? {
+        let canvas = NSSize(width: 1000, height: 640)
+        let window = NSRect(x: 150, y: 70, width: 560, height: 340)            // CG (top-left) coordinates
+        let button = NSRect(x: window.minX + 380, y: window.minY + 268, width: 92, height: 30)
+        let anchor = Point(x: 676, y: 586)
+        let cursor = element ? Point(x: button.midX + 8, y: button.midY + 6) : Point(x: window.midX + 40, y: window.midY + 30)
+        let target: AttentionScene.Target = element
+            ? .element(Rect(x: button.minX, y: button.minY, width: button.width, height: button.height), tag: "Button")
+            : .window(Rect(x: window.minX, y: window.minY, width: window.width, height: window.height))
+        let scene = AttentionScene(anchor: anchor, cursor: cursor, mode: element ? .element : .window, target: target,
+                                   straight: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+        guard let overlay = AttentionOverlay.render(scene, screen: Rect(x: 0, y: 0, width: canvas.width, height: canvas.height),
+                                                    appearance: NSAppearance(named: dark ? .darkAqua : .aqua)) else { return nil }
+        // The bar under the tether, as the user sees it while dragging the chip.
+        let panel = PromptPanel()
+        panel.presentsOnScreen = false
+        let frame = NSRect(x: 0, y: 0, width: 1440, height: 900)
+        panel.prompt(snapshot: previewSnapshot(frame, frame.height), appName: "TextEdit")
+        panel.setContextIcon(previewIcon)
+        panel.showContextChip(chip(.off))
+        panel.setDraft(element ? "what does this do?" : "summarize this")
+        let bar = render(panel: panel, dark: dark, backdrop: false)
+        panel.hide()
+        let rep = bitmap(canvas)
+        draw(into: rep) { _ in
+            backdrop(NSRect(origin: .zero, size: canvas), dark: dark)
+            // A plain document window (AppKit coordinates: flip the CG rectangle).
+            let appKit = NSRect(x: window.minX, y: canvas.height - window.maxY, width: window.width, height: window.height)
+            let body = NSBezierPath(roundedRect: appKit, xRadius: 12, yRadius: 12)
+            (dark ? NSColor(white: 0.17, alpha: 1) : NSColor(white: 0.98, alpha: 1)).setFill(); body.fill()
+            (dark ? NSColor(white: 0.24, alpha: 1) : NSColor(white: 0.90, alpha: 1)).setFill()
+            NSBezierPath(roundedRect: NSRect(x: appKit.minX, y: appKit.maxY - 30, width: appKit.width, height: 30), xRadius: 12, yRadius: 12).fill()
+            for (index, color) in [NSColor.systemRed, .systemYellow, .systemGreen].enumerated() {
+                color.setFill(); NSBezierPath(ovalIn: NSRect(x: appKit.minX + 14 + CGFloat(index) * 18, y: appKit.maxY - 20, width: 11, height: 11)).fill()
+            }
+            let ink = dark ? NSColor(white: 0.85, alpha: 1) : NSColor(white: 0.25, alpha: 1)
+            ("Product notes.md" as NSString).draw(at: NSPoint(x: appKit.midX - 50, y: appKit.maxY - 22),
+                                                  withAttributes: [.font: NSFont.systemFont(ofSize: 12, weight: .semibold), .foregroundColor: ink])
+            for line in 0..<7 {
+                ink.withAlphaComponent(0.18).setFill()
+                NSRect(x: appKit.minX + 28, y: appKit.maxY - 64 - CGFloat(line) * 26, width: appKit.width - 56 - CGFloat(line % 3) * 60, height: 9).fill()
+            }
+            let buttonRect = NSRect(x: button.minX, y: canvas.height - button.maxY, width: button.width, height: button.height)
+            NSColor.controlAccentColor.setFill(); NSBezierPath(roundedRect: buttonRect, xRadius: 7, yRadius: 7).fill()
+            ("Send" as NSString).draw(at: NSPoint(x: buttonRect.midX - 15, y: buttonRect.midY - 8),
+                                      withAttributes: [.font: NSFont.systemFont(ofSize: 13, weight: .semibold), .foregroundColor: NSColor.white])
+            // NSImageRep.draw(in:) copies (it would erase the desktop): composite source-over.
+            bar.draw(in: NSRect(x: (canvas.width - bar.size.width) / 2, y: 0, width: bar.size.width, height: bar.size.height),
+                     from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: false, hints: nil)
+            overlay.draw(in: NSRect(origin: .zero, size: canvas), from: .zero, operation: .sourceOver, fraction: 1,
+                         respectFlipped: false, hints: nil)
         }
         return rep
     }

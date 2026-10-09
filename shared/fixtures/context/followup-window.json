@@ -1,0 +1,8 @@
+{
+  "prompt": "and the second one?",
+  "context": {
+    "scope": "window",
+    "pull": "allowed",
+    "source": "followup"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "seq": 12,
+  "elapsedMs": 1,
+  "source": "grammar",
+  "decision": "fallthrough",
+  "reason": "deictic",
+  "hints": {
+    "source": "heuristic",
+    "latencyMs": 0,
+    "intent": "write",
+    "intentP": 0.7,
+    "needsScreen": 0.9
+  },
+  "scope": {
+    "window": 0.75,
+    "reasons": [
+      "pronoun"
+    ]
+  }
+}

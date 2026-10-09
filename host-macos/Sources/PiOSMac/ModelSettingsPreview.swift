@@ -69,20 +69,28 @@ import PiOSCore
         let voiceSettings = VoiceSettings(defaults: defaults)
         voiceSettings.enabled = voiceEnabled
         let window = SettingsWindow(harness: Service(current: current), notifier: notifier,
-                                    voice: FakeVoiceSystem(), voiceSettings: voiceSettings)
+                                    voice: FakeVoiceSystem(), voiceSettings: voiceSettings, contextDefaults: defaults)
         window.window?.title = "pi-os Settings — Mock Preview"
         window.show(page)
         return window
     }
+    static func page(_ name: String) -> SettingsWindow.Page {
+        switch name {
+        case "voice": .voice
+        case "classifier": .classifier
+        case "context": .context
+        default: .general
+        }
+    }
     public static func show(page: String = "general") {
-        let window = make(page: page == "voice" ? .voice : page == "classifier" ? .classifier : .general, notifier: ResultNotifier())
+        let window = make(page: Self.page(page), notifier: ResultNotifier())
         controller = window
         window.onClosed = { controller = nil; NSApp.terminate(nil) }
         window.present()
     }
     /// Offscreen: lays the window out over fixture data and returns its content view (never shown).
     public static func offscreen(page: String, auto: Bool = true) async -> (view: NSView, keepAlive: AnyObject) {
-        let window = make(page: page == "voice" ? .voice : page == "classifier" ? .classifier : .general,
+        let window = make(page: Self.page(page),
                           current: auto ? nil : .init(provider: "Preview", modelId: "reasoning", thinkingLevel: "high"))
         await window.waitUntilLoaded()
         return (window.window!.contentView!, window)

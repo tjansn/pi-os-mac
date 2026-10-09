@@ -8,9 +8,13 @@
  *   const deps = { fend, fx, apps, searchFiles };                // host launcher.searchFiles
  *   const dispatcher = createInstantDispatcher({ ...deps, classifier, perf: perfLog });
  *   const engines = dispatcher.engines;                         // or createInstantEngines(deps) for pi tools
+ *
+ * Every response carries the advisory context `scope` of its text from `deps.scorer` (default: the
+ * routing rules v2, rulesContextScorer; NO_CONTEXT_SCORER from contracts/context.ts turns it off).
  */
 
 export { AppIndexCache, AppMatcher, BUILTIN_APP_ALIASES, FileFrecencyStore, type AppMatch, type FrecencyStore } from "./apps.js";
+export { rulesContextScorer } from "../agent/routing/contextScope.js";
 export { createInstantDispatcher, MAX_INSTANT_TEXT, type InstantDispatcher, type InstantDispatcherDeps } from "./dispatcher.js";
 export {
   createFendLoader, createInstantEngines,

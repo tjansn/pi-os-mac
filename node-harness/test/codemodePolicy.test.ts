@@ -9,7 +9,7 @@ import {
   boundScriptOutput, clampScriptOptions, CODEMODE_TOOL_NAMES, codemodeExtensionFactories, createCodemodePolicyExtension,
   MODEL_ONLY_TOOLS, SCRIPT_CALLABLE_TOOLS,
 } from "../src/agent/codemodePolicy.js";
-import { createComputerUseExtension } from "../src/agent/computerUseExtension.js";
+import { createComputerUseExtension, USE_ACTIVE_WINDOW_TOOL, type ContextHooks } from "../src/agent/computerUseExtension.js";
 import { createLauncherToolsExtension, LAUNCHER_TOOL_NAMES, type FileRefLedger } from "../src/agent/launcherTools.js";
 import { createSessionSettings, loadAgentResources, registerResourceProviders } from "../src/agent/resources.js";
 import type { FileCandidate } from "../src/contracts/launcher.js";
@@ -71,7 +71,7 @@ test("policy: nested calls reach only read-only tools; options can never re-enab
  * A real pi 1.0 session: pi-os extensions, the codemode factories, an offline provider whose
  * stream is scripted (no network), and fake host routes.
  */
-async function scriptedSession(root: string, turns: ((call: number) => AssistantMessage["content"])[], browser?: BrowserSession) {
+async function scriptedSession(root: string, turns: ((call: number) => AssistantMessage["content"])[], browser?: BrowserSession, hooks?: ContextHooks) {
   const dir = resolve("test/fixtures/global-agent-dir");
   const hostCalls: { name: string; args: any }[] = [];
   let shots = 1;
@@ -110,12 +110,14 @@ async function scriptedSession(root: string, turns: ((call: number) => Assistant
     // Registered after the policy, so it observes the clamped script source.
     pi.on("tool_call", (event) => { if (event.toolName === "codemode" && !event.parentToolCallId) seenCode.push(String(event.input.code)); return undefined; });
   } };
-  const computer = createComputerUseExtension("ctx-fixed", host, root, false, "darwin", "shot-1", browser, { postActionCapture: true, settleMs: () => 0 });
+  const computer = createComputerUseExtension("ctx-fixed", host, root, false, "darwin", "shot-1", browser,
+    { postActionCapture: true, settleMs: () => 0, ...(hooks ? { context: hooks } : {}) });
   const launcher = createLauncherToolsExtension({ engines, host, ledger, readOnly: false, homeDir: "/Users/fixture" });
   const loader = await loadAgentResources([computer, launcher, ...codemodeExtensionFactories(), fixture], process.cwd(), dir, true);
   const runtime = await ModelRuntime.create({ authPath: join(dir, "auth.json"), modelsPath: join(dir, "missing-models.json") });
   const cleanup = await registerResourceProviders(loader, runtime);
-  const tools = [...READ_ONLY_TOOLS, ...(browser ? BROWSER_TOOLS : ["desktop_act"]), ...LAUNCHER_TOOL_NAMES, ...CODEMODE_TOOL_NAMES, "fixture_writer", "fixture_probe"];
+  const tools = [...READ_ONLY_TOOLS, ...(browser ? BROWSER_TOOLS : ["desktop_act"]), ...LAUNCHER_TOOL_NAMES, ...CODEMODE_TOOL_NAMES, "fixture_writer", "fixture_probe",
+    ...(hooks ? [USE_ACTIVE_WINDOW_TOOL] : [])];
   const { session } = await createAgentSession({ modelRuntime: runtime, resourceLoader: loader, model: runtime.getModel("codemode-fixture", "scripted"),
     tools, sessionManager: SessionManager.inMemory(), settingsManager: createSessionSettings(true, process.cwd(), dir) });
   let call = 0;
@@ -287,5 +289,28 @@ test("coordinate authority follows images the model has seen: a click batched af
     // The second click must not inherit shot-2, which only reaches the model after the batch
     // (the host then refuses it as capture_stale); the next turn may use the latest capture.
     assert.deepEqual(clicks, ["shot-1", "shot-1", "shot-3"]);
+  } finally { run.dispose(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("use_active_window is model-only in a scope-aware session: a script can neither pull the window nor reach the host", async () => {
+  const root = join(process.cwd(), "test", ".tmp-codemode-loader");
+  await mkdir(root, { recursive: true });
+  const asked: string[] = [];
+  const hooks: ContextHooks = {
+    pullState: () => { asked.push("pullState"); return "allowed"; }, pulled: () => { asked.push("pulled"); },
+    browserPage: async () => undefined, takePromptContent: () => undefined,
+  };
+  const run = await scriptedSession(root, [
+    () => [{ type: "toolCall", id: "call_probe", name: "fixture_probe", arguments: {} }],
+    () => [{ type: "text", text: "done" }],
+  ], undefined, hooks);
+  try {
+    assert((MODEL_ONLY_TOOLS as readonly string[]).includes(USE_ACTIVE_WINDOW_TOOL));
+    assert(run.session.agent.state.tools.some(tool => tool.name === USE_ACTIVE_WINDOW_TOOL), "registered and declared to the model");
+    await run.session.prompt("go", { expandPromptTemplates: false });
+    const outcomes = JSON.parse(run.results()[0]!.text) as Record<string, string>;
+    assert.match(outcomes[USE_ACTIVE_WINDOW_TOOL]!, /^error: /);
+    assert.deepEqual(asked, [], "the loader never ran");
+    assert.deepEqual(run.hostCalls, []);
   } finally { run.dispose(); await rm(root, { recursive: true, force: true }); }
 });

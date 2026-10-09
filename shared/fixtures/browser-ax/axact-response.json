@@ -1,0 +1,99 @@
+{
+  "ok": true,
+  "result": {
+    "performed": true,
+    "action": "press",
+    "verification": "Pressed button \"Like\"; the page changed.",
+    "page": {
+      "title": "Fixture feed – pi-os QA",
+      "url": "http://127.0.0.1:8765/feed.html",
+      "text": "Fixture feed\nFirst post\nA harmless post used by pi-os QA.\nLike 4\nSecond post\nAnother harmless post.\nLike 0\nSign in\nUsername\nPassword\nSearch",
+      "headings": [
+        {
+          "label": "Fixture feed",
+          "level": 1
+        },
+        {
+          "label": "First post",
+          "level": 2
+        },
+        {
+          "label": "Second post",
+          "level": 2
+        },
+        {
+          "label": "Sign in"
+        }
+      ],
+      "links": [
+        {
+          "label": "Home",
+          "ref": "e12"
+        },
+        {
+          "label": "Next page",
+          "ref": "e13"
+        }
+      ],
+      "controls": [
+        {
+          "label": "Like",
+          "role": "button",
+          "ref": "e14",
+          "pressed": true
+        },
+        {
+          "label": "Like",
+          "role": "button",
+          "ref": "e15",
+          "pressed": true
+        },
+        {
+          "label": "Remember me",
+          "role": "checkbox",
+          "ref": "e16",
+          "checked": false
+        },
+        {
+          "label": "Sort",
+          "role": "select",
+          "ref": "e17"
+        },
+        {
+          "label": "Delete account",
+          "role": "button",
+          "ref": "e18",
+          "disabled": true
+        }
+      ],
+      "fields": [
+        {
+          "label": "Search",
+          "role": "searchbox",
+          "ref": "e19",
+          "secure": false,
+          "value": "espresso"
+        },
+        {
+          "label": "Username",
+          "role": "textbox",
+          "ref": "e20",
+          "secure": true
+        },
+        {
+          "label": "Password",
+          "role": "textbox",
+          "ref": "e21",
+          "secure": true
+        },
+        {
+          "label": "Comment",
+          "role": "textarea",
+          "ref": "e22",
+          "secure": false
+        }
+      ],
+      "truncated": false
+    }
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "ok": true,
+  "result": {
+    "title": "Fixture feed – pi-os QA",
+    "url": "file:///etc/hosts",
+    "text": "Fixture feed\nFirst post\nA harmless post used by pi-os QA.\nLike 3\nSecond post\nAnother harmless post.\nLike 0\nSign in\nUsername\nPassword\nSearch",
+    "headings": [
+      {
+        "label": "Fixture feed",
+        "level": 1
+      },
+      {
+        "label": "First post",
+        "level": 2
+      },
+      {
+        "label": "Second post",
+        "level": 2
+      },
+      {
+        "label": "Sign in"
+      }
+    ],
+    "links": [
+      {
+        "label": "Home",
+        "ref": "e1"
+      },
+      {
+        "label": "Next page",
+        "ref": "e2"
+      }
+    ],
+    "controls": [
+      {
+        "label": "Like",
+        "role": "button",
+        "ref": "e3",
+        "pressed": false
+      },
+      {
+        "label": "Like",
+        "role": "button",
+        "ref": "e4",
+        "pressed": true
+      },
+      {
+        "label": "Remember me",
+        "role": "checkbox",
+        "ref": "e5",
+        "checked": false
+      },
+      {
+        "label": "Sort",
+        "role": "select",
+        "ref": "e6"
+      },
+      {
+        "label": "Delete account",
+        "role": "button",
+        "ref": "e7",
+        "disabled": true
+      }
+    ],
+    "fields": [
+      {
+        "label": "Search",
+        "role": "searchbox",
+        "ref": "e8",
+        "secure": false,
+        "value": "espresso"
+      },
+      {
+        "label": "Username",
+        "role": "textbox",
+        "ref": "e9",
+        "secure": true
+      },
+      {
+        "label": "Password",
+        "role": "textbox",
+        "ref": "e10",
+        "secure": true
+      },
+      {
+        "label": "Comment",
+        "role": "textarea",
+        "ref": "e11",
+        "secure": false
+      }
+    ],
+    "truncated": false
+  }
+}

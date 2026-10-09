@@ -1,8 +1,189 @@
-# Attaching pi-os to the existing Brave session
+# Brave in pi-os
 
-Status: 2026-10-01. **Signed build 12 (Whisper UI) is installed and running.** Browser-specific evidence below is from builds 10/11; the adapter was not changed by the UI update. Production browser tools passed the signed-host fixture, including a rerun through the installed bundle. Brave connection is enabled under Tom's prior explicit approval. Credential-field input remains **off by default**, with a pi-os Settings opt-in. No macOS security feature, TCC requirement or resident model was disabled.
+Status: 2026-10-05, branch `wp2/s4-braveax` (pass 2, DESIGN2 WP-9 + §7 stages A and B). **Not installed yet:**
+the installed build 12 still uses the DevTools connection described under History until the next
+`refresh-install` with `PI_OS_SIGN_IDENTITY`.
 
-## Implemented integration
+**Accessibility is now the default transport.** pi-os reads the Brave tab pinned by the shortcut through
+macOS Accessibility and acts on its page elements in the background. There is no "Allow remote debugging?"
+dialog, no "controlled by automated test software" banner, no focus change and no window raise. The
+DevTools (CDP) connection of builds 10–12 is an explicit opt-in and is never chosen or opened automatically.
+
+## For Tom
+
+- **You can switch off brave://inspect remote debugging.** Open `brave://inspect/#remote-debugging` and turn
+  off "Allow remote debugging for this browser instance". pi-os no longer needs it. Switching it off closes
+  Brave's local debugging port (`127.0.0.1:9222`), where any local process can currently ask Brave for full
+  control. pi-os never changes Brave's settings itself; the Brave access sheet (π → Brave Connection…, also in
+  Settings) has an "Open brave://inspect…" button.
+- **No setup.** pi-os already has Accessibility. Nothing is installed into Brave.
+- **The earlier "Brave connection" switch is not carried over.** After the update pi-os stops using DevTools.
+  If you still want it: π → Brave Connection… → **Use DevTools Connection**. Brave then asks for approval on
+  every connection and shows its banner while connected.
+- **"Act in Brave without bringing it to the front"** (same sheet, on by default) lets pi-os press buttons and
+  links, fill ordinary text fields, focus and scroll elements of the pinned tab while Brave stays behind. Turn it
+  off and the agent acts with native clicks and typing instead, which bring Brave to the front first.
+- Unchanged: clearly identified username/password fields stay blocked unless Settings → "Allow input in
+  username and password fields" is on; their values are never read, even with that setting. File deletion,
+  Move to Trash and Empty Trash stay refused.
+
+## Settings (host UserDefaults)
+
+| Key | Values | Effect |
+|---|---|---|
+| `braveAccess` | `"ax"` (default) / `"cdp"` | Transport for new tasks. Only an explicit `"cdp"` selects DevTools. |
+| `braveBackgroundActions` | `true` (default) / `false` | Stage B: `browser.axAct` is accepted. Read live on every action. |
+| `braveConnectionPort` | 1–65535, default 9222 | DevTools opt-in only. |
+| `braveConnectionEnabled` | legacy (build 11) | Ignored. Removed when the Brave access sheet is saved. |
+| `allowCredentialFieldInput` | default `false` | Input into identified username/password fields (native and Brave). Never allows reading them. |
+
+## How it works
+
+### Pin (before the panel, every Brave take)
+
+`BrowserPin.capture` runs for every Brave target when Accessibility is trusted (120 ms budget, chrome only,
+never page content). It retains the focused window, the single tab strip and the selected tab button, and
+sets the snapshot hint `browser: {name:"Brave", mode:"ax", pinned, background}` (or `mode:"cdp"` under the
+opt-in, which also requires an HTTP(S) page URL at pin time). An `ax` pin is the tab itself: it may show a
+loading or internal page; the routes refuse those (`browser_stale`, `browser_page_unsupported`) until a web
+page is shown. The pin never opens a network connection.
+
+Every route call first revalidates, in this order: the window's CG identity, the Brave process fingerprint
+(PID start time, UID, bundle id) and user ownership, the AX window frame, that the retained tab still belongs
+to the window, is still the selected tab and sits in the same tab strip, then the current web area and URL.
+Another tab, window or process is `browser_target_changed` / `target_gone`; a page that is loading is
+`browser_stale`.
+
+### `browser.page` (stage A: read)
+
+`POST /tools/browser.page {arguments: {contextId, maxChars?, maxControls?}}`, private and token-authed (not in
+`GET /tools`). Observation: no focus change, no input budget, allowed without computer control and in read-only
+invocations. The digest (`BrowserPageResult`, contracts `PiOSCore/BrowserContracts.swift`) has:
+
+- **title** and **url** (page URLs only);
+- **text** through AX text markers (`AXTextMarkerRangeForUIElement` → `AXStringForTextMarkerRange`), at most
+  `maxChars` (24,000). Line structure is kept, object-replacement and control characters are dropped;
+- **headings**, **links**, **controls** and **fields** through `AXUIElementsForSearchPredicate` (no full-tree
+  walk), each link/control/field with a host ref `e1`, `e2`, … . The ref cap (`maxControls`, 300) keeps
+  fields, then controls, then links;
+- `truncated` when anything was cut or could not be read.
+
+Credential rule: a field is `secure` when it is an `AXSecureTextField` or a clearly identified
+username/password field (`CredentialFields`: label, `<label for>` text, placeholder, DOM id). Its `AXValue` is
+never requested, whatever the input opt-in says. A label element (`<label for>`, a single `aria-labelledby`) has
+its role read first, so a text field used as another element's label is never read either. Its text-marker range
+is cut out of the page text; if that cannot be shown for every credential field (no marker bounds, a search that
+failed or hit its cap, a field or control that could not be read, a credential field outside the ordered
+text-field list), the page text is omitted instead (`text: ""`, `truncated: true`). A field whose label element
+exists but cannot be read counts as a credential field. Ordinary field values are included up to 1,000 characters.
+
+Measured on Tom's Brave 1.95 (Chromium 153), read-only: web area found in 3.5–4.5 ms; one search predicate
+0.1–0.2 ms per category; whole-document text 0.6–1.1 ms; a full 289–425-node walk (not used) 12–23 ms
+(brave.md §4b). The route's budget is 250 ms. Round trips per digest, counted on fixture trees: 108 for a
+typical page (40 links, 30 buttons, 3 fields, 8 headings), about 6 ms at the measured 43–54 µs per call; 2,801
+for the worst case the caps allow (600 links and controls searched, 300 fields with label elements, 101
+headings), about 120–150 ms. Past the budget the digest is `truncated`. Not yet timed live.
+
+### Refs
+
+Refs are minted by `BrowserRefMinter`, one per context and never reset, so a ref is never reused within a
+task. They live host-side (ref → AX element), bound to the web area and URL they were read from. A new
+`browser.page`, **any** `browser.axAct` (performed or refused) and any navigation or reload retire every
+earlier ref; a retired or unknown ref is `browser_stale` and nothing is sent. There is no host cache: each
+`browser.page` is a fresh read.
+
+### `browser.axAct` (stage B: background actions)
+
+`POST /tools/browser.axAct {arguments: {contextId, ref, action, value?}}` with `action` = `press` (AXPress),
+`setValue` (AXValue), `focus` (AXFocused) or `scrollIntoView` (AXScrollToVisible). It never calls the capsule's
+`beforeInput`, never focuses or raises the window and posts no CGEvents. Checks, in order:
+
+1. computer control enabled; the context's lease; the hint is `ax` with `background: true` and the live
+   `braveBackgroundActions` setting is on (else `browser_background_disabled`);
+2. the pin revalidation above;
+3. the ref is live, its web area and URL are unchanged, its parent chain still reaches the pinned web area and
+   its role is unchanged;
+4. role allow-list: `press` on links, buttons (incl. toggles), checkboxes, radios, switches, tabs and menu
+   items that are enabled and offer AXPress (a `select` opens a native menu, so it is refused); `setValue` on
+   enabled text fields, search fields, comboboxes and text areas that have no AX children (rich editors /
+   contenteditable are refused: use native input) and a settable value, with CRLF/CR canonicalized to LF and
+   line breaks refused in single-line fields; `focus` needs a settable AXFocused; `scrollIntoView` needs
+   AXScrollToVisible. Otherwise `browser_unsupported_action`;
+5. `press`: DeletionPolicy on the recorded and the current label, under the role the element is pressed as
+   (Chromium exposes toggle buttons as checkboxes and menu buttons under their own role), and on the element
+   and up to seven labelled ancestors (`file_deletion_blocked`), then the credential rule at the destination and
+   three ancestors — a focused password field elsewhere does not block a click. `setValue` into a recognized
+   terminal input (the markers native typing uses, e.g. xterm.js's "Terminal input") refuses destructive
+   commands like native typing does;
+6. `setValue`/`focus` on a credential field: `credential_input_blocked` unless the Settings opt-in is on;
+7. the shared input budget (`press` = a click, `setValue` = its characters; `focus`/`scrollIntoView` free);
+8. uncertain-input poisoning.
+
+After the action: `setValue` is verified by polling the value back (up to 0.5 s; never for credential fields),
+other actions wait a short settle (150 ms), and a fresh digest is read (retrying while a navigation replaces the web area).
+The result carries that `page` (its refs are the only valid ones) or `pageError`, and a host-written
+`verification` such as `Pressed button "Like"; the page changed.` — a note, not proof.
+
+Outcomes: an AX error that proves nothing was sent (unsupported, invalid element) is a plain refusal. A timeout
+or system failure, or a value that does not read back, leaves the outcome unknown: the context is poisoned
+(`input_failed`) and refuses every further action, native or AX. Blink's AXPress grants user activation and
+needs no window focus (`ax_object.cc` OnNativeClickAction).
+
+### Native input in `ax` mode (stage A acting)
+
+Brave is a native target: `input.*` / `window.focus` are no longer refused with `browser_route_required` for
+an `ax` context. Every native gate stays (window/process identity, exact focus, credential field, deletion,
+budget, fresh capture for coordinates), and the pinned tab must still be the selected one before any native
+input. These actions bring Brave to the front, as for any app.
+
+### DevTools opt-in (`mode: "cdp"`)
+
+Only for a task pinned while `braveAccess` is `"cdp"`. `browser.connection` / `browser.validate` refuse any
+other task (`browser_disabled`) and re-check the live setting and port before every use, so switching back to
+Accessibility ends DevTools use for running tasks too. Native input stays refused for a `cdp` task. The rest
+is unchanged from build 11 (History below). `browser.page` also works for a `cdp` pin, so reads never need
+DevTools; `browser.axAct` does not.
+
+## Limits
+
+- Only the selected tab of the pinned window is visible to Accessibility; background tabs are not in the tree
+  and hidden web contents can drop their tree after about five minutes.
+- No key presses through AX: Enter is `press` on the submit button. Rich editors (contenteditable) and
+  `<select>` menus need native input. An empty contenteditable without AX children is not distinguishable from
+  a plain field by this check; Blink would then set its text without the editor's own input handling.
+- Very large pages: the whole-document text string comes back in one AX call; if it times out the text is
+  omitted (`truncated`) while headings and refs are still listed.
+- Web labels are page content. AX and label checks are defense in depth, not a filesystem sandbox: a page's
+  own scripts can still delete things the host never sees.
+- Split view or a docked DevTools panel (two web areas in one window) cannot be pinned (`browser_tab_unknown`).
+
+## Verification (2026-10-05, CPU fixtures only)
+
+- `swift build` 0 warnings; `PI_OFFLINE=1 PI_OS_AGENT=0 swift test`: 313 tests, 0 failures (25 new:
+  `BrowserAXReaderTests` 8, `BrowserAXActTests` 12, `BrowserTests` +4, `CredentialTests` +1). The trees are
+  in-memory (`BrowserFixtureNode`); no test reads or acts on a running app.
+- `npm run test:macos`: the real Swift listener serves `browser.page` / `browser.axAct` from the production
+  route code over the `shared/fixtures/browser-ax` page; Node's contract parsers accept every digest, refs
+  continue e1 → e12 → e23, the credential refusal, consumed-ref refusal and all invalid request fixtures match.
+- **Not yet run live.** No AX read or action was sent to Tom's Brave in this pass. Live acceptance (below)
+  needs a coordinated desktop and a build signed with `PI_OS_SIGN_IDENTITY`.
+
+Live fixture run (dummy fields, a Like counter and a counting "Delete file" button only):
+
+```sh
+PI_OS_INSTALLED_TEST=1 PI_OS_TEST_APP="$PWD/host-macos/build/pi-os.app" \
+  python3 host-macos/scripts/test-brave-installed.py              # Accessibility (default)
+PI_OS_INSTALLED_TEST=1 PI_OS_BRAVE_MODE=cdp ... python3 host-macos/scripts/test-brave-installed.py  # DevTools opt-in
+```
+
+`PI_OS_TEST_CREDENTIALS=1` tests the credential opt-in with dummy values. Settings are passed in the launched
+instance's argument domain only. The AX run checks the pin hint, credential flags and values, background
+press (frontmost app unchanged), setValue readback and input events, consumed and pre-navigation refs, the
+Delete refusal with zero effect, and that the host holds no connection to the DevTools port.
+
+## History: the DevTools connection (builds 10–12, now the opt-in)
+
+### Implemented integration
 
 - Native **π → Brave Connection…** (also in Settings) provides explicit opt-in, the
   broad-debugging-access warning and a loopback port (default 9222). Opening this
@@ -55,7 +236,7 @@ browser settings are not supported by this first adapter. Clearly marked credent
 fields require the explicit Settings opt-in; ordinary fields remain available. Duplicate URL/window
 matches fail closed. Full-page/framework/Spaces/display parity is not claimed.
 
-### Build 11 follow-up / input update
+#### Build 11 follow-up / input update
 
 A browser-bound conversational thread retains the SAME BrowserSession and target;
 it does not reconnect/retarget for a follow-up. New turns clear old DOM references
@@ -76,7 +257,7 @@ The installed build 11 passed its separate 17-check native reader/thread lifecyc
 fixture. Model-driven browser follow-ups, live enabled-mode reacceptance and additional
 framework/slow-target cases remain pending.
 
-### Verification — build 10 (historical)
+#### Verification — build 10 (historical)
 
 - **59 guarded Node tests**, **57 CPU/fixture Swift tests**, and Swift ↔ Node
   authenticated HTTP/lifecycle conformance pass. The transient Swift presentation
@@ -121,7 +302,7 @@ settings. It leaves the fixture tab open and stops its server. Set
 `PI_OS_TEST_CREDENTIALS=1` to test the permission-enabled mode with dummy values.
 Routine updates continue to use the same-certificate `refresh-install.sh`.
 
-## Initial observation (before user approval)
+### Initial observation (before user approval)
 
 - Installed Brave bundle version: `153.1.95.101`; `agent-browser`: `0.27.0`.
 - The running Brave main process had no remote-debugging arguments and no TCP listener at inspection time.
@@ -131,7 +312,7 @@ Routine updates continue to use the same-certificate `refresh-install.sh`.
 - Left that checkbox **off** and the diagnostic tab open. No debugging connection, restart, profile copy, cookie export, account action, or local-model call was performed.
 - macOS denied a read of Brave's `Local State` (`Operation not permitted`). No permission changes or workaround were attempted. An earlier existence check for `DevToolsActivePort` is consequently not proof that the file is absent; future discovery must distinguish access denial from missing files.
 
-## Approved live-session test — passed
+### Approved live-session test — passed
 
 The user explicitly approved enabling debugging and running the harmless fixture test.
 The checkbox was enabled through its public AX control and read back as checked. Brave
@@ -176,7 +357,7 @@ This verifies live attachment, semantic interaction and basic target isolation. 
 is not proof of the full production invocation policy, cancellation/revocation,
 reference invalidation on navigation, or an absolute no-delete guarantee.
 
-## Recommended transport
+### Recommended transport
 
 Use Brave's **user-consented, live-session CDP connection**, not a second browser launched with a copied profile. Chromium's newer remote-debugging UI is present in this installed Brave, so the old recommendation to quit Brave and relaunch with `--remote-debugging-port` is not the preferred path here.
 
@@ -192,7 +373,7 @@ The setting, endpoint discovery, attachment, preservation of existing tab IDs/UR
 and DOM interaction have now been verified on this machine. Consent UX across new
 connections/browser versions and production integration still need acceptance tests.
 
-## Why not just expose `agent-browser --auto-connect`?
+### Why not just expose `agent-browser --auto-connect`?
 
 The installed CLI can consume an explicit CDP WebSocket endpoint. Its version-tagged upstream source also includes Brave's macOS data directory in auto-discovery. However, that is not sufficient for pi-os's target and safety contract:
 
@@ -205,7 +386,7 @@ The installed CLI can consume an explicit CDP WebSocket endpoint. Its version-ta
 
 The implemented adapter uses an **explicit endpoint and narrow first-party browser adapter** in the existing TypeScript harness, with `ws` pinned to 8.21.3 (already present transitively). It does not execute the general-purpose agent-browser CLI. Signed-host fixture acceptance is distinct from broad application/model-driven acceptance.
 
-## Required pi-os integration boundaries
+### Required pi-os integration boundaries
 
 Keep the Swift/AppKit host + TypeScript harness architecture.
 
@@ -218,7 +399,7 @@ Keep the Swift/AppKit host + TypeScript harness architecture.
 - Pause on unexpected dialogs, ambiguous targets, revocation, uncertain mutation or cancellation. Do not retry an uncertain write.
 - Log only bounded status/error information, not page content, titles, URLs with secrets, cookies, typed text or connection capabilities.
 
-## Extension alternative
+### Extension alternative
 
 If consent-based CDP discovery is unsuitable, a companion Chromium extension can use `chrome.debugger.attach({tabId}, ...)` and communicate through Native Messaging. This reuses existing tabs without a launch-time debug port and can provide explicit per-tab selection. Native Messaging allowlists the extension ID; it is not browser discovery by itself.
 
@@ -227,7 +408,7 @@ The Playwright extension is an existing reference implementation for connecting 
 No extension was installed. The debugging setting was enabled only after the user's
 explicit approval; never silently enable it on another browser/profile or restart.
 
-## Remaining acceptance work
+### Remaining acceptance work
 
 1. Validate the enabled credential setting's confirmation flow and additional native/web field semantics using dummy data; do not exercise real logins for QA.
 2. Expand real application tests for tab changes, navigation/reference invalidation, browser restarts, revocation, cancellation, uncertain writes and unexpected dialogs. CPU fixtures cover these policy paths; they do not replace the live matrix.
@@ -235,7 +416,7 @@ explicit approval; never silently enable it on another browser/profile or restar
 4. Keep account actions and file deletion out of QA. Do not read/copy login stores, alter profile files, silently widen permissions or launch replacement profiles.
 5. Run an actual model-driven task in a coordinated provider window. Build 12 is installed, with the scoped historical browser evidence above; this is not a claim of full browser/Windows parity or a filesystem no-delete sandbox.
 
-## Sources
+### Sources
 
 - [Chrome's live-session consent flow](https://developer.chrome.com/blog/chrome-devtools-mcp-debug-your-browser-session) — enable the UI, approve each connection; distinct from launch-time flags.
 - [Chrome 136 launch-time debugging restrictions](https://developer.chrome.com/blog/remote-debugging-port) — do not conflate these with the newer consent flow or assume identical Brave policy without verification.

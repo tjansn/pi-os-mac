@@ -1,5 +1,5 @@
 import { StringEnum } from "@earendil-works/pi-ai";
-import { Type, type Static } from "typebox";
+import { Type, type Static, type TProperties } from "typebox";
 import { isHttpUrl, MODEL_CARD_ACTION_TYPES, type HostAction } from "../contracts/actions.js";
 import { bind, CARD_FORMAT, type CardElement, type CardSpec } from "../contracts/cards.js";
 import { NOTICE_TONES, RESULT_KINDS, STATUS_STATES } from "./catalog.js";
@@ -14,8 +14,15 @@ import { validateCard, type CardIssue, type CardValidation } from "./validate.js
  * it lists flat blocks, and Node builds the tree, fills file rows from the
  * thread's ledger and binds every button. Limits live in the Zod catalog and
  * in descriptions rather than in JSON-schema keywords, because some providers
- * reject maxLength/maxItems/pattern under strict constrained sampling; the
- * validator reports violations back to the model as a tool error instead.
+ * reject maxLength/maxItems/pattern; the validator reports violations back to
+ * the model as a tool error instead.
+ *
+ * Each block is its own closed object keyed by `type` (a discriminated union, r2/DESIGN2 §5.6), so
+ * a block carries only its own fields. The earlier single flat block made strict constrained
+ * sampling emit every other type's 14 fields as nulls (about 70 output tokens per block, +1.3 s on
+ * a one-line card). pi's strict converter does not take object unions, so with `strict: "prefer"`
+ * the tool goes out without provider-side strict sampling: nothing is padded, pi checks the
+ * arguments against this schema, and Node's validator stays the authority.
  */
 
 export const SHOW_RESULT_BLOCK_TYPES = ["markdown", "result", "keyValue", "table", "files", "links", "status", "notice", "suggestions"] as const;
@@ -24,32 +31,70 @@ export const SHOW_RESULT_MAX_BLOCKS = 12;
 export const SHOW_RESULT_MAX_SUGGESTIONS = 4;
 export const SHOW_RESULT_MAX_LINKS = 20;
 
-const text = (description: string) => Type.Optional(Type.String({ description }));
+const text = (description: string) => Type.String({ description });
+const optionalText = (description: string) => Type.Optional(text(description));
+const title = optionalText("Optional heading (≤200 chars).");
+/** One block variant: its `type` (a one-value enum, not `const`, which some providers reject) plus only its own fields. */
+const block = <T extends ShowResultBlockType, P extends TProperties>(type: T, description: string, properties: P) =>
+  Type.Object({ type: StringEnum([type] as const), ...properties }, { additionalProperties: false, description });
 
-export const showResultBlockSchema = Type.Object({
-  type: StringEnum(SHOW_RESULT_BLOCK_TYPES, { description: "Block kind. Fill only the fields named for it." }),
-  text: text("markdown: inline-Markdown prose (≤4000 chars). status: ≤200 chars. notice: ≤500 chars."),
-  title: text("keyValue, table, files, links: optional heading (≤200 chars)."),
-  kind: Type.Optional(StringEnum(RESULT_KINDS, { description: "result: kind of value (default fact)." })),
-  input: text("result: what was computed, e.g. \"15% of 340\" (≤200 chars)."),
-  value: text("result: the value itself, e.g. \"51\" (≤200 chars; required for result)."),
-  detail: text("result: one short supporting line (≤200 chars)."),
-  items: Type.Optional(Type.Array(Type.Object({ key: Type.String(), value: Type.String() }, { additionalProperties: false }),
-    { description: "keyValue: 1–24 labelled facts (key ≤200, value ≤500 chars)." })),
-  columns: Type.Optional(Type.Array(Type.String(), { description: "table: 1–6 column labels." })),
-  rows: Type.Optional(Type.Array(Type.Array(Type.String()), { description: "table: up to 50 rows, one cell string (≤500 chars) per column." })),
-  refs: Type.Optional(Type.Array(Type.String(), { description: "files: refs exactly as returned by pi-os file tools (f1, f2, …), at most 50. Never paths." })),
-  links: Type.Optional(Type.Array(Type.Object({ title: Type.String(), url: Type.String() }, { additionalProperties: false }),
-    { description: "links: up to 20 http(s) links taken from the conversation or tool results." })),
-  state: Type.Optional(StringEnum(STATUS_STATES, { description: "status: default done." })),
-  tone: Type.Optional(StringEnum(NOTICE_TONES, { description: "notice: default info." })),
-  prompts: Type.Optional(Type.Array(Type.String(), { description: "suggestions: up to 4 short follow-up prompts (≤160 chars each) the user can tap." })),
-}, { additionalProperties: false });
+export const showResultBlockSchema = Type.Union([
+  block("markdown", "Prose that belongs on the card next to structured blocks.", { text: text("Inline-Markdown prose (≤4000 chars).") }),
+  block("result", "A computed value.", {
+    value: text("The value itself, e.g. \"51\" (≤200 chars)."),
+    input: optionalText("What was computed, e.g. \"15% of 340\" (≤200 chars)."),
+    detail: optionalText("One short supporting line (≤200 chars)."),
+    kind: Type.Optional(StringEnum(RESULT_KINDS, { description: "Kind of value (default fact)." })),
+  }),
+  block("keyValue", "Labelled facts.", {
+    items: Type.Array(Type.Object({ key: Type.String(), value: Type.String() }, { additionalProperties: false }),
+      { description: "1–24 facts (key ≤200, value ≤500 chars)." }),
+    title,
+  }),
+  block("table", "A small table.", {
+    columns: Type.Array(Type.String(), { description: "1–6 column labels." }),
+    rows: Type.Array(Type.Array(Type.String()), { description: "Up to 50 rows, one cell string (≤500 chars) per column." }),
+    title,
+  }),
+  block("files", "Files found by pi-os file tools.", {
+    refs: Type.Array(Type.String(), { description: "Refs exactly as returned by pi-os file tools (f1, f2, …), at most 50. Never paths." }),
+    title,
+  }),
+  block("links", "Web links.", {
+    links: Type.Array(Type.Object({ title: Type.String(), url: Type.String() }, { additionalProperties: false }),
+      { description: "Up to 20 http(s) links taken from the conversation or tool results." }),
+    title,
+  }),
+  block("status", "A status line.", {
+    text: text("≤200 chars."),
+    state: Type.Optional(StringEnum(STATUS_STATES, { description: "Default done." })),
+  }),
+  block("notice", "A short notice.", {
+    text: text("≤500 chars."),
+    tone: Type.Optional(StringEnum(NOTICE_TONES, { description: "Default info." })),
+  }),
+  block("suggestions", "Follow-up prompts the user can tap.", {
+    prompts: Type.Array(Type.String(), { description: "Up to 4 short prompts (≤160 chars each)." }),
+  }),
+], { description: "One block; its type decides its fields." });
 
 export const showResultParamsSchema = Type.Object({
-  summary: text("One short sentence summarizing the answer (≤200 chars)."),
+  summary: optionalText("One short sentence summarizing the answer (≤200 chars)."),
   blocks: Type.Array(showResultBlockSchema, { minItems: 1, description: "1–12 blocks, shown top to bottom." }),
 }, { additionalProperties: false });
+
+/**
+ * Before pi checks the arguments: a `null` member is an absent one (models trained on strict
+ * sampling still pad optional fields with nulls; the union schema would refuse them). Everything else
+ * is passed through unchanged for the schema and the validator to judge.
+ */
+export function withoutNullMembers(args: unknown): ShowResultParams {
+  if (!isRecord(args)) return args as ShowResultParams;
+  const strip = (value: Record<string, unknown>) => Object.fromEntries(Object.entries(value).filter(([, member]) => member !== null));
+  const params = strip(args);
+  if (Array.isArray(params.blocks)) params.blocks = params.blocks.map(entry => (isRecord(entry) ? strip(entry) : entry));
+  return params as ShowResultParams;
+}
 
 export type ShowResultBlock = Static<typeof showResultBlockSchema>;
 export type ShowResultParams = Static<typeof showResultParamsSchema>;

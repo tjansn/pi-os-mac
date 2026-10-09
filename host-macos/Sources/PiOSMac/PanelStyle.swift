@@ -30,12 +30,20 @@ import PiOSCore
         NSImage(systemSymbolName: name, accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: size, weight: weight))
     }
-    static func menuIcon(attention: Bool = false) -> NSImage {
-        let image = NSImage(size: NSSize(width: 20, height: 18), flipped: false) { _ in
+    /// `count`: items waiting on the context shelf, as a small superscript (template ink, no colour).
+    static func menuIcon(attention: Bool = false, count: Int = 0) -> NSImage {
+        let badge = count > 0 ? (count > 9 ? "9+" : String(count)) : ""
+        let width: CGFloat = badge.isEmpty ? 20 : 20 + CGFloat(badge.count) * 6
+        let image = NSImage(size: NSSize(width: width, height: 18), flipped: false) { _ in
             ("π" as NSString).draw(at: NSPoint(x: 2, y: -1), withAttributes: [
                 .font: NSFont.systemFont(ofSize: 19, weight: .medium), .foregroundColor: NSColor.black,
             ])
             if attention { NSBezierPath(ovalIn: NSRect(x: 16, y: 12, width: 3, height: 3)).fill() }
+            if !badge.isEmpty {
+                (badge as NSString).draw(at: NSPoint(x: 17, y: 7), withAttributes: [
+                    .font: NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .semibold), .foregroundColor: NSColor.black,
+                ])
+            }
             return true
         }
         image.isTemplate = true
@@ -124,7 +132,20 @@ final class PanelSurface: NSView {
     deinit { NSWorkspace.shared.notificationCenter.removeObserver(self) }
 }
 
-final class FlippedView: NSView { override var isFlipped: Bool { true } }
+class FlippedView: NSView { override var isFlipped: Bool { true } }
+
+/// The accent outline while a drag the context shelf accepts is over the bar (drawn content, so it also
+/// shows in offscreen renders). No animation; it never takes mouse events.
+final class DropOutlineView: NSView {
+    var radius: CGFloat = 25
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func draw(_ dirtyRect: NSRect) {
+        let rect = bounds.insetBy(dx: 1, dy: 1)
+        let path = NSBezierPath(roundedRect: rect, xRadius: max(0, radius - 1), yRadius: max(0, radius - 1))
+        PanelStyle.accent.withAlphaComponent(0.08).setFill(); path.fill()
+        PanelStyle.accent.setStroke(); path.lineWidth = 2; path.stroke()
+    }
+}
 
 /// Native button semantics, focus ring, hover and press feedback. No custom event-tracking loop.
 final class PanelButton: NSButton {

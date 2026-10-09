@@ -1,0 +1,24 @@
+{
+  "invocationId": "inv-ctx-0001",
+  "contextId": "ctx-123",
+  "invokedAt": "2026-10-05T09:00:00Z",
+  "retainSession": true,
+  "takeId": "take-7",
+  "prompt": "compare these two windows",
+  "attachments": [
+    {
+      "kind": "window",
+      "contextId": "ctx-123",
+      "app": "Safari",
+      "title": "Work — Google",
+      "actionable": true
+    },
+    {
+      "kind": "window",
+      "contextId": "ctx-456",
+      "app": "Terminal",
+      "title": "",
+      "actionable": false
+    }
+  ]
+}

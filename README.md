@@ -7,7 +7,9 @@ already knows what you were looking at and has tools to act on it.
 **Windows:** current shipping functionality. **macOS 14+:** native AppKit host with
 a signed build-12 native Whisper glass interface with pinned control, persistent reader and conversational
 follow-ups (installed; full parity not yet accepted), plus push-to-talk voice, instant commands,
-the Auto model and result cards on the `feat/voice-magic` line (built and tested offline, not yet installed); [build/run instructions](host-macos/README.md) and
+the Auto model and result cards on the `feat/voice-magic` line, and general-by-default questions with a
+context shelf, pointing and dialog-free Brave on `feat/context-shelf` (both built and tested offline, not yet
+installed); [build/run instructions](host-macos/README.md) and
 [acceptance status](host-macos/STATUS.md). Computer-use parity is still gated by
 the [migration plan](MACOS_MIGRATION.md).
 
@@ -104,6 +106,46 @@ adds a faster path on top of the agent:
 Windows keeps its text prompt; it also sees *Auto* in its model list and quick answers
 (math, conversions) arrive as ordinary answer text.
 
+## On macOS: general by default, the context shelf and pointing
+
+The bar no longer assumes every question is about the window in front
+([details](host-macos/README.md#general-by-default-the-context-shelf-and-pointing)):
+
+- **It opens general.** The hotkey shows *Ask anything…*; the window is not captured up front. A
+  **context chip** at the right of the bar shows the frontmost app: *off* (just its icon),
+  *suggested* (outlined, when you refer to what is on screen — “summarize this page”, “die Mail”,
+  “make it shorter” — or point at something in it) or *on* (filled). **What the chip shows when
+  you press Return is what goes with your question**; only then is the window captured. If the
+  question turns out to need the window anyway, pi may look (the bar says *Looking at Brave…*, the
+  answer *Looked at Brave*) unless you left it out with Tab (the chip is then struck through) or
+  chose *Only when I ask*. After pi looked, the follow-up chip starts on.
+- **Tab** (or a click on the chip) includes or leaves out the window; your choice sticks for that
+  question. **⇧ + the hotkey** (⌃⌥⌘⇧Space by default; tap to type, hold to talk) or the menu's
+  *Ask About This Window…* opens with the window included. *Settings → Context → Active window*:
+  *Only when I ask*, *Suggest* (default) or *Always include*.
+- **The context shelf.** Select text or an image anywhere and press **⌃⌥⌘C** (“Add to pi”):
+  a small *Added to pi* note confirms it, and pi neither opens nor takes focus. Opening pi with
+  text selected adds that selection too. Drop files, links, text or images on the bar or on the
+  menu-bar π; *Grab an Area…* (the chip's menu, or *Add Screen Area to pi…* in the menu bar)
+  adds part of the screen, and the menu bar's *Add Selection to pi* does what ⌃⌥⌘C does.
+  Dropped or copied files are references pi can open or reveal for you but does not read; image
+  files are attached as images. Something you just copied shows as a dashed *Clipboard …* chip
+  and is read only when you click its **+**. Chips show exactly what will be sent (click one to see
+  it), **⊗** removes one, **⌫** in an empty bar removes the last, and they stay across hotkey
+  presses until sent or cleared (8 items, 4 images, 20,000 characters per text).
+- **Point pi at things.** Drag the chip (or π) onto any window: a line follows the pointer, a
+  purple frame shows the window, and dropping makes it the question's window. Hold **⌥** while
+  dragging (or choose *Point at an Element…*, also in the menu bar) to point at one button,
+  paragraph or field: an orange frame names it, the window it is in goes with the question, and
+  your message reads “Pointing at Button “Send””. Pointing works on a new question (not in the
+  follow-up composer). Password and username fields are never read.
+- **Brave without dialogs.** pi reads your Brave tab through macOS Accessibility (*Settings →
+  Context → Brave access: Accessibility*, the default): no “Allow remote debugging?” prompt and
+  no automation banner. With *Act in Brave in the background* (default on) it presses buttons and
+  fills fields without bringing Brave forward; deletion, credential and budget checks still apply.
+  DevTools is an explicit opt-in. You can now switch off *Allow remote debugging for this browser
+  instance* at brave://inspect (*Open brave://inspect…* in Settings) — pi no longer needs it.
+
 ## Configuration
 
 No environment variables are required for normal use. These optional settings
@@ -111,7 +153,8 @@ change user-visible behavior:
 
 | Variable | Meaning |
 |----------|---------|
-| `PI_OS_HOTKEY` | Hotkey override, e.g. `Ctrl+Shift+F9` (default `Ctrl+Alt+Space`) |
+| `PI_OS_HOTKEY` | Hotkey override, e.g. `Ctrl+Shift+F9` (default `Ctrl+Alt+Space`; macOS `Ctrl+Option+Cmd+Space`, whose ⇧ variant opens with the window included) |
+| `PI_OS_ADD_HOTKEY` | macOS only: the “Add to pi” chord (default `Ctrl+Option+Cmd+C`) |
 | `PI_OS_INVOKE_TIMEOUT_MS` | Maximum time for each request in milliseconds (default `300000`; `0` disables the timeout) |
 
 Other `PI_OS_*` variables are development and test controls documented in

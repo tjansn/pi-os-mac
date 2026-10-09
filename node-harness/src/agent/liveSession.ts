@@ -15,8 +15,16 @@ export interface ResponseSample {
   provider: string;
   model: string;
   thinkingLevel?: string;
+  /**
+   * Request start (turn_start) → the provider's stream start (pi's `start` event: for Codex over
+   * WebSocket the first event, `response.created`; over HTTP the accepted response). Includes any
+   * connection setup, so it separates connect + queueing from generation.
+   */
+  createdMs?: number;
   /** Request start (turn_start) → first text/thinking/tool-call delta. */
   ttftMs?: number;
+  /** What the first delta was: text (the reader sees words at ttftMs), thinking, or a tool call. */
+  firstDelta?: "text" | "thinking" | "toolcall";
   /** First delta → message end. */
   streamMs?: number;
   outputTokens?: number;
@@ -80,8 +88,8 @@ export class LiveAgentSession {
   private closed = false;
   private readonly unsubscribe: () => void;
   private callbacks: SessionObserver;
-  /** Per assistant response: request start, first delta, streamed text. */
-  private response: { requestAt?: number; firstAt?: number; text: string } = { text: "" };
+  /** Per assistant response: request start, stream start, first delta (and its kind), streamed text. */
+  private response: { requestAt?: number; startAt?: number; firstAt?: number; firstKind?: ResponseSample["firstDelta"]; text: string } = { text: "" };
   constructor(
     private readonly session: SessionTransport,
     readonly lifetime: AbortController,
@@ -120,7 +128,8 @@ export class LiveAgentSession {
     if (event.type === "turn_start") {
       this.response = { requestAt: now(), text: "" };
     } else if (event.type === "message_start" && event.message.role === "assistant") {
-      this.response = { ...(this.response.requestAt !== undefined ? { requestAt: this.response.requestAt } : {}), text: "" };
+      // pi emits the assistant message_start on the provider's stream `start` event.
+      this.response = { ...(this.response.requestAt !== undefined ? { requestAt: this.response.requestAt } : {}), startAt: now(), text: "" };
     } else if (event.type === "tool_execution_start") {
       // pi >= 0.99: calls a tool makes through ctx.executeTool() (e.g. codemode scripts) carry
       // parentToolCallId. They stay in the step log, but only model-issued calls are counted
@@ -142,7 +151,10 @@ export class LiveAgentSession {
     } else if (event.type === "message_update") {
       const update = event.assistantMessageEvent;
       if (update.type === "thinking_delta" || update.type === "text_delta" || update.type === "toolcall_delta") {
-        this.response.firstAt ??= now();
+        if (this.response.firstAt === undefined) {
+          this.response.firstAt = now();
+          this.response.firstKind = update.type === "text_delta" ? "text" : update.type === "thinking_delta" ? "thinking" : "toolcall";
+        }
       }
       if (update.type === "thinking_delta") this.callbacks.onActivity?.("thinking");
       if (update.type === "text_delta") {
@@ -162,14 +174,16 @@ export class LiveAgentSession {
   private report(message: AssistantMessage): void {
     if (!this.callbacks.onResponse || message.stopReason === "aborted") return;
     if (typeof message.provider !== "string" || !message.provider || typeof message.model !== "string" || !message.model) return;
-    const { requestAt, firstAt } = this.response;
+    const { requestAt, startAt, firstAt, firstKind } = this.response;
     const end = now();
     const ok = message.stopReason !== "error";
     const sample: ResponseSample = {
       provider: message.provider,
       model: message.model,
       ...(message.thinkingLevel ? { thinkingLevel: message.thinkingLevel } : {}),
+      ...(ok && requestAt !== undefined && startAt !== undefined ? { createdMs: startAt - requestAt } : {}),
       ...(ok && requestAt !== undefined && firstAt !== undefined ? { ttftMs: firstAt - requestAt, streamMs: end - firstAt } : {}),
+      ...(ok && firstKind ? { firstDelta: firstKind } : {}),
       ...(ok && Number.isFinite(message.usage?.output) ? { outputTokens: message.usage.output } : {}),
       ...(ok && Number.isFinite(message.usage?.cacheRead) ? { cacheReadTokens: message.usage.cacheRead } : {}),
       ok,

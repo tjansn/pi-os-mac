@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { classifyProviderError, HEALTH_PENALTY_MS, LatencyStats } from "../src/agent/routing/index.js";
+import { classifyProviderError, DEFAULT_STATS_ALPHA, HEALTH_PENALTY_MS, LatencyStats } from "../src/agent/routing/index.js";
 
 const quiet = () => {};
 const tempPath = () => join(mkdtempSync(join(tmpdir(), "pi-os-routing-stats-")), "routing-stats.json");
@@ -21,6 +21,15 @@ test("EWMA starts at the first sample and moves by alpha; throughput needs enoug
   stats.record({ ...luna, ttftMs: -5 });
   assert.equal(stats.get("openai-codex/gpt-6-luna@off")?.n, 3, "invalid samples are ignored");
   assert.equal(stats.getFor({ provider: "openai-codex", id: "gpt-6-luna", thinkingLevel: "off" })?.n, 3);
+});
+
+test("the default EWMA weighs a new sample at 0.5: backend latency moves within hours", () => {
+  assert.equal(DEFAULT_STATS_ALPHA, 0.5);
+  const stats = new LatencyStats({ log: quiet });
+  const sol = { provider: "openai-codex", model: "gpt-6.1-sol", thinkingLevel: "low" };
+  stats.record({ ...sol, ttftMs: 2_000 });
+  stats.record({ ...sol, ttftMs: 6_000 });
+  assert.equal(stats.get("openai-codex/gpt-6.1-sol@low")?.ttftMs, 4_000);
 });
 
 test("health blocks cover a model or a whole provider and expire", () => {

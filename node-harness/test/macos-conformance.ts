@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, connect } from "node:net";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
@@ -11,6 +11,7 @@ import { loadScreenshotImage } from "../src/agent/screenshotImage.js";
 import type { HarnessConfig } from "../src/config.js";
 import { parseHostAction } from "../src/contracts/actions.js";
 import type { AppIndexResult, AppRecord, FileCandidate, FileSearchResult, LauncherOpenResult } from "../src/contracts/launcher.js";
+import { parseBrowserAxActResult, parseBrowserPageResult, type BrowserAxActResult, type BrowserPageResult } from "../src/contracts/browser.js";
 
 async function freePort() {
   const server = createServer();
@@ -58,8 +59,11 @@ test("real Swift NWListener ↔ Node fetch/hostClient and supervised harness (no
   await writeFile(join(root, "context.json"), JSON.stringify(fixture));
   const launcherFixtures = resolve("../shared/fixtures/launcher");
   const launcherFixture = async (name: string) => JSON.parse(await readFile(join(launcherFixtures, name), "utf8"));
+  const browserFixtures = resolve("../shared/fixtures/browser-ax");
+  const browserFixture = async (name: string) => JSON.parse(await readFile(join(browserFixtures, name), "utf8"));
   const host = spawn(resolve("../host-macos/.build/debug/pi-os"), ["--conformance", join(root, "context.json")], {
-    env: { ...process.env, PI_OS_TOKEN: token, PI_OS_HOST_PORT: String(hostPort), PI_OS_LAUNCHER_FIXTURES: launcherFixtures },
+    env: { ...process.env, PI_OS_TOKEN: token, PI_OS_HOST_PORT: String(hostPort), PI_OS_LAUNCHER_FIXTURES: launcherFixtures,
+      PI_OS_BROWSER_FIXTURES: browserFixtures },
     stdio: ["pipe", "pipe", "pipe"],
   });
   let node: ChildProcess | undefined;
@@ -148,6 +152,49 @@ test("real Swift NWListener ↔ Node fetch/hostClient and supervised harness (no
       if (!refused.ok) assert.equal(refused.error.code, "policy_blocked");
     }
     assert.equal((await fetch(base + "/tools/launcher.delete", { method: "POST", headers, body: "{}" })).status, 404);
+
+    // Brave AX routes: the production Swift route codec, page reader, ref rules and act checks over an
+    // in-memory tab built from shared/fixtures/browser-ax (no AX, TCC, Brave or effects). Private routes.
+    const pageFixture = (await browserFixture("page-response.json")).result as BrowserPageResult;
+    const pageRequest = (await browserFixture("page-request.json")).arguments as Record<string, unknown>;
+    const readPage = async () => {
+      const outcome = await client.invokeTool<BrowserPageResult>("browser.page", pageRequest);
+      if (!outcome.ok) throw new Error(`browser.page failed: ${outcome.error.code}`);
+      assert.equal(parseBrowserPageResult(outcome.result).ok, true, "Swift digests satisfy the Node contract");
+      return outcome.result;
+    };
+    assert.deepEqual(await readPage(), pageFixture, "refs e1…e11 in link, control, field order; no credential values");
+    const press = (await browserFixture("axact-request-press.json")).arguments as Record<string, unknown>;
+    const pressed = await client.invokeTool<BrowserAxActResult>("browser.axAct", press);
+    if (!pressed.ok) throw new Error(`browser.axAct failed: ${pressed.error.code}`);
+    assert.equal(parseBrowserAxActResult(pressed.result).ok, true);
+    const pressFixture = (await browserFixture("axact-response.json")).result as BrowserAxActResult;
+    assert.equal(pressed.result.verification, pressFixture.verification);
+    // The in-memory page has no counter script, so only the text differs from the fixture.
+    assert.deepEqual({ ...pressed.result.page!, text: "" }, { ...pressFixture.page!, text: "" }, "fresh refs e12…e22, Like pressed");
+    const username = pressFixture.page!.fields.find(field => field.label === "Username")!.ref;
+    const blocked = await client.invokeTool("browser.axAct", { contextId: press.contextId, ref: username, action: "setValue", value: "dummy" });
+    assert.equal(blocked.ok, false);
+    if (!blocked.ok) assert.equal(blocked.error.code, (await browserFixture("axact-response-credential.json")).error.code);
+    const replay = await client.invokeTool("browser.axAct", press);
+    assert.equal(replay.ok, false, "a consumed ref never acts again");
+    if (!replay.ok) assert.equal(replay.error.code, "browser_stale");
+    const search = (await readPage()).fields.find(field => field.label === "Search")!;
+    assert.equal(search.ref, "e30", "refs are never reused within a context");
+    const value = ((await browserFixture("axact-request-setvalue.json")).arguments as { value: string }).value;
+    const set = await client.invokeTool<BrowserAxActResult>("browser.axAct", { contextId: press.contextId, ref: search.ref, action: "setValue", value });
+    if (!set.ok) throw new Error(`setValue failed: ${set.error.code}`);
+    assert.equal(set.result.verification, 'Set the value of searchbox "Search"; the field shows the new value.');
+    assert.equal(set.result.page!.fields.find(field => field.label === "Search")!.value, value);
+    for (const name of await readdir(join(browserFixtures, "invalid"))) {
+      if (!name.includes("request")) continue;
+      const route = name.startsWith("page-") ? "browser.page" : "browser.axAct";
+      const body = await readFile(join(browserFixtures, "invalid", name), "utf8");
+      assert.equal((await fetch(base + "/tools/" + route, { method: "POST", headers, body })).status, 400, name);
+    }
+    const gone = await client.invokeTool("browser.page", { contextId: "ctx-gone" });
+    assert.equal(gone.ok, false);
+    if (!gone.ok) assert.equal(gone.error.code, "unknown_context");
 
     const unknown = await client.getSnapshot("ctx-gone");
     assert.equal(unknown.ok, false);

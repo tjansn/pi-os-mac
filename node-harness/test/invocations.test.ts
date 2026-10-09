@@ -62,3 +62,27 @@ test("unchanged activity and partial text publish no new revision (no no-op stre
   store.setPartialText(id, undefined);
   assert.equal(record.revision, afterLong + 1);
 });
+
+test("context and attachment summaries: unchanged values publish no revision; a follow-up keeps the scope and clears the summaries", () => {
+  const store = new InvocationStore();
+  const record = store.create("ctx-1", "explain DNS", new Date().toISOString(), "inv-ctx");
+  store.setContext("inv-ctx", { scope: "general", source: "default", pulled: false, included: false });
+  const revision = record.revision;
+  store.setContext("inv-ctx", { scope: "general", source: "default", pulled: false, included: false });
+  store.setAttachments("inv-ctx", undefined);
+  assert.equal(record.revision, revision, "no-op updates are no new revision");
+  store.setContext("inv-ctx", { scope: "general", source: "default", pulled: true, included: true });
+  store.setAttachments("inv-ctx", [{ kind: "text", origin: "selection", chars: 12 }]);
+  assert.deepEqual([record.context, record.attachments], [{ scope: "general", source: "default", pulled: true, included: true }, [{ kind: "text", origin: "selection", chars: 12 }]]);
+  // The user narrows the pulled thread: `pulled` stays, `included` turns false (a new revision).
+  const pulledRevision = record.revision;
+  store.setContext("inv-ctx", { scope: "general", source: "user", pulled: true, included: false });
+  assert.equal(record.revision, pulledRevision + 1);
+  store.setContext("inv-ctx", { scope: "general", source: "default", pulled: true, included: true });
+  store.finish("inv-ctx", "completed");
+  assert(store.requeueForFollowup("inv-ctx", "and DHCP?"));
+  assert.deepEqual(record.context, { scope: "general", source: "default", pulled: true, included: true }, "the thread's scope stays");
+  assert.equal(record.attachments, undefined, "attachments belong to their turn");
+  store.setContext("inv-ctx", undefined);
+  assert.equal("context" in record, false);
+});

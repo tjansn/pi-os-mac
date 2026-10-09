@@ -1,0 +1,47 @@
+{
+  "invocationId": "inv-ctx-0001",
+  "contextId": "ctx-123",
+  "invokedAt": "2026-10-05T09:00:00Z",
+  "retainSession": true,
+  "takeId": "take-7",
+  "prompt": "x",
+  "attachments": [
+    {
+      "kind": "text",
+      "text": "item 0"
+    },
+    {
+      "kind": "text",
+      "text": "item 1"
+    },
+    {
+      "kind": "text",
+      "text": "item 2"
+    },
+    {
+      "kind": "text",
+      "text": "item 3"
+    },
+    {
+      "kind": "text",
+      "text": "item 4"
+    },
+    {
+      "kind": "text",
+      "text": "item 5"
+    },
+    {
+      "kind": "text",
+      "text": "item 6"
+    },
+    {
+      "kind": "text",
+      "text": "item 7"
+    },
+    {
+      "kind": "text",
+      "text": "item 8"
+    }
+  ],
+  "_expect": "too_many_items"
+}

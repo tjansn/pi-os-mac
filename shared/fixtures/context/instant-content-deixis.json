@@ -1,0 +1,14 @@
+{
+  "seq": 5,
+  "elapsedMs": 0,
+  "source": "grammar",
+  "decision": "fallthrough",
+  "reason": "deictic",
+  "scope": {
+    "window": 0.9,
+    "reasons": [
+      "deixis-strong",
+      "deixis-content"
+    ]
+  }
+}

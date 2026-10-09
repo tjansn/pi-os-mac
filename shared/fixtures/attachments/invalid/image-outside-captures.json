@@ -1,0 +1,17 @@
+{
+  "invocationId": "inv-ctx-0001",
+  "contextId": "ctx-123",
+  "invokedAt": "2026-10-05T09:00:00Z",
+  "retainSession": true,
+  "takeId": "take-7",
+  "prompt": "x",
+  "attachments": [
+    {
+      "kind": "image",
+      "path": "/Users/fixture/Desktop/shelf-abc.png",
+      "width": 10,
+      "height": 10
+    }
+  ],
+  "_expect": "outside_captures"
+}

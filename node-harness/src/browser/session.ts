@@ -46,8 +46,16 @@ const messages: Record<string, string> = {
   browser_focus_failed: "The referenced field did not receive focus; no typing was attempted.",
 };
 
-/** One invocation, one native tab, one socket, one target. No process-wide pool. */
+/**
+ * DevTools (CDP) transport, only for `BrowserHint.mode === "cdp"` (the user's explicit opt-in:
+ * Brave asks for approval on every new connection). One invocation, one native tab, one socket,
+ * one target. No process-wide pool.
+ */
 export class BrowserSession {
+  readonly mode = "cdp" as const;
+  /** browser_act replaces desktop_act: the host refuses native input for a CDP context. */
+  readonly replacesDesktopAct = true;
+  readonly canAct = true;
   private tail: Promise<unknown> = Promise.resolve();
   private client?: Cdp;
   private sessionId?: string;

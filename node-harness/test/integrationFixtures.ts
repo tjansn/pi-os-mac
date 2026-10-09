@@ -1,14 +1,15 @@
-import { mkdtempSync } from "node:fs";
+import { copyFileSync, mkdtempSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { createFauxCore, type FauxResponseStep } from "@earendil-works/pi-ai";
+import { createFauxCore, getCurrentSystemPrompt, getCurrentTools, type FauxResponseStep } from "@earendil-works/pi-ai";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { HarnessServer, type HarnessServerOptions } from "../src/server.js";
 import { loadConfig, type HarnessConfig } from "../src/config.js";
 import { AgentModelSettings } from "../src/agent/modelSettings.js";
 import { AgentResourceSettings } from "../src/agent/resourceSettings.js";
+import type { AgentRunOptions } from "../src/agent/agentRunner.js";
 import { LatencyStats } from "../src/agent/routing/index.js";
 import type { DesktopContextSnapshot, HostClient } from "../src/hostClient.js";
 import type { AppIndexResult, FileSearchRequest, FileSearchResult } from "../src/contracts/launcher.js";
@@ -179,4 +180,119 @@ export async function readEvents(response: Response): Promise<{ records: any[]; 
   const records = frames.filter(frame => frame.startsWith("event: record\n"))
     .map(frame => JSON.parse(frame.slice(frame.indexOf("data: ") + 6)));
   return { records, comments: frames.filter(frame => frame.startsWith(": ping")).length, raw };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Direct agent sessions (createLiveSession → planTurn → promptFirst/promptFollowup) on the faux
+// provider: context scopes, use_active_window and attachments, with no HTTP server in between.
+
+/** A captures directory of its own (window.png copied in) and snapshots whose screenshot lives there. */
+export function tempCaptures() {
+  const dir = mkdtempSync(join(tmpdir(), "pi-os-captures-"));
+  copyFileSync(join(CAPTURES, "window.png"), join(dir, "window.png"));
+  const at = (contextId = "ctx-pinned", withScreenshot = true): DesktopContextSnapshot => {
+    const base = snapshot(contextId, false);
+    return { ...base, ...(withScreenshot ? { screenshot: { kind: "window", filePath: join(dir, "window.png"), imageId: "img-1", imageWidth: 800, imageHeight: 600 } } : {}) };
+  };
+  return { dir, snapshot: at, close: () => rm(dir, { recursive: true, force: true }) };
+}
+
+export type HostRoute = (args: Record<string, unknown>) => unknown;
+
+/**
+ * Fake macOS host for agent tools: `desktop.getContext` returns the pinned snapshot, every
+ * `desktop.captureWindow` writes a numbered PNG (shot-2, shot-3, …) into the captures dir, input
+ * posts succeed; `routes` overrides any route. Every call is recorded with its arguments.
+ */
+export function agentHost(capturesDir: string, pinned: DesktopContextSnapshot, routes: Record<string, HostRoute> = {}) {
+  const calls: { name: string; args: Record<string, unknown> }[] = [];
+  let shots = 1;
+  const host = {
+    calls,
+    names: () => calls.map(call => call.name),
+    async invokeTool(name: string, args: Record<string, unknown> = {}) {
+      calls.push({ name, args });
+      const route = routes[name];
+      if (route) return route(args);
+      if (name === "desktop.getContext") return { ok: true, result: pinned };
+      if (name === "desktop.captureWindow") {
+        const imageId = `shot-${++shots}`, filePath = join(capturesDir, `${imageId}.png`);
+        copyFileSync(join(CAPTURES, "window.png"), filePath);
+        return { ok: true, result: { kind: "window", filePath, imageId, imageWidth: 800, imageHeight: 600 } };
+      }
+      if (name.startsWith("input.") || name === "window.focus") return { ok: true, result: { posted: true } };
+      return { ok: false, error: { code: "unsupported", message: "fixture" } };
+    },
+    async getSnapshot() { return { ok: true, result: pinned }; },
+    async getToolNames() { return [...INPUT_TOOLS, "launcher.searchFiles", "launcher.listApps", "launcher.open"]; },
+  };
+  return host;
+}
+
+/** Run options for a control-enabled macOS session on the manual `fx/fast` model (override anything). */
+export function agentRun(host: ReturnType<typeof agentHost>, runtimes: ReturnType<typeof fauxRuntimes>, capturesDir: string,
+  pinned: DesktopContextSnapshot, overrides: Partial<AgentRunOptions> = {}): AgentRunOptions {
+  return {
+    hostClient: host as unknown as HostClient, contextId: "ctx-pinned", prompt: "", snapshot: pinned, capturesDir, log: () => {},
+    readOnly: false, launcher: true, modelSelection: { provider: "fx", modelId: "fast", thinkingLevel: "off" },
+    ...overrides,
+    services: { agentDir: AGENT_DIR, modelRuntime: runtimes.factory, platform: "darwin", ...overrides.services },
+  };
+}
+
+type SeenPart = { type: string; text?: string; data?: string };
+type SeenMessage = { role: string; content: unknown; customType?: string; toolName?: string; isError?: boolean };
+
+/** What one provider request carried: system prompt, declared tools, the request message and what followed it. */
+export interface SeenRequest {
+  model: string;
+  system: string;
+  tools: string[];
+  descriptions: Record<string, string>;
+  /** Text of the latest user message that holds "## Request". */
+  request: string;
+  /** Images in that message. */
+  requestImages: number;
+  /** User-role content after it (attachment images and their labels). */
+  extras: SeenPart[];
+  messages: SeenMessage[];
+}
+
+export function seen(context: unknown, model: { provider: string; id: string }): SeenRequest {
+  const messages = (context as { messages: SeenMessage[] }).messages;
+  const parts = (message: SeenMessage | undefined): SeenPart[] => !message ? []
+    : typeof message.content === "string" ? [{ type: "text", text: message.content }] : message.content as SeenPart[];
+  const text = (message: SeenMessage | undefined) => parts(message).filter(part => part.type === "text").map(part => part.text).join("\n");
+  const index = messages.findLastIndex(message => message.role === "user" && text(message).includes("## Request"));
+  const tools = getCurrentTools(messages as never);
+  return {
+    model: `${model.provider}/${model.id}`,
+    system: getCurrentSystemPrompt(messages as never),
+    tools: tools.map(tool => tool.name),
+    descriptions: Object.fromEntries(tools.map(tool => [tool.name, tool.description])),
+    request: text(messages[index]),
+    requestImages: parts(messages[index]).filter(part => part.type === "image").length,
+    extras: messages.slice(index + 1).filter(message => message.role === "user").flatMap(parts),
+    messages,
+  };
+}
+
+/** A tiny RGB PNG of exactly width × height (attachment images with a known header). */
+export function pngFile(path: string, width: number, height: number): void {
+  const crc32 = (buf: Buffer) => {
+    let c = ~0;
+    for (const b of buf) { c ^= b; for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1)); }
+    return ~c >>> 0;
+  };
+  const chunk = (type: string, data: Buffer) => {
+    const length = Buffer.alloc(4); length.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type), data]);
+    const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([length, body, crc]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0); header.writeUInt32BE(height, 4); header[8] = 8; header[9] = 2;
+  // Empty IDAT: the header is what pi-os checks; no decoder runs in these tests.
+  writeFileSync(path, Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", header), chunk("IDAT", Buffer.alloc(0)), chunk("IEND", Buffer.alloc(0))]));
 }

@@ -2,21 +2,37 @@ import AppKit
 import ApplicationServices
 import PiOSCore
 
-/// Native field semantics only, never AXValue or a guess from the application's brand.
+/// Field semantics only, never AXValue or a guess from the application's brand. One rule for native
+/// apps and web content (Brave's page reader, its background actions, pointing, ⌃⌥⌘C and native input).
 enum CredentialFields {
     static var allowed: Bool { UserDefaults.standard.bool(forKey: CredentialPolicy.preferenceKey) }
+    /// Roles that hold typed text; only these can be username/password fields.
+    static let textEntryRoles: Set<String> = [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole, "AXSearchField"]
+    /// A native element under `budget`: the same rule as web content (`identified(_: BrowserAXNode)`), so a
+    /// Chromium field named only by its DOM id or by a static-text label element is caught here too.
     static func identified(_ element: AXUIElement, budget: DesktopAX.Budget) -> Bool {
-        guard let role = budget.read(element, kAXRoleAttribute) as? String,
-              [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole, "AXSearchField"].contains(role) else { return false }
-        let subrole = budget.read(element, kAXSubroleAttribute) as? String
+        identified(LiveAXNode(element, budget: budget))
+    }
+    /// Reads names only, never AXValue; native and DOM identifiers both count. A label element
+    /// (`AXTitleUIElement`) gives its title, value or description unless it is itself a text-entry
+    /// control (another field's value is never read). A text-entry element whose label element exists
+    /// but cannot be read is treated as a credential field (fail closed).
+    static func identified(_ node: any BrowserAXNode) -> Bool {
+        let values = node.values([kAXRoleAttribute, kAXSubroleAttribute, kAXTitleAttribute, kAXDescriptionAttribute,
+                                  kAXPlaceholderValueAttribute, kAXIdentifierAttribute, "AXDOMIdentifier"])
+        guard let role = values[kAXRoleAttribute] as? String, textEntryRoles.contains(role) else { return false }
+        let subrole = values[kAXSubroleAttribute] as? String
         if subrole == kAXSecureTextFieldSubrole { return true }
-        var labels = [kAXTitleAttribute, kAXDescriptionAttribute, kAXPlaceholderValueAttribute].compactMap {
-            budget.read(element, $0) as? String
-        }
-        if let label = budget.element(element, kAXTitleUIElementAttribute),
-           let title = budget.read(label, kAXTitleAttribute) as? String { labels.append(title) }
-        return CredentialPolicy.isCredentialField(role: role, subrole: subrole, labels: labels,
-            identifier: budget.read(element, kAXIdentifierAttribute) as? String ?? "")
+        var labels = [kAXTitleAttribute, kAXDescriptionAttribute, kAXPlaceholderValueAttribute].compactMap { values[$0] as? String }
+        let title = BrowserPageReader.titleElement(node)
+        if title.unreadable { return true }
+        if let text = title.text { labels.append(text) }
+        let identifiers = [kAXIdentifierAttribute, "AXDOMIdentifier"].compactMap { values[$0] as? String }
+        return identified(role: role, subrole: subrole, labels: labels, identifiers: identifiers)
+    }
+    static func identified(role: String, subrole: String?, labels: [String], identifiers: [String]) -> Bool {
+        if CredentialPolicy.isCredentialField(role: role, subrole: subrole, labels: labels) { return true }
+        return identifiers.contains { CredentialPolicy.isCredentialField(role: role, identifier: $0) }
     }
     static func validate(_ element: AXUIElement, budget: DesktopAX.Budget) throws {
         try CredentialPolicy.validate(isCredential: identified(element, budget: budget), allowed: allowed)

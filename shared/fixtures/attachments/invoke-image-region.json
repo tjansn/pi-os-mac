@@ -1,0 +1,21 @@
+{
+  "invocationId": "inv-ctx-0001",
+  "contextId": "ctx-123",
+  "invokedAt": "2026-10-05T09:00:00Z",
+  "retainSession": true,
+  "takeId": "take-7",
+  "prompt": "what is wrong with this chart?",
+  "attachments": [
+    {
+      "kind": "image",
+      "path": "/Users/fixture/Library/Application Support/pi-os/captures/shelf-3f9a2c1d.png",
+      "width": 840,
+      "height": 600,
+      "origin": "region",
+      "source": {
+        "app": "Preview",
+        "title": "Q3.pdf"
+      }
+    }
+  ]
+}

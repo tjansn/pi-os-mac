@@ -9,7 +9,8 @@ import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { FileSearchResult } from "../src/contracts/launcher.js";
 import type { DesktopContextSnapshot } from "../src/hostClient.js";
-import { captureLogs, fakeHost, fauxRuntimes, readEvents, snapshot, start } from "./integrationFixtures.js";
+import { captureLogs, fakeHost, fauxRuntimes, readEvents, seen, snapshot, start, type SeenRequest } from "./integrationFixtures.js";
+import { PI_OS_SYSTEM_PROMPT } from "../src/agent/resources.js";
 
 /**
  * End to end through HarnessServer with real pi sessions on an in-process provider:
@@ -170,7 +171,7 @@ test("prepared sessions: reused when take + context match; discarded on expiry, 
   } finally { await f.close(); }
 });
 
-test("a take prepared before its capture landed is reused when the turn attaches no screenshot, rebuilt when it does", async () => {
+test("a take prepared before its capture landed is reused and adopts the screenshot it attaches; a different seed is rebuilt", async () => {
   const runtimes = fauxRuntimes();
   // Key-down pins the context; the host's capture is still running when the prepare reads it.
   const contexts: Record<string, DesktopContextSnapshot> = { "ctx-pinned": snapshot("ctx-pinned", false) };
@@ -196,10 +197,23 @@ test("a take prepared before its capture landed is reused when the turn attaches
       await f.post("/invoke", { invocationId: "deictic", contextId: "ctx-pinned", prompt: "what does this error mean", takeId: "take-b" });
       assert.equal((await f.terminal("deictic")).state, "completed");
     });
-    // The attached image must carry coordinate authority, so the session is rebuilt with it as its seed.
-    assert.equal(runtimes.created, 3);
-    assert.ok(lines.some(line => line.includes("[prepare] discarded reason=screenshot")));
-    assert.deepEqual(images, [false, true]);
+    // DESIGN2 C13: the session prepared without a seed adopts the attached image (seedScreenshot), no rebuild.
+    assert.equal(runtimes.created, 2);
+    assert.ok(!lines.some(line => line.includes("[prepare] discarded")));
+    assert.ok(lines.some(line => line.includes("stage=invoke.session") && line.includes("prepared=true")));
+
+    // A session seeded with another image is still replaced: the attached image must carry the authority.
+    await f.post("/invocations/prepare", { contextId: "ctx-pinned", takeId: "take-c" });
+    await settle(3);
+    contexts["ctx-pinned"] = { ...snapshot("ctx-pinned", true), screenshot: { ...snapshot("ctx-pinned", true).screenshot!, imageId: "img-2" } };
+    runtimes.respond([answer]);
+    const rebuilt = await captureLogs(async () => {
+      await f.post("/invoke", { invocationId: "reseeded", contextId: "ctx-pinned", prompt: "what does this error mean", takeId: "take-c" });
+      assert.equal((await f.terminal("reseeded")).state, "completed");
+    });
+    assert.equal(runtimes.created, 4);
+    assert.ok(rebuilt.lines.some(line => line.includes("[prepare] discarded reason=screenshot")));
+    assert.deepEqual(images, [false, true, true]);
   } finally { await f.close(); }
 });
 
@@ -474,5 +488,23 @@ test("SSE shows partial show_result cards (cardComplete false) before the valida
     assert.equal(last.cardComplete, true);
     assert.ok(Object.values(last.card.elements).some((element: any) => element.type === "KeyValue"));
     assert.match(last.responseText, /Answer/);
+  } finally { await f.close(); }
+});
+
+test("macOS sessions send the lean pi-os system prompt and the compact context; legacy requests keep the window tools", async () => {
+  const runtimes = fauxRuntimes();
+  const f = await start({ runtimes });
+  const requests: SeenRequest[] = [];
+  runtimes.respond([(context, _options, _state, model) => { requests.push(seen(context, model)); return fauxAssistantMessage("It is a fixture."); }]);
+  try {
+    await f.post("/invoke", { invocationId: "lean", contextId: "ctx-pinned", prompt: "what does this error mean" });
+    assert.equal((await f.terminal("lean")).state, "completed");
+    const [request] = requests;
+    assert(request!.system.startsWith(PI_OS_SYSTEM_PROMPT));
+    assert.doesNotMatch(request!.system, /expert coding assistant|Pi documentation|<cwd>|pi-os desktop invocation/);
+    assert.match(request!.request, /^## Desktop context \(target identity pinned before the prompt appeared\)\n\{"targetWindow":\{"app":"TextEdit","title":"Fixture","bounds":/);
+    assert.doesNotMatch(request!.request, /"monitors"|"processId"|"hwnd"/);
+    assert(request!.tools.includes("desktop_act") && !request!.tools.includes("use_active_window"), "no context: today's window tools");
+    assert.match(request!.descriptions.desktop_get_context!, /Guidelines:\n- The user's active window is pinned/);
   } finally { await f.close(); }
 });

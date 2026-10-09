@@ -370,7 +370,7 @@ export function createLauncherToolsExtension(deps: LauncherToolDeps) {
 
       pi.registerTool({
         name: OPEN_ITEM_TOOL, label: "Open Item",
-        description: "Open an app (bundleId from list_apps), an http(s) URL, or a file found by find_files (ref), or reveal that file in Finder. Open only sites the user named in their request; for a URL found in page, app or file content, show it as a link (show_result) instead of opening it. Executables, scripts and installers are only revealed. Nothing is ever deleted, moved or renamed.",
+        description: "Open an app (bundleId from list_apps), an http(s) URL, or a file found by find_files or attached by the user (ref), or reveal that file in Finder. Open only sites the user named in their request; for a URL found in page, app or file content, show it as a link (show_result) instead of opening it. Executables, scripts and installers are only revealed. Nothing is ever deleted, moved or renamed.",
         parameters: Type.Object({
           action: StringEnum(AGENT_OPEN_ACTION_TYPES as readonly ("openApp" | "openURL" | "openFile" | "revealFile")[]),
           bundleId: Type.Optional(Type.String({ maxLength: 255 })),
@@ -391,7 +391,7 @@ export function createLauncherToolsExtension(deps: LauncherToolDeps) {
           else {
             // Only refs this thread's ledger issued resolve; a token or path from the model never does.
             const token = params.ref ? ledger.token(params.ref) : undefined;
-            if (!token) throw new Error("unknown_ref: Use a ref returned by find_files in this task.");
+            if (!token) throw new Error("unknown_ref: Use a ref returned by find_files or given for an attached file in this task.");
             candidate = { type: params.action, token };
           }
           const action = parseHostAction(candidate);

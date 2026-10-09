@@ -1,0 +1,46 @@
+{
+  "seq": 7,
+  "elapsedMs": 2,
+  "source": "grammar",
+  "decision": "answer",
+  "intent": "calc",
+  "title": "51",
+  "subtitle": "15% of 340",
+  "card": {
+    "format": "pi-os-ui/1",
+    "root": "root",
+    "elements": {
+      "root": {
+        "type": "Answer",
+        "props": {
+          "summary": "15% of 340 = 51"
+        },
+        "children": [
+          "n1"
+        ]
+      },
+      "n1": {
+        "type": "ResultCard",
+        "props": {
+          "kind": "math",
+          "input": "15% of 340",
+          "value": "51"
+        },
+        "on": {
+          "copy": {
+            "action": "copyText",
+            "params": {
+              "text": "51"
+            }
+          }
+        }
+      }
+    }
+  },
+  "scope": {
+    "window": 0.1,
+    "reasons": [
+      "inline-content"
+    ]
+  }
+}

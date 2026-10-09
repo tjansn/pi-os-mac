@@ -1,5 +1,6 @@
 import type { HostAction } from "./actions.js";
 import type { CardSpec } from "./cards.js";
+import type { InstantScope } from "./context.js";
 
 /**
  * Instant lane contracts (protocol.md "POST /instant") and the classifier /
@@ -51,6 +52,11 @@ interface InstantBase {
   seq: number;
   elapsedMs: number;
   source: "grammar" | "classifier";
+  /**
+   * Advisory context scope of the text (contracts/context.ts), on any phase and decision. Hosts with a
+   * context chip use it from `fallthrough` responses only; an absent or malformed value means no suggestion.
+   */
+  scope?: InstantScope;
 }
 
 export type InstantResponse = InstantBase &

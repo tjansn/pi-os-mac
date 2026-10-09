@@ -6,8 +6,8 @@ import { LAUNCHER_READ_TOOL_NAMES, OPEN_ITEM_TOOL } from "./launcherTools.js";
  * pi 1.0 codemode for pi-os, safe subset (DESIGN B5, CRITIC C6/C7/S8).
  *
  * Scripts run in pi's QuickJS sandbox and reach tools only through ctx.executeTool(), which
- * already excludes `model-only` tools (desktop_act, desktop_capture_window, browser_act,
- * open_item, codemode itself). This policy is the second, independent layer:
+ * already excludes `model-only` tools (desktop_act, desktop_capture_window, use_active_window,
+ * browser_act, open_item, codemode itself). This policy is the second, independent layer:
  *  - a nested call is allowed only for an explicit list of read-only tools, so a tool that
  *    later becomes callable by accident (exposure change, trusted-mode extension, bash) is
  *    still refused, and scripts can never capture (coordinate authority) or mutate;
@@ -23,8 +23,11 @@ export const CODEMODE_TOOL_NAMES = [CODEMODE_TOOL] as const;
 export const SCRIPT_CALLABLE_TOOLS = [
   "desktop_get_context", "desktop_refresh_context", "browser_snapshot", ...LAUNCHER_READ_TOOL_NAMES,
 ] as const;
-/** Never callable from a script, whatever exposure or options say. */
-export const MODEL_ONLY_TOOLS = ["desktop_act", "desktop_capture_window", "browser_act", OPEN_ITEM_TOOL, CODEMODE_TOOL] as const;
+/**
+ * Never callable from a script, whatever exposure or options say. use_active_window captures (coordinate
+ * authority follows images the model received) and switches the session's tools, like a direct call only.
+ */
+export const MODEL_ONLY_TOOLS = ["desktop_act", "desktop_capture_window", "use_active_window", "browser_act", OPEN_ITEM_TOOL, CODEMODE_TOOL] as const;
 
 export const CODEMODE_DEFAULT_TIMEOUT_MS = 15_000;
 export const CODEMODE_MAX_TIMEOUT_MS = 30_000;

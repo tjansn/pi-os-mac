@@ -105,6 +105,10 @@ public actor DesktopService {
         var expires: Date
         var fingerprint: ProcessFingerprint?
         var browserPin: BrowserPin?
+        /// The AX routes' view of the pinned tab (production: the same BrowserPin).
+        var browserTab: BrowserTabSource?
+        /// Refs of browser.page / browser.axAct; shared by every copy of this entry.
+        let browserAX = BrowserAXSession()
         var coordinatesFresh = false
         var inputUncertain = false
         var budget = InputBudget()
@@ -125,6 +129,9 @@ public actor DesktopService {
     private let capacity: Int
     /// Serves POST /tools/launcher.* when set (contextId optional there); nil keeps those routes 404.
     private let launcher: LauncherBackend?
+    /// Live Settings for the Brave AX routes, read on every call (injected by tests and --conformance).
+    private var browserSettings: () -> BrowserAXSettings = BrowserAXSettings.stored
+    private var browserTiming = BrowserAXTiming.standard
 
     public init(captures: URL, token: String, ttl: TimeInterval = 1800, capacity: Int = 32,
                 controlEnabled: @escaping () -> Bool = { false }, traceFile: URL? = nil,
@@ -136,13 +143,20 @@ public actor DesktopService {
         self.launcher = launcher
     }
     public func insert(_ snapshot: Snapshot, browserPin: BrowserPin? = nil) {
+        insert(snapshot, browserPin: browserPin, browserTab: browserPin)
+    }
+    /// A context whose Brave tab is an in-memory fixture (unit tests, --conformance).
+    func insert(_ snapshot: Snapshot, browserTab: BrowserTabSource) { insert(snapshot, browserPin: nil, browserTab: browserTab) }
+    private func insert(_ snapshot: Snapshot, browserPin: BrowserPin?, browserTab: BrowserTabSource?) {
         for (id, entry) in entries where entry.expires <= Date() { remove(id) }
         if entries.count >= capacity, let oldest = entries.min(by: { $0.value.expires < $1.value.expires })?.key { remove(oldest) }
         let expires = Date().addingTimeInterval(ttl)
         entries[snapshot.id] = Entry(snapshot: snapshot, expires: expires,
                                      fingerprint: snapshot.targetWindow.flatMap { NativeDesktopDriver.fingerprint($0.processId) },
-                                     browserPin: browserPin, lease: ContextLease(expires: expires))
+                                     browserPin: browserPin, browserTab: browserTab, lease: ContextLease(expires: expires))
     }
+    func useBrowserSettings(_ settings: @escaping () -> BrowserAXSettings) { browserSettings = settings }
+    func useBrowserTiming(_ timing: BrowserAXTiming) { browserTiming = timing }
     public func remove(_ id: String) {
         pending.removeValue(forKey: id)?.cancel()
         actions.removeValue(forKey: id)?.cancel()
@@ -174,7 +188,7 @@ public actor DesktopService {
         guard let target = entry.snapshot.targetWindow else {
             throw DomainError("no_target", "The frontmost application has no capturable window. Open a window and try again.")
         }
-        if let browserPin = entry.browserPin { _ = try browserPin.verify(target) }
+        if let browserPin = entry.browserPin { _ = try browserPin.verifyTab(target) }
         // A capture is a serialized context mutation (latest screenshot + transform).
         // Refuse overlap rather than allowing an older completion to overwrite a newer one.
         guard pending[id] == nil else { throw DomainError("busy", "A capture of this context is already in progress") }
@@ -191,7 +205,7 @@ public actor DesktopService {
                 throw DomainError("unknown_context", "Capture was cancelled or expired")
             }
             _ = try DesktopIdentity.revalidate(target)
-            if let browserPin = current.browserPin { _ = try browserPin.verify(target) }
+            if let browserPin = current.browserPin { _ = try browserPin.verifyTab(target) }
             current.snapshot.screenshot = captured.shot
             current.snapshot.targetWindow?.bounds = captured.transform.frame
             current.snapshot.targetWindow?.title = FinderDesktop.isDesktop(target) ? "Desktop" : captured.title
@@ -292,9 +306,13 @@ public actor DesktopService {
             guard controlEnabled() else { throw DomainError("control_disabled", "Computer control needs a signed app and Accessibility/Input permission") }
             var current = try entry(arguments.contextId)
             guard !current.inputUncertain else { throw DomainError("input_failed", "A previous input outcome was uncertain. Inspect the window and start a new task; this context cannot post more input.") }
-            guard current.snapshot.browser == nil else { throw DomainError("browser_route_required", "This invocation is bound to a Brave tab. Use browser tools; native input is unavailable in this task.") }
+            // Only the DevTools opt-in reserves the tab for its own route; in `ax` mode Brave is a native
+            // target and every native gate below applies (identity, focus, credential, deletion, budget).
+            guard current.snapshot.browser?.mode != .cdp else { throw DomainError("browser_route_required", "This invocation is bound to a Brave tab. Use browser tools; native input is unavailable in this task.") }
             guard let target = current.snapshot.targetWindow else { throw DomainError("no_target", "There is no pinned window to control") }
             guard let fingerprint = current.fingerprint else { throw DomainError("policy_blocked", "The pinned process ownership could not be established") }
+            // A pinned Brave tab must still be the selected one before native input reaches its window.
+            if let pin = current.browserPin { _ = try pin.verifyTab(target) }
             try action.validate(arguments)
             if action == .click || (action == .scroll && arguments.x != nil) {
                 guard let screenshotId = arguments.screenshotId, screenshotId == current.snapshot.screenshot?.imageId,
@@ -317,23 +335,23 @@ public actor DesktopService {
             actions[arguments.contextId] = nil
             if action != .focus { entries[arguments.contextId]?.coordinatesFresh = false }
             await afterInput(hidden)
-            trace(action, outcome: "posted", result: result, started: started)
+            trace(action.name, outcome: "posted", result: result, started: started)
             await gate.release(); return result
         } catch {
             actions[arguments.contextId] = nil
             if (error as? DomainError)?.code == "input_failed" { entries[arguments.contextId]?.inputUncertain = true }
             if action != .focus { entries[arguments.contextId]?.coordinatesFresh = false }
             await afterInput(hidden)
-            trace(action, outcome: (error as? DomainError)?.code ?? "cancelled", result: nil, started: started)
+            trace(action.name, outcome: (error as? DomainError)?.code ?? "cancelled", result: nil, started: started)
             await gate.release()
             if error is CancellationError { throw DomainError("busy", "Input cancelled while waiting") }
             throw error
         }
     }
-    private func trace(_ action: InputAction, outcome: String, result: InputResult?, started: Date) {
+    private func trace(_ action: String, outcome: String, result: InputResult?, started: Date) {
         guard let traceFile else { return }
-        // No prompt, typed text, key values, window titles, or context capabilities in traces.
-        var row: [String: Any] = ["at": ISO8601DateFormatter().string(from: Date()), "action": action.name,
+        // No prompt, typed text, key values, window titles, page content, refs or context capabilities in traces.
+        var row: [String: Any] = ["at": ISO8601DateFormatter().string(from: Date()), "action": action,
                                   "outcome": outcome, "durationMs": Int(Date().timeIntervalSince(started) * 1000)]
         if let result { row["postedEvents"] = result.postedEvents; row["characters"] = result.characters }
         guard var bytes = try? JSONSerialization.data(withJSONObject: row) else { return }
@@ -359,6 +377,10 @@ public actor DesktopService {
             guard controlEnabled() else { throw DomainError("control_disabled", "Brave connection requires computer-control permission") }
             var current = try entry(args.contextId)
             try current.lease.check()
+            // DevTools only for a task pinned under the explicit opt-in; Accessibility tasks never connect.
+            guard current.snapshot.browser?.mode == .cdp else {
+                throw DomainError("browser_disabled", "This task reads Brave through Accessibility; the DevTools connection is off.")
+            }
             guard let target = current.snapshot.targetWindow, current.snapshot.browser != nil,
                   let pin = current.browserPin, let fingerprint = current.fingerprint else {
                 throw DomainError("browser_tab_unknown", "No Brave tab was pinned. Enable Brave connection in Settings, show a normal page and start a new task.")
@@ -379,6 +401,120 @@ public actor DesktopService {
             let result = try pin.verify(target)
             await gate.release(); return result
         } catch { await gate.release(); throw error }
+    }
+
+    // MARK: Brave Accessibility routes (browser.page, browser.axAct)
+
+    private func browserTab(_ entry: Entry) throws -> BrowserTabSource {
+        guard let tab = entry.browserTab, let hint = entry.snapshot.browser, hint.pinned, hint.mode != .extension else {
+            throw DomainError("browser_tab_unknown", "No Brave tab was pinned. Show a normal page with the tab strip visible and start a new task.")
+        }
+        return tab
+    }
+    /// Observation: no focus change and no input budget; allowed without computer control. It is
+    /// serialized with input and capture so a read never interleaves with an action on the tab.
+    private func browserPage(_ request: BrowserPageRequest) async throws -> BrowserPageResult {
+        do { try await gate.acquire() } catch { throw DomainError("busy", "Page read cancelled while waiting") }
+        do {
+            try Task.checkCancellation()
+            let current = try entry(request.contextId)
+            try current.lease.check()
+            let tab = try browserTab(current), session = current.browserAX
+            let page: BrowserPageResult
+            do {
+                let live = try tab.livePage(current.snapshot.targetWindow, fingerprint: current.fingerprint, seconds: 0.25)
+                page = try session.read(live, maxChars: request.maxChars ?? BrowserPageLimits.maxChars,
+                                        maxControls: request.maxControls ?? BrowserPageLimits.maxControls)
+            } catch { session.invalidate(); throw error }
+            await gate.release(); return page
+        } catch { await gate.release(); throw error }
+    }
+    /// Stage B: one element-addressed AX action while Brave stays in the background: no beforeInput,
+    /// no window focus, no raise. Checks in contract order: pin verify (process, window, selected tab,
+    /// URL); a live ref inside the pinned web area; role allow-list; deletion; credential; input
+    /// budget; uncertain-input poisoning. Every call retires the refs it was given.
+    private func browserAXAct(_ request: BrowserAXActRequest) async throws -> BrowserAXActResult {
+        do { try await gate.acquire() } catch { throw DomainError("busy", "Browser action cancelled while waiting") }
+        let started = Date(), name = "ax." + request.action.rawValue
+        do {
+            try Task.checkCancellation()
+            guard controlEnabled() else { throw DomainError("control_disabled", "Acting in Brave needs computer control (Accessibility) in pi-os Settings") }
+            let current = try entry(request.contextId)
+            try current.lease.check()
+            let tab = try browserTab(current), session = current.browserAX, before = session.digest
+            let settings = browserSettings()
+            guard current.snapshot.browser?.mode == .ax, current.snapshot.browser?.background == true, settings.background else {
+                session.invalidate()
+                throw DomainError("browser_background_disabled", "Background actions in Brave are turned off in pi-os Settings.")
+            }
+            let prepared: BrowserAXPrepared
+            do {
+                // One budget covers the checks, the settle and the readback polls (≈ 0.7 s at most).
+                let live = try tab.livePage(current.snapshot.targetWindow, fingerprint: current.fingerprint, seconds: 2)
+                prepared = try session.prepare(request, live: live, allowCredentials: settings.credentials)
+            } catch { session.invalidate(); throw error }
+            session.invalidate()
+            var budget = current.budget
+            try prepared.reserve(&budget, contextId: request.contextId)
+            guard !current.inputUncertain else {
+                throw DomainError("input_failed", "An earlier action had an uncertain outcome. Read the page and start a new task; this task cannot act again.")
+            }
+            try current.lease.check()
+            entries[request.contextId]?.budget = budget
+            do { try session.perform(prepared) }
+            catch let uncertain as BrowserAXUncertain { entries[request.contextId]?.inputUncertain = true; throw uncertain.error }
+            // The page may have moved or changed: native coordinate input needs a fresh capture.
+            entries[request.contextId]?.coordinatesFresh = false
+            let confirmed = await session.confirm(prepared, timing: browserTiming)
+            guard confirmed.confirmed else {
+                entries[request.contextId]?.inputUncertain = true
+                throw DomainError("input_failed", "Brave did not confirm the new \(prepared.target.roleName) value, so its state is unknown. Read the page; do not retry.")
+            }
+            let (page, pageError) = await browserReadAfterAction(tab, entry: current)
+            let result = BrowserAXActResult(action: request.action, verification: BrowserAXSession.verification(
+                prepared, note: confirmed.note, before: before, after: page), page: page, pageError: pageError)
+            trace(name, outcome: "performed", result: nil, started: started)
+            await gate.release(); return result
+        } catch {
+            trace(name, outcome: (error as? DomainError)?.code ?? "cancelled", result: nil, started: started)
+            await gate.release()
+            if error is CancellationError { throw DomainError("busy", "Browser action cancelled while waiting") }
+            throw error
+        }
+    }
+    /// Fresh digest after the settle. Only a loading page is waited for; identity changes are final.
+    private func browserReadAfterAction(_ tab: BrowserTabSource, entry: Entry) async -> (BrowserPageResult?, String?) {
+        let waits = [0] + browserTiming.retries
+        var code = "browser_stale"
+        for (attempt, wait) in waits.enumerated() {
+            if wait > 0 { do { try await Task.sleep(nanoseconds: wait) } catch { return (nil, "busy") } }
+            do {
+                try entry.lease.check()
+                let live = try tab.livePage(entry.snapshot.targetWindow, fingerprint: entry.fingerprint, seconds: 0.25)
+                return (try entry.browserAX.read(live), nil)
+            } catch {
+                entry.browserAX.invalidate()
+                code = (error as? DomainError)?.code ?? "browser_stale"
+                guard code == "browser_stale", attempt < waits.count - 1 else { break }
+            }
+        }
+        return (nil, code)
+    }
+    private struct Arguments<T: Decodable>: Decodable { let arguments: T }
+    private func browserAXRoute(_ request: HTTPRequest) async -> HTTPResponse {
+        // Strict contract decoding (BrowserContracts.swift); malformed input never reaches AX.
+        if request.path == "/tools/browser.page" {
+            guard let args = try? JSONDecoder().decode(Arguments<BrowserPageRequest>.self, from: request.body).arguments else {
+                return .error(400, "invalid_arguments", "Expected arguments {contextId, maxChars?, maxControls?}")
+            }
+            do { return .json(ToolOutcome.success(try await browserPage(args))) }
+            catch { return .json(ToolOutcome<BrowserPageResult>.failure(error as? DomainError ?? DomainError("busy", "Page read cancelled"))) }
+        }
+        guard let args = try? JSONDecoder().decode(Arguments<BrowserAXActRequest>.self, from: request.body).arguments else {
+            return .error(400, "invalid_arguments", "Expected arguments {contextId, ref, action, value?}")
+        }
+        do { return .json(ToolOutcome.success(try await browserAXAct(args))) }
+        catch { return .json(ToolOutcome<BrowserAXActResult>.failure(error as? DomainError ?? DomainError("busy", "Browser action cancelled"))) }
     }
 
     /// Reads run concurrently; the agent's launcher.open effect is serialized with input and
@@ -413,6 +549,10 @@ public actor DesktopService {
         // Launcher routes take an optional contextId, so they dispatch before the contextId guard below.
         if request.method == "POST", let launcher, let name = LauncherRoutes.name(forPath: request.path) {
             return await launcherRoute(name, request: request, backend: launcher)
+        }
+        // Private Brave Accessibility routes: token-authed, not in the GET /tools catalog.
+        if request.method == "POST", ["/tools/browser.page", "/tools/browser.axAct"].contains(request.path) {
+            return await browserAXRoute(request)
         }
         if request.method == "POST", ["/tools/browser.connection", "/tools/browser.validate", "/tools/browser.invalidate"].contains(request.path) {
             struct Body: Decodable { let arguments: BrowserArguments }
@@ -461,5 +601,20 @@ public actor DesktopService {
         } catch {
             return .json(ToolOutcome<Snapshot>.failure(error as? DomainError ?? DomainError("busy", "Operation cancelled")))
         }
+    }
+}
+
+extension DesktopService {
+    /// `pi-os --conformance` only: a host whose one context is an in-memory Brave tab built from a
+    /// `browser.page` result (shared/fixtures/browser-ax). The production route codec, checks, page
+    /// reader and ref rules run; actions change only the in-memory tree. No AX, TCC, Brave or effects.
+    public static func browserConformance(token: String, contextId: String, page: BrowserPageResult) async -> DesktopService {
+        let service = DesktopService(captures: FileManager.default.temporaryDirectory, token: token, controlEnabled: { true })
+        await service.useBrowserSettings { BrowserAXSettings(background: true, credentials: false) }
+        await service.useBrowserTiming(.immediate)
+        var snapshot = Snapshot(id: contextId, cursor: Point(x: 0, y: 0), target: nil, underCursor: nil, monitors: [])
+        snapshot.browser = BrowserHint(pinned: true, mode: .ax, background: true)
+        await service.insert(snapshot, browserTab: BrowserFixtureTab(webArea: BrowserFixtureTab.tree(for: page)))
+        return service
     }
 }
