@@ -10,7 +10,7 @@ class FakeCDP implements Cdp {
   events: ((m: string, p: any, s?: string) => void)[] = [];
   targets = [{ type: "page", url: initial.url, targetId: "chosen" }, { type: "page", url: "https://private.test/", targetId: "unrelated" }];
   url = initial.url; loader = "doc1"; refs = ""; value = ""; mutated = 0; closed = false;
-  deny?: string; failMutation = false; afterInspect?: () => void;
+  deny?: string; failMutation = false; afterInspect?: () => void; afterAct?: () => void; settles: any[] = []; failCompact = false;
   async call(method: string, params: any = {}, sessionId?: string): Promise<any> {
     this.calls.push({ method, params, sessionId });
     if (method === "Target.getTargets") return { targetInfos: this.targets };
@@ -22,6 +22,9 @@ class FakeCDP implements Cdp {
     if (method === "Runtime.callFunctionOn") {
       const [name, args] = params.arguments.map((a: any) => a.value);
       if (name === "snapshot") { this.refs = args[1]; return { result: { value: { text: `[${this.refs}1] button "Like fixture"\n[${this.refs}2] textbox "Test note"`, truncated: false } } }; }
+      if (name === "snapshotCompact" && this.failCompact) return { exceptionDetails: { text: "fixture page error" } };
+      if (name === "snapshotCompact") { this.refs = args[0]; return { result: { value: { text: `[${this.refs}page] page (scroll only)\n[${this.refs}1] button "Like fixture" pressed=true\nVisible text: Liked`, truncated: false } } }; }
+      if (name === "settle") { this.settles.push({ args, awaitPromise: params.awaitPromise }); return { result: { value: true } }; }
       if (name === "inspect") {
         const error = this.deny && !(this.deny === 'credential_input_blocked' && args[3] === true);
         this.afterInspect?.();
@@ -29,7 +32,7 @@ class FakeCDP implements Cdp {
       }
       if (name === "act") {
         if (this.deny === 'credential_input_blocked' && args[4] !== true) return { result: { value: { error: this.deny } } };
-        this.mutated++; if (this.failMutation) throw new Error("simulated uncertain delivery"); return { result: { value: { ok: true } } };
+        this.mutated++; if (this.failMutation) throw new Error("simulated uncertain delivery"); this.afterAct?.(); return { result: { value: { ok: true } } };
       }
       if (name === "verifyFill") return { result: { value: args[1] === this.value } };
     }
@@ -186,4 +189,64 @@ test("browser arguments reject scripts, arbitrary shortcuts, unsafe URL schemes,
   assert.throws(() => validateAction({ action: "press", key: "Meta+A", ref: "r1" }));
   assert.throws(() => validateAction({ action: "fill", ref: "r1", text: "a".repeat(20001) }));
   assert.throws(() => validateAction({ action: "scroll", ref: "r1", deltaY: NaN }));
+});
+
+test("act with observe settles once, returns a compact snapshot and makes only its refs valid", async () => {
+  const f = fixture(); await f.session.snapshot(); const old = f.cdp.refs + "1";
+  const result = await f.session.act({ action: "click", ref: old }, undefined, { observe: true });
+  assert.equal(f.cdp.mutated, 1);
+  assert.deepEqual(f.cdp.settles, [{ args: [50, 150], awaitPromise: true }]);
+  // Only the settle wait awaits a page promise; every other helper call stays synchronous.
+  assert(f.cdp.calls.filter(c => c.method === "Runtime.callFunctionOn" && c.params.awaitPromise).length === 1);
+  assert.match(result.verification, /^Action dispatched once\. Verify the requested postcondition in the compact snapshot/);
+  assert.match(result.snapshot!.text, /pressed=true/);
+  assert.equal(result.snapshotError, undefined);
+  const fresh = f.cdp.refs + "1";
+  assert.notEqual(fresh, old);
+  await assert.rejects(f.session.act({ action: "click", ref: old }), /browser_stale/);
+  const fill = await f.session.act({ action: "scroll", ref: f.cdp.refs + "page", deltaY: 400 }, undefined, { observe: true });
+  assert.deepEqual(f.cdp.settles.at(-1), { args: [50, 100], awaitPromise: true });
+  assert.match(fill.snapshot!.text, /Visible text/);
+  await f.session.act({ action: "click", ref: f.cdp.refs + "1" });
+  assert.equal(f.cdp.mutated, 3); await f.session.dispose();
+});
+
+test("a failed post-action observation is reported, never turned into a retryable action error", async () => {
+  const f = fixture(); await f.session.snapshot();
+  f.cdp.failCompact = true; const consumed = f.cdp.refs + "1";
+  const result = await f.session.act({ action: "click", ref: consumed }, undefined, { observe: true });
+  assert.equal(result.performed, true);
+  assert.equal(result.snapshot, undefined);
+  assert.equal(result.snapshotError, "browser_script_failed");
+  assert.match(result.verification, /Take browser_snapshot/);
+  assert.equal(f.cdp.mutated, 1);
+  // Nothing from the failed observation became actionable; the old refs stay consumed.
+  await assert.rejects(f.session.act({ action: "click", ref: consumed }), /browser_stale/);
+  await assert.rejects(f.session.act({ action: "click", ref: f.cdp.refs + "1" }), /browser_stale/);
+  assert.equal(f.cdp.mutated, 1);
+  f.cdp.failCompact = false; await f.session.snapshot();
+  await f.session.act({ action: "click", ref: f.cdp.refs + "1" });
+  assert.equal(f.cdp.mutated, 2); await f.session.dispose();
+});
+
+test("a navigating click skips the page settle and observes the new document through a fresh helper", async () => {
+  const f = fixture(); await f.session.snapshot();
+  f.cdp.afterAct = () => { f.cdp.url = f.native.url = "https://fixture.test/next"; f.cdp.loader = "doc2"; f.cdp.emit("Page.frameNavigated"); };
+  const result = await f.session.act({ action: "click", ref: f.cdp.refs + "1" }, undefined, { observe: true });
+  assert.match(result.snapshot!.text, /Like fixture/);
+  assert.equal(f.cdp.settles.length, 0);
+  assert.equal(f.cdp.calls.filter(c => c.method === "Page.createIsolatedWorld").length, 2);
+  assert.equal(f.cdp.calls.filter(c => c.method === "Target.attachToTarget").length, 1);
+  await f.session.act({ action: "click", ref: f.cdp.refs + "1" });
+  assert.equal(f.cdp.mutated, 2); await f.session.dispose();
+});
+
+test("an uncertain observed action still throws and never observes or retries", async () => {
+  const f = fixture(); await f.session.snapshot(); f.cdp.failMutation = true;
+  const snapshots = () => f.cdp.calls.filter(c => c.method === "Runtime.callFunctionOn" && c.params.arguments[0].value.startsWith("snapshot")).length;
+  const before = snapshots();
+  await assert.rejects(f.session.act({ action: "click", ref: f.cdp.refs + "1" }, undefined, { observe: true }), /uncertain/);
+  assert.equal(snapshots(), before); assert.equal(f.cdp.settles.length, 0);
+  assert(f.hostCalls.some(x => x.name === "browser.invalidate"));
+  await f.session.dispose();
 });

@@ -76,6 +76,81 @@ export const PAGE_SCRIPT = String.raw`(() => {
     if(document.body)visit(document.body,0);
     return {text:lines.join('\n'),truncated,refCount:refs.size};
   }
+  const CONTROLS=['button','link','textbox','checkbox','radio','combobox','switch','tab','menuitem'];
+  const inView = r => r.bottom>0 && r.right>0 && r.top<innerHeight && r.left<innerWidth;
+  const textRect = node => { try { const range=document.createRange(); range.selectNodeContents(node); return range.getBoundingClientRect(); } catch { return node.parentElement.getBoundingClientRect(); } };
+  // Voice/act fast path: controls only (plus a little visible text), viewport first, at most
+  // 100 lines and 60-char names. Same traversal, visibility and credential rules as snapshot().
+  // Controls sharing role and name (several "Like" buttons, liked or not) collapse into one
+  // line WITHOUT a ref: lacking their surrounding post, a compact view could aim at the wrong one.
+  function snapshotCompact(prefix,allowCredentialFields=false) {
+    refs.clear(); const inside=[], outside=[], seen=[]; let visited=0, seenChars=0, truncated=false, frames=0;
+    const root=document.scrollingElement;
+    if(root)refs.set(prefix+'page',{e:root,doc:document,stamp:'page',page:true});
+    const state=e=>(credential(e)?' [credential field; value omitted; input '+(allowCredentialFields===true?'allowed':'blocked in pi-os Settings')+']':'')+(disabled(e)?' disabled':'')+(e.getAttribute('aria-pressed')!==null?' pressed='+e.getAttribute('aria-pressed'):'')+('checked' in e?' checked='+e.checked:'');
+    const visit=(node,depth)=>{
+      // Off-view controls have their own cap, so a long page scrolled far down still reaches
+      // the controls in view.
+      if(++visited>8000 || depth>40 || inside.length>=400){truncated=true;return}
+      if(node.nodeType===3){
+        if(seenChars>=1200||!node.parentElement)return;
+        const s=text(node.textContent);
+        if(s&&inView(textRect(node))){const t=s.slice(0,160);seen.push(t);seenChars+=t.length}
+        return;
+      }
+      if(!(node instanceof Element))return;
+      if(['SCRIPT','STYLE','NOSCRIPT','TEMPLATE','SVG','CANVAS'].includes(node.tagName)||!visible(node))return;
+      if(node.tagName==='IFRAME'){frames++;return}
+      const r=role(node);
+      if(r && CONTROLS.includes(r)){
+        const box=node.getBoundingClientRect(), item={e:node,r,n:name(node),view:inView(box),above:box.bottom<=0};
+        if(item.view)inside.push(item); else if(outside.length<400)outside.push(item); else truncated=true;
+        if(['INPUT','TEXTAREA','SELECT','BUTTON','A'].includes(node.tagName)||node.isContentEditable)return;
+      }
+      if(node.shadowRoot) for(const child of node.shadowRoot.childNodes){if(visited>=8000)break;visit(child,depth+1)}
+      for(const child of node.childNodes){if(visited>=8000)break;visit(child,depth+1)}
+    };
+    if(document.body)visit(document.body,0);
+    const groups=new Map();
+    for(const item of [...inside,...outside]){
+      const n=item.n.length>60?item.n.slice(0,59)+'…':item.n, label=item.r+' '+JSON.stringify(n);
+      const group=groups.get(label);
+      if(group)group.push(item);
+      else groups.set(label,[item]);
+    }
+    const lines=root?['['+prefix+'page] page (scroll only)']:[]; let count=0, kept=0;
+    for(const [label,items] of groups){
+      if(kept>=100){truncated=true;break}
+      kept++;
+      const item=items[0], where=item.view?'':item.above?' (above view)':' (below view)';
+      if(items.length>1){
+        const states=new Map();
+        for(const other of items){const s=state(other.e).trim();if(s)states.set(s,(states.get(s)||0)+1)}
+        const summary=states.size?' ('+[...states].map(([s,n])=>s+' ×'+n).join(', ')+')':'';
+        lines.push('- '+label+' ×'+items.length+where+summary+' (same role and name; no ref: use browser_snapshot with a filter to choose one)');
+        continue;
+      }
+      const stamp=fingerprint(item.e);
+      if(stamp.length>16000){lines.push('- '+label+state(item.e)+where+' (element context exceeds safety limit)');continue}
+      const id=prefix+(++count);
+      refs.set(id,{e:item.e,doc:document,stamp,page:false});
+      lines.push('['+id+'] '+label+state(item.e)+where);
+    }
+    if(frames)lines.push('- '+frames+' frame(s) not exposed by this browser adapter');
+    if(seen.length)lines.push('Visible text: '+seen.join(' | ').slice(0,1200));
+    return {text:lines.join('\n'),truncated,refCount:refs.size};
+  }
+  // Resolve after two animation frames and minMs, or at maxMs (≤ 200), whichever first.
+  function settle(minMs,maxMs) {
+    const cap=Math.max(0,Math.min(200,Number(maxMs)||0)), floor=Math.max(0,Math.min(cap,Number(minMs)||0));
+    return new Promise(resolve=>{
+      let frames=false, waited=false, done=false;
+      const finish=()=>{if(!done){done=true;resolve(true)}};
+      const check=()=>{if(frames&&waited)finish()};
+      setTimeout(()=>{waited=true;check()},floor); setTimeout(finish,cap);
+      try{requestAnimationFrame(()=>requestAnimationFrame(()=>{frames=true;check()}))}catch{frames=true;check()}
+    });
+  }
   function inspect(id,action,key,allowCredentialFields=false,inputText='') {
     if(document.visibilityState!=='visible')return {error:'browser_target_changed'};
     const ref=refs.get(id);
@@ -112,5 +187,5 @@ export const PAGE_SCRIPT = String.raw`(() => {
     return {ok:true};
   }
   function verifyFill(id,expected,allowCredentialFields=false){const e=refs.get(id)?.e;if(!e||!e.isConnected||(credential(e)&&allowCredentialFields!==true))return false;return (e.isContentEditable?e.textContent:e.value)===expected}
-  globalThis.__piBrowser={snapshot,inspect,act,verifyFill,clear:()=>refs.clear()};
+  globalThis.__piBrowser={snapshot,snapshotCompact,settle,inspect,act,verifyFill,clear:()=>refs.clear()};
 })()`;

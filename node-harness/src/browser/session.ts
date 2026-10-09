@@ -1,9 +1,21 @@
 import { createHash, randomUUID } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import type { HostClient } from "../hostClient.js";
 import { BrowserError, CdpConnection, failure, verifyBraveEndpoint, type BrowserConnection, type Cdp } from "./cdp.js";
 import { PAGE_SCRIPT } from "./pageScript.js";
 
 export interface BrowserAction { action: "click" | "fill" | "press" | "scroll"; ref: string; text?: string; key?: string; deltaY?: number }
+export interface BrowserSnapshot { text: string; truncated: boolean }
+export interface BrowserActResult {
+  performed: true;
+  verification: string;
+  /** Compact post-action snapshot (act with `observe`); its refs are the only valid ones. */
+  snapshot?: BrowserSnapshot;
+  /** Error code when the post-action observation failed; the action itself was performed. */
+  snapshotError?: string;
+}
+/** Upper bound of the post-action settle wait per action (comboboxes/autocomplete after fill). */
+const SETTLE_MS: Record<BrowserAction["action"], number> = { click: 150, press: 150, fill: 200, scroll: 100 };
 export const BROWSER_KEYS = ["Enter", "Tab", "Escape", "Space", "Backspace", "Delete", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End"] as const;
 export interface BrowserDependencies {
   verifyEndpoint(connection: BrowserConnection, signal?: AbortSignal): Promise<void>;
@@ -165,77 +177,104 @@ export class BrowserSession {
     if (!result.result?.objectId) failure("browser_script_failed", "The isolated browser helper is unavailable");
     this.helper = result.result.objectId;
   }
-  private async helperCall(method: "snapshot" | "inspect" | "act" | "verifyFill" | "clear", args: unknown[], signal?: AbortSignal) {
+  private async helperCall(method: "snapshot" | "snapshotCompact" | "settle" | "inspect" | "act" | "verifyFill" | "clear", args: unknown[], signal?: AbortSignal) {
     if (!this.helper) failure("browser_stale", messages.browser_stale!);
     const result = await this.page("Runtime.callFunctionOn", { objectId: this.helper,
-      functionDeclaration: "function(method,args){return this[method](...args)}", arguments: [{ value: method }, { value: args }], returnByValue: true }, signal);
+      functionDeclaration: "function(method,args){return this[method](...args)}", arguments: [{ value: method }, { value: args }], returnByValue: true,
+      ...(method === "settle" ? { awaitPromise: true } : {}) }, signal);
     if (result.exceptionDetails) failure("browser_script_failed", "The pinned page operation failed; do not retry a mutation");
     return result.result?.value;
   }
-  snapshot(filter = "", toolSignal?: AbortSignal): Promise<{ text: string; truncated: boolean }> {
+  snapshot(filter = "", toolSignal?: AbortSignal): Promise<BrowserSnapshot> {
+    return this.exclusive(() => this.snapshotLocked(filter, this.combined(toolSignal), false));
+  }
+  /**
+   * One mutation. With `observe`, the same exclusive turn then waits for the page to settle
+   * (≤ 200 ms) and returns a compact snapshot whose refs replace the consumed ones, so the
+   * model verifies and plans without a separate snapshot turn. A failed observation never
+   * turns a performed action into an error (that would invite a retry); it is reported as
+   * `snapshotError` instead.
+   */
+  act(action: BrowserAction, toolSignal?: AbortSignal, options: { observe?: boolean } = {}): Promise<BrowserActResult> {
     return this.exclusive(async () => {
       const signal = this.combined(toolSignal);
-      this.check(signal);
-      if (typeof filter !== "string" || filter.length > 120) failure("invalid_arguments", "Snapshot filter is limited to 120 characters");
-      await this.connect(signal);
-      const native = await this.native(false, undefined, signal);
-      await this.frame(native, signal); await this.world(signal);
-      const revision = this.revision;
-      const result = await this.helperCall("snapshot", [filter.toLowerCase(), `r${this.prefix}-${++this.snapshots}-`, this.allowCredentialFields], signal);
-      this.check(signal);
-      await this.frame(await this.native(false, undefined, signal), signal);
-      if (this.revision !== revision) failure("browser_stale", messages.browser_stale!);
-      if (typeof result?.text !== "string" || result.text.length > 24500) failure("browser_script_failed", "Invalid or oversized page snapshot");
-      this.refs = new Set([...result.text.matchAll(/^\[([^\]\n]+)\]/gm)].map(m => m[1]!));
-      this.snapshotRevision = revision; this.snapshotTime = Date.now();
-      return { text: result.text, truncated: !!result.truncated };
+      const result: BrowserActResult = await this.actLocked(action, signal);
+      if (!options.observe) return result;
+      try {
+        // A navigating click drops the helper (new document): wait in Node instead; a settle
+        // that fails because the document went away is not an observation failure.
+        if (this.helper) await this.helperCall("settle", [50, SETTLE_MS[action.action]], signal).catch(() => { signal?.throwIfAborted(); });
+        else await delay(SETTLE_MS[action.action], undefined, signal ? { signal } : undefined);
+        result.snapshot = await this.snapshotLocked("", signal, true);
+        result.verification = `${action.action === "fill" ? "Text value verified." : "Action dispatched once."} Verify the requested postcondition in the compact snapshot that follows before claiming success.`;
+      } catch (error) {
+        signal?.throwIfAborted();
+        result.snapshotError = error instanceof BrowserError ? error.code : "browser_script_failed";
+      }
+      return result;
     });
   }
-  act(action: BrowserAction, toolSignal?: AbortSignal): Promise<{ performed: true; verification: string }> {
-    return this.exclusive(async () => {
-      const signal = this.combined(toolSignal);
+  private async snapshotLocked(filter: string, signal: AbortSignal | undefined, compact: boolean): Promise<BrowserSnapshot> {
+    this.check(signal);
+    if (typeof filter !== "string" || filter.length > 120) failure("invalid_arguments", "Snapshot filter is limited to 120 characters");
+    await this.connect(signal);
+    const native = await this.native(false, undefined, signal);
+    await this.frame(native, signal); await this.world(signal);
+    const revision = this.revision;
+    const prefix = `r${this.prefix}-${++this.snapshots}-`;
+    const result = compact
+      ? await this.helperCall("snapshotCompact", [prefix, this.allowCredentialFields], signal)
+      : await this.helperCall("snapshot", [filter.toLowerCase(), prefix, this.allowCredentialFields], signal);
+    this.check(signal);
+    await this.frame(await this.native(false, undefined, signal), signal);
+    if (this.revision !== revision) failure("browser_stale", messages.browser_stale!);
+    if (typeof result?.text !== "string" || result.text.length > 24500) failure("browser_script_failed", "Invalid or oversized page snapshot");
+    this.refs = new Set([...result.text.matchAll(/^\[([^\]\n]+)\]/gm)].map(m => m[1]!));
+    this.snapshotRevision = revision; this.snapshotTime = Date.now();
+    return { text: result.text, truncated: !!result.truncated };
+  }
+  private async actLocked(action: BrowserAction, signal?: AbortSignal): Promise<BrowserActResult> {
+    this.check(signal);
+    validateAction(action);
+    if (action.action === "fill") action = { ...action, text: action.text!.replace(/\r\n|\r/g, "\n") };
+    if (this.uncertain) failure("input_failed", "A prior browser action had an uncertain outcome. No more mutations in this task.");
+    if (!this.refs.has(action.ref) || this.snapshotRevision !== this.revision || Date.now() - this.snapshotTime > 60_000) failure("browser_stale", messages.browser_stale!);
+    await this.frame(await this.native(false, undefined, signal), signal);
+    if (!this.refs.has(action.ref)) failure("browser_stale", messages.browser_stale!);
+    const checked = await this.helperCall("inspect", [action.ref, action.action, action.key, this.allowCredentialFields, action.text], signal);
+    this.requireOK(checked);
+    await this.frame(await this.native(true, action, signal), signal);
+    this.check(signal);
+    if (!this.refs.has(action.ref) || this.snapshotRevision !== this.revision) failure("browser_stale", messages.browser_stale!);
+    let mutated = false;
+    try {
+      // The helper repeats visibility, element/context identity, secure/deletion/link
+      // checks in the same JS turn as the click/focus/scroll. No model-supplied script.
+      mutated = true;
+      const result = await this.helperCall("act", [action.ref, action.action, action.key, action.deltaY, this.allowCredentialFields, action.text], signal);
+      if (result?.error && result.error !== "browser_focus_failed") mutated = false;
+      this.requireOK(result);
+      if (action.action === "fill") {
+        this.requireOK(await this.helperCall("inspect", [action.ref, action.action, action.key, this.allowCredentialFields, action.text], signal));
+        await this.page("Input.insertText", { text: action.text }, signal);
+        const verified = await this.helperCall("verifyFill", [action.ref, action.text, this.allowCredentialFields], signal);
+        if (verified !== true) failure("input_failed", "Text delivery was not verified. Do not retry.");
+      } else if (action.action === "press") {
+        const key = action.key === "Space" ? " " : action.key!;
+        const codes: Record<string, number> = { Enter: 13, Tab: 9, Escape: 27, Space: 32, Backspace: 8, Delete: 46, ArrowUp: 38, ArrowDown: 40, ArrowLeft: 37, ArrowRight: 39, Home: 36, End: 35 };
+        const params = { key, code: action.key, windowsVirtualKeyCode: codes[action.key!], ...(action.key === "Enter" ? { text: "\r" } : action.key === "Space" ? { text: " " } : {}) };
+        await this.page("Input.dispatchKeyEvent", { type: "keyDown", ...params }, signal);
+        await this.page("Input.dispatchKeyEvent", { type: "keyUp", key, code: action.key, windowsVirtualKeyCode: codes[action.key!] }, signal);
+      }
       this.check(signal);
-      validateAction(action);
-      if (action.action === "fill") action = { ...action, text: action.text!.replace(/\r\n|\r/g, "\n") };
-      if (this.uncertain) failure("input_failed", "A prior browser action had an uncertain outcome. No more mutations in this task.");
-      if (!this.refs.has(action.ref) || this.snapshotRevision !== this.revision || Date.now() - this.snapshotTime > 60_000) failure("browser_stale", messages.browser_stale!);
-      await this.frame(await this.native(false, undefined, signal), signal);
-      if (!this.refs.has(action.ref)) failure("browser_stale", messages.browser_stale!);
-      const checked = await this.helperCall("inspect", [action.ref, action.action, action.key, this.allowCredentialFields, action.text], signal);
-      this.requireOK(checked);
-      await this.frame(await this.native(true, action, signal), signal);
-      this.check(signal);
-      if (!this.refs.has(action.ref) || this.snapshotRevision !== this.revision) failure("browser_stale", messages.browser_stale!);
-      let mutated = false;
-      try {
-        // The helper repeats visibility, element/context identity, secure/deletion/link
-        // checks in the same JS turn as the click/focus/scroll. No model-supplied script.
-        mutated = true;
-        const result = await this.helperCall("act", [action.ref, action.action, action.key, action.deltaY, this.allowCredentialFields, action.text], signal);
-        if (result?.error && result.error !== "browser_focus_failed") mutated = false;
-        this.requireOK(result);
-        if (action.action === "fill") {
-          this.requireOK(await this.helperCall("inspect", [action.ref, action.action, action.key, this.allowCredentialFields, action.text], signal));
-          await this.page("Input.insertText", { text: action.text }, signal);
-          const verified = await this.helperCall("verifyFill", [action.ref, action.text, this.allowCredentialFields], signal);
-          if (verified !== true) failure("input_failed", "Text delivery was not verified. Do not retry.");
-        } else if (action.action === "press") {
-          const key = action.key === "Space" ? " " : action.key!;
-          const codes: Record<string, number> = { Enter: 13, Tab: 9, Escape: 27, Space: 32, Backspace: 8, Delete: 46, ArrowUp: 38, ArrowDown: 40, ArrowLeft: 37, ArrowRight: 39, Home: 36, End: 35 };
-          const params = { key, code: action.key, windowsVirtualKeyCode: codes[action.key!], ...(action.key === "Enter" ? { text: "\r" } : action.key === "Space" ? { text: " " } : {}) };
-          await this.page("Input.dispatchKeyEvent", { type: "keyDown", ...params }, signal);
-          await this.page("Input.dispatchKeyEvent", { type: "keyUp", key, code: action.key, windowsVirtualKeyCode: codes[action.key!] }, signal);
-        }
-        this.check(signal);
-        return { performed: true, verification: action.action === "fill" ? "Text value verified. Take browser_snapshot to verify the page's resulting state." : "Action dispatched once. Take browser_snapshot and verify the requested postcondition before claiming success." };
-      } catch (error) {
-        if (mutated) {
-          this.uncertain = true;
-          await this.host.invokeTool("browser.invalidate", { contextId: this.contextId }, AbortSignal.timeout(1500)).catch(() => {});
-        }
-        throw error;
-      } finally { this.refs.clear(); }
-    });
+      return { performed: true, verification: action.action === "fill" ? "Text value verified. Take browser_snapshot to verify the page's resulting state." : "Action dispatched once. Take browser_snapshot and verify the requested postcondition before claiming success." };
+    } catch (error) {
+      if (mutated) {
+        this.uncertain = true;
+        await this.host.invokeTool("browser.invalidate", { contextId: this.contextId }, AbortSignal.timeout(1500)).catch(() => {});
+      }
+      throw error;
+    } finally { this.refs.clear(); }
   }
   private requireOK(result: any) {
     if (result?.ok === true) return;

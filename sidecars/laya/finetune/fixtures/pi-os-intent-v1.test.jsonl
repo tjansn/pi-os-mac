@@ -1,0 +1,49 @@
+{"id": "c1", "lang": "en", "utterance": "what's 15 percent of 240", "app": "Finder", "labels": {"intent": "calculate", "tier": 0, "screen": false, "surface": "none"}}
+{"id": "c2", "lang": "en", "utterance": "square root of 1764 divided by 6", "app": "Notes", "labels": {"intent": "calculate", "tier": 0, "screen": false, "surface": "none"}}
+{"id": "c3", "lang": "de", "utterance": "wie viel ist 17 mal 23", "app": "Safari", "labels": {"intent": "calculate", "tier": 0, "screen": false, "surface": "none"}}
+{"id": "c4", "lang": "de", "utterance": "was ergibt zwei hoch sechzehn minus tausend", "app": "Mail", "labels": {"intent": "calculate", "tier": 0, "screen": false, "surface": "none"}}
+{"id": "c5", "lang": "de", "utterance": "rechne aus, wie viel ich im Monat sparen muss, um in drei Jahren 20.000 Euro zu haben", "app": "Numbers", "labels": {"intent": "calculate", "tier": 1, "screen": false, "surface": "none"}}
+{"id": "v1", "lang": "en", "utterance": "convert 72 fahrenheit to celsius", "app": "Finder", "labels": {"intent": "convert", "tier": 0, "screen": false, "surface": "none"}}
+{"id": "v2", "lang": "en", "utterance": "how many euros is 250 dollars", "app": "Safari", "labels": {"intent": "convert", "tier": 0, "screen": false, "surface": "none"}}
+{"id": "v3", "lang": "de", "utterance": "wie viel sind 3 Kilo in Pfund", "app": "Notes", "labels": {"intent": "convert", "tier": 0, "screen": false, "surface": "none"}}
+{"id": "v4", "lang": "de", "utterance": "rechne 5 Meilen in Kilometer um", "app": "Mail", "labels": {"intent": "convert", "tier": 0, "screen": false, "surface": "none"}}
+{"id": "t1", "lang": "en", "utterance": "what time is it in Tokyo right now", "app": "Finder", "labels": {"intent": "time_date", "tier": 0, "screen": false, "surface": "none"}}
+{"id": "t2", "lang": "en", "utterance": "how many days until Christmas", "app": "Notes", "labels": {"intent": "time_date", "tier": 0, "screen": false, "surface": "none"}}
+{"id": "t3", "lang": "de", "utterance": "welcher Wochentag ist der 3. Oktober", "app": "Safari", "labels": {"intent": "time_date", "tier": 0, "screen": false, "surface": "none"}}
+{"id": "t4", "lang": "de", "utterance": "wie spät ist es gerade in New York", "app": "Mail", "labels": {"intent": "time_date", "tier": 0, "screen": false, "surface": "none"}}
+{"id": "f1", "lang": "en", "utterance": "find the PDF about my apartment lease I downloaded last week", "app": "Safari", "labels": {"intent": "file_search", "tier": 0, "screen": false, "surface": "none"}}
+{"id": "f2", "lang": "en", "utterance": "where is the keynote for the Q3 board meeting", "app": "Finder", "labels": {"intent": "file_search", "tier": 0, "screen": false, "surface": "none"}}
+{"id": "f3", "lang": "de", "utterance": "such die Rechnung von der Telekom aus dem August", "app": "Mail", "labels": {"intent": "file_search", "tier": 0, "screen": false, "surface": "none"}}
+{"id": "f4", "lang": "de", "utterance": "finde meine Präsentation über Projekt Phoenix", "app": "Notes", "labels": {"intent": "file_search", "tier": 0, "screen": false, "surface": "none"}}
+{"id": "a1", "lang": "en", "utterance": "open Spotify", "app": "Safari", "labels": {"intent": "app_launch", "tier": 0, "screen": false, "surface": "native_app"}}
+{"id": "a2", "lang": "en", "utterance": "switch to the terminal", "app": "Safari", "labels": {"intent": "app_launch", "tier": 0, "screen": false, "surface": "native_app"}}
+{"id": "a3", "lang": "de", "utterance": "öffne die Systemeinstellungen", "app": "Finder", "labels": {"intent": "app_launch", "tier": 0, "screen": false, "surface": "native_app"}}
+{"id": "a4", "lang": "de", "utterance": "wechsle zu Xcode", "app": "Safari", "labels": {"intent": "app_launch", "tier": 0, "screen": false, "surface": "native_app"}}
+{"id": "w1", "lang": "en", "utterance": "search the web for the best ramen in Berlin", "app": "Notes", "labels": {"intent": "web_search", "tier": 0, "screen": false, "surface": "browser"}}
+{"id": "w2", "lang": "en", "utterance": "google how to reset AirPods", "app": "Finder", "labels": {"intent": "web_search", "tier": 0, "screen": false, "surface": "browser"}}
+{"id": "w3", "lang": "de", "utterance": "such im Internet nach den Öffnungszeiten vom Bürgeramt", "app": "Mail", "labels": {"intent": "web_search", "tier": 0, "screen": false, "surface": "browser"}}
+{"id": "w4", "lang": "de", "utterance": "google mal das Wetter am Wochenende in Hamburg", "app": "Notes", "labels": {"intent": "web_search", "tier": 0, "screen": false, "surface": "browser"}}
+{"id": "u1", "lang": "en", "utterance": "open github.com", "app": "Notes", "labels": {"intent": "open_url", "tier": 0, "screen": false, "surface": "browser"}}
+{"id": "u2", "lang": "en", "utterance": "go to youtube.com", "app": "Finder", "labels": {"intent": "open_url", "tier": 0, "screen": false, "surface": "browser"}}
+{"id": "u3", "lang": "de", "utterance": "öffne spiegel.de", "app": "Mail", "labels": {"intent": "open_url", "tier": 0, "screen": false, "surface": "browser"}}
+{"id": "u4", "lang": "de", "utterance": "ruf heise.de auf", "app": "Notes", "labels": {"intent": "open_url", "tier": 0, "screen": false, "surface": "browser"}}
+{"id": "s1", "lang": "en", "utterance": "turn on do not disturb", "app": "Notes", "labels": {"intent": "system_toggle", "tier": 0, "screen": false, "surface": "none"}}
+{"id": "s2", "lang": "en", "utterance": "set the volume to 20 percent", "app": "Spotify", "labels": {"intent": "system_toggle", "tier": 0, "screen": false, "surface": "none"}}
+{"id": "s3", "lang": "de", "utterance": "schalte Bluetooth aus", "app": "Finder", "labels": {"intent": "system_toggle", "tier": 0, "screen": false, "surface": "none"}}
+{"id": "s4", "lang": "de", "utterance": "mach den Dunkelmodus an", "app": "Safari", "labels": {"intent": "system_toggle", "tier": 0, "screen": false, "surface": "none"}}
+{"id": "d1", "lang": "en", "utterance": "type: see you tomorrow at nine, thanks!", "app": "Mail", "labels": {"intent": "dictation", "tier": 0, "screen": false, "surface": "native_app"}}
+{"id": "d2", "lang": "en", "utterance": "dictate: the quarterly numbers look good, let's ship it", "app": "Slack", "labels": {"intent": "dictation", "tier": 0, "screen": false, "surface": "native_app"}}
+{"id": "d3", "lang": "de", "utterance": "schreib: Ich komme heute etwas später, sorry", "app": "Messages", "labels": {"intent": "dictation", "tier": 0, "screen": false, "surface": "native_app"}}
+{"id": "d4", "lang": "de", "utterance": "tippe ein: Vielen Dank für die schnelle Antwort", "app": "Safari", "labels": {"intent": "dictation", "tier": 0, "screen": false, "surface": "browser"}}
+{"id": "g1", "lang": "en", "utterance": "summarize this article in three bullet points", "app": "Safari", "labels": {"intent": "agent_task", "tier": 1, "screen": true, "surface": "browser"}}
+{"id": "g2", "lang": "en", "utterance": "reply to this email and tell him Tuesday afternoon works for me", "app": "Mail", "labels": {"intent": "agent_task", "tier": 2, "screen": true, "surface": "native_app"}}
+{"id": "g3", "lang": "en", "utterance": "refactor this function to use async await and add unit tests", "app": "Cursor", "labels": {"intent": "agent_task", "tier": 3, "screen": true, "surface": "native_app"}}
+{"id": "g4", "lang": "en", "utterance": "book a table for two at an Italian restaurant nearby for Friday at 8pm", "app": "Safari", "labels": {"intent": "agent_task", "tier": 2, "screen": false, "surface": "browser"}}
+{"id": "g5", "lang": "en", "utterance": "what's the capital of Australia", "app": "Notes", "labels": {"intent": "agent_task", "tier": 1, "screen": false, "surface": "none"}}
+{"id": "g6", "lang": "en", "utterance": "open the last email from Lisa", "app": "Safari", "labels": {"intent": "agent_task", "tier": 2, "screen": false, "surface": "native_app"}}
+{"id": "g7", "lang": "de", "utterance": "schreib eine kurze Mail an Anna, dass ich heute später komme", "app": "Mail", "labels": {"intent": "agent_task", "tier": 2, "screen": false, "surface": "native_app"}}
+{"id": "g8", "lang": "de", "utterance": "was bedeutet diese Fehlermeldung", "app": "Terminal", "labels": {"intent": "agent_task", "tier": 1, "screen": true, "surface": "native_app"}}
+{"id": "g9", "lang": "de", "utterance": "vergleiche die drei Angebote in diesem Ordner und erstelle eine Tabelle mit den Preisen", "app": "Finder", "labels": {"intent": "agent_task", "tier": 3, "screen": true, "surface": "native_app"}}
+{"id": "g10", "lang": "de", "utterance": "übersetze den markierten Text ins Englische", "app": "Pages", "labels": {"intent": "agent_task", "tier": 1, "screen": true, "surface": "native_app"}}
+{"id": "g11", "lang": "de", "utterance": "recherchiere die besten Laptops unter 1500 Euro und vergleiche Akkulaufzeit, Gewicht und Preis", "app": "Notes", "labels": {"intent": "agent_task", "tier": 3, "screen": false, "surface": "browser"}}
+{"id": "g12", "lang": "de", "utterance": "trag den Termin aus dieser Mail in meinen Kalender ein", "app": "Mail", "labels": {"intent": "agent_task", "tier": 2, "screen": true, "surface": "native_app"}}
