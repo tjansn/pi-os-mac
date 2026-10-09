@@ -238,7 +238,11 @@ final class ContextScorerTests: XCTestCase {
         let scorer = try onDeviceScorer()
         for reference in try Self.jsonl("reference.jsonl", as: Reference.self) {
             let p = try XCTUnwrap(offMain { scorer.score(reference.text) }, reference.text)
-            XCTAssertEqual(p, reference.p, accuracy: 1e-3, reference.text)
+            // The embedding runs on whatever compute path the OS picks (Neural Engine, GPU or CPU on a virtual Mac), so
+            // scores drift by a few thousandths across machines and OS releases (0.0035 on a macOS 26 CI runner). A pooling
+            // or normalization bug moves them far more, and must never flip a decision.
+            XCTAssertEqual(p, reference.p, accuracy: 1e-2, reference.text)
+            XCTAssertEqual(p >= ScopeThresholds.suggest, reference.p >= ScopeThresholds.suggest, "decision: \(reference.text)")
         }
     }
 

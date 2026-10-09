@@ -523,7 +523,7 @@ import Speech
     }
 
     func testAPrimaryThatIsNotReadyLeavesTheTakeInPhaseA() throws {
-        guard #available(macOS 26, *) else { throw XCTSkip("SpeechAnalyzer needs macOS 26") }
+        guard #available(macOS 26, *), SpeechTranscriber.isAvailable else { throw XCTSkip("SpeechAnalyzer needs macOS 26") }
         let engine = ParakeetEngine(model: { nil })
         let voice = AppleSpeechVoiceInput(permissions: { .init(microphone: .granted, speechRecognition: .granted) },
                                           clock: SystemVoiceClock(), primary: engine) { MicrophoneCapture(maximumSeconds: $0, microphone: false) }
