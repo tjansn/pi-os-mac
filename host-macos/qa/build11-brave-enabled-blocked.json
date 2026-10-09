@@ -1,0 +1,17 @@
+{
+  "checks": [
+    "Signed native hotkey pinned the selected Brave tab",
+    "Native input cannot bypass the browser route",
+    "Production extension exposes browser tools instead of native mutation"
+  ],
+  "modelCalls": 0,
+  "accountActions": 0,
+  "fixtureOnly": true,
+  "cdpMethodCounts": {},
+  "passed": false,
+  "error": "Error: browser_unavailable: Brave connection was denied, closed or unavailable. Check Brave Setup; no replacement browser was launched.",
+  "credentialsAllowed": true,
+  "appUnderTest": "/Users/tom/dev/Projects/pi-os/host-macos/build/pi-os.app",
+  "bundleVersion": "11",
+  "validationDate": "2026-10-01"
+}

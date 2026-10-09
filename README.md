@@ -1,8 +1,16 @@
 # pi-os
 
-An OS-level AI layer for Windows: press a global hotkey in **any** application,
+An OS-level AI layer: press a global hotkey in **any** application,
 type an instruction, and a [pi](https://github.com/earendil-works/pi) agent
 already knows what you were looking at and has tools to act on it.
+
+**Windows:** current shipping functionality. **macOS 14+:** native AppKit host with
+a signed build-12 native Whisper glass interface with pinned control, persistent reader and conversational
+follow-ups (installed; full parity not yet accepted); [build/run instructions](host-macos/README.md) and
+[acceptance status](host-macos/STATUS.md). Computer-use parity is still gated by
+the [migration plan](MACOS_MIGRATION.md).
+
+Windows architecture:
 
 ```
 Notepad, Explorer, Excel, browser, anything
@@ -33,6 +41,7 @@ The core split:
 | Path | Purpose |
 |------|---------|
 | `host-dotnet/` | C# solution: `WindowsHarness.Host` (WPF background app) + `WindowsHarness.Contracts` (shared schema types) |
+| `host-macos/` | Native Swift/AppKit host, SCK, gated input, model settings and lazy Node supervision (parity candidate) |
 | `node-harness/` | Node service: HTTP server on port 17832, pi SDK agent sessions, desktop tool wrappers |
 | `shared/schemas/` | Canonical TypeScript types for the context snapshot (`desktop-context.ts`) |
 | `shared/protocol/` | The localhost HTTP contract (`protocol.md`) — ports, endpoints, error model |
@@ -43,7 +52,7 @@ See [`DEVELOPMENT.md`](DEVELOPMENT.md) for prerequisites, build and test
 commands, development workflows, environment variables, and instructions for
 refreshing the installed application.
 
-## Use it
+## Use it on Windows
 
 1. Focus any desktop app (Notepad, Explorer, ...).
 2. Press **Ctrl+Alt+Space**.
@@ -91,7 +100,7 @@ in the tray settings page).
 | `shared/schemas/desktop-context.ts` | You touch the context snapshot shape (C# mirror must stay field-compatible) |
 | `AGENTS.md` | You use a coding agent in this repository |
 
-## Current capabilities
+## Current Windows capabilities
 
 - Starts from one desktop shortcut and remains available in the system tray.
 - Captures the active window, screenshot, focused UI element, and monitor

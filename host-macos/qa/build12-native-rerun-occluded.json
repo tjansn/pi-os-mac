@@ -1,0 +1,18 @@
+{
+  "checks": [
+    "certificate-signed application",
+    "LaunchServices host readiness",
+    "signed host exposes all nine native routes (AX + PostEvent granted)",
+    "hotkey opens the native prompt",
+    "pinned identity is exact fixture A",
+    "signed host captured a PNG",
+    "Unicode text delivered only to pinned A",
+    "named Space/Backspace keys work",
+    "Command-S saved the disposable document"
+  ],
+  "appUnderTest": "/Users/tom/dev/Projects/pi-os/host-macos/build/pi-os.app",
+  "modelCalls": 0,
+  "passed": false,
+  "error": "{'ok': False, 'error': {'message': 'Another window covers the requested point; no click or scroll was posted', 'code': 'focus_failed'}}",
+  "validationDate": "2026-10-01"
+}

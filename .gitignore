@@ -27,6 +27,12 @@ logs/
 *.log
 tmp/
 
+# Swift / Xcode
+.build/
+.swiftpm/
+DerivedData/
+*.xcuserstate
+
 # OS
 Thumbs.db
 desktop.ini

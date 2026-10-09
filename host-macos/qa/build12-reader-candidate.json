@@ -1,0 +1,27 @@
+{
+  "checks": [
+    "certificate-signed host",
+    "LaunchServices readiness",
+    "native prompt opens",
+    "native host explicitly requests session retention",
+    "actual Carbon hotkey pinned the exact receiver window",
+    "reader includes accessible follow-up composer",
+    "losing key/frontmost status does not dismiss reader",
+    "reader retains harness beyond ordinary warm TTL without polling",
+    "Shift-Return does not submit a follow-up",
+    "follow-up reuses exact invocation and pinned context",
+    "multiline follow-up delivered exactly",
+    "reader shrinks to working capsule during follow-up",
+    "completed follow-up re-enables reader composer",
+    "failed follow-up preserves previous answer and offers explicit retry",
+    "explicit retry keeps the same thread",
+    "explicit close disposes thread and revokes native context",
+    "receiver and canary text were not edited"
+  ],
+  "modelCalls": 0,
+  "fixtureOnly": true,
+  "appUnderTest": "/Users/tom/dev/Projects/pi-os/host-macos/build/pi-os.app",
+  "bundleVersion": "12",
+  "passed": true,
+  "validationDate": "2026-10-01"
+}

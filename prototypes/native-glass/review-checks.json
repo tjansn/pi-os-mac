@@ -1,0 +1,233 @@
+{
+  "date": "2026-10-01T14:46:46.075Z",
+  "scope": "Disposable HTML prototype smoke tests only",
+  "browserSession": "pi-os-native-prototypes",
+  "passed": true,
+  "checks": [
+    {
+      "name": "clear/clear/ready: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "clear/clear/working: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "clear/clear/answer: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "clear/clear/error: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "clear/frost/ready: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "clear/frost/working: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "clear/frost/answer: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "clear/frost/error: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "clear/graphite/ready: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "clear/graphite/working: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "clear/graphite/answer: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "clear/graphite/error: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "clear/warm/ready: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "clear/warm/working: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "clear/warm/answer: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "clear/warm/error: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "clear/contrast/ready: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "clear/contrast/working: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "clear/contrast/answer: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "clear/contrast/error: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "shelf/clear/ready: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "shelf/clear/working: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "shelf/clear/answer: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "shelf/clear/error: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "shelf/frost/ready: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "shelf/frost/working: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "shelf/frost/answer: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "shelf/frost/error: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "shelf/graphite/ready: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "shelf/graphite/working: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "shelf/graphite/answer: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "shelf/graphite/error: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "shelf/warm/ready: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "shelf/warm/working: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "shelf/warm/answer: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "shelf/warm/error: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "shelf/contrast/ready: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "shelf/contrast/working: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "shelf/contrast/answer: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "shelf/contrast/error: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "whisper/clear/ready: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "whisper/clear/working: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "whisper/clear/answer: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "whisper/clear/error: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "whisper/frost/ready: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "whisper/frost/working: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "whisper/frost/answer: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "whisper/frost/error: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "whisper/graphite/ready: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "whisper/graphite/working: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "whisper/graphite/answer: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "whisper/graphite/error: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "whisper/warm/ready: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "whisper/warm/working: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "whisper/warm/answer: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "whisper/warm/error: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "whisper/contrast/ready: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "whisper/contrast/working: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "whisper/contrast/answer: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "whisper/contrast/error: bottom-center, one-line bar and correct state"
+    },
+    {
+      "name": "clear: narrow viewport, larger type, Dock clearance, opaque material"
+    },
+    {
+      "name": "shelf: narrow viewport, larger type, Dock clearance, opaque material"
+    },
+    {
+      "name": "whisper: narrow viewport, larger type, Dock clearance, opaque material"
+    },
+    {
+      "name": "Shift-Return inserts a newline; composer grows only when needed"
+    },
+    {
+      "name": "Return simulates work and answer without losing Unicode/newline text"
+    },
+    {
+      "name": "Outside click preserves answer/conversation"
+    },
+    {
+      "name": "Preset changes appearance, not answer or pinned context"
+    },
+    {
+      "name": "Reduce transparency is a true opaque fallback"
+    },
+    {
+      "name": "Escape first closes appearance, then explicitly closes conversation"
+    },
+    {
+      "name": "Cancel ends simulated work instead of replaying it"
+    },
+    {
+      "name": "Whisper retains discoverable appearance controls behind pi"
+    },
+    {
+      "name": "Hide/show work preserves the pending simulated completion"
+    }
+  ],
+  "notVerified": [
+    "Native Apple glass rendering",
+    "VoiceOver",
+    "Safari",
+    "Physical keyboard",
+    "10%-speed motion replay",
+    "Contrast over every possible wallpaper",
+    "Every OS accessibility preference"
+  ]
+}

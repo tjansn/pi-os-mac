@@ -72,7 +72,7 @@ public partial class App : Application
             _tray = new TrayService();
             _tray.SettingsRequested += (_, _) => _dispatcher?.BeginInvoke(ShowSettings);
 
-            var apiServer = new HostApiServer(_store, _pipeline);
+            var apiServer = new HostApiServer(_store, _pipeline, _supervisor.Token);
             _apiServerTask = Task.Run(apiServer.Run);
 
             // O.3: one launch covers C# + node; the child dies with us.

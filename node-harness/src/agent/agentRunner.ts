@@ -1,25 +1,27 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import type { CreateAgentSessionOptions, InlineExtension } from "@earendil-works/pi-coding-agent";
+import type { CreateAgentSessionOptions } from "@earendil-works/pi-coding-agent";
 import {
   createAgentSession,
-  DefaultResourceLoader,
   getAgentDir,
   ModelRuntime,
   SessionManager,
+  SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 import type { HostClient, DesktopContextSnapshot, ScreenshotRef } from "../hostClient.js";
 import { createComputerUseExtension } from "./computerUseExtension.js";
+import { BrowserSession } from "../browser/session.js";
+import { BROWSER_TOOLS } from "../browser/tools.js";
+import { LiveAgentSession } from "./liveSession.js";
+export { LiveAgentSession } from "./liveSession.js";
 import { loadScreenshotImage } from "./screenshotImage.js";
 import { resolveModel } from "./modelCatalog.js";
+import { loadAgentResources, registerResourceProviders } from "./resources.js";
+import { effectiveResourceMode, TRUST_WARNING, type ResourceSelection } from "./resourceSettings.js";
+export { loadAgentResources } from "./resources.js";
 
 /**
- * Runs one desktop invocation through a pi agent session.
- *
- * Session choices:
- * - Session per invocation (in-memory): desktop tasks are independent; no
- *   stale history from earlier invocations.
- * - Pi's standard agent directory supplies the user's global extensions,
- *   skills, settings, models, and authentication alongside Computer Use.
+ * One in-memory session per pinned thread; sequential follow-ups retain history,
+ * original model and resource scope. One-shot callers still dispose immediately.
  */
 
 /** Model + reasoning effort chosen in the settings page (modelSettings.ts). */
@@ -36,6 +38,9 @@ export interface AgentRunOptions {
   snapshot: DesktopContextSnapshot & { screenshot?: ScreenshotRef | null };
   capturesDir: string;
   log: (line: string) => void;
+  /** Per-invocation host capabilities. Mac tools remain isolated even when input is enabled. */
+  readOnly?: boolean;
+  resourceSelection?: ResourceSelection;
   /** Stored settings selection; undefined/invalid falls back to pi's default. */
   modelSelection?: ModelSelectionOption | null;
   /** Abort signal; when fired the pi session is aborted and runAgent throws AbortError. */
@@ -67,6 +72,9 @@ export function summarizeSnapshot(snapshot: DesktopContextSnapshot): string {
       process: `${window.processName} (${window.processId})`,
       title: window.title,
       className: window.className,
+      surface: window.surface,
+      shellFolderPath: window.shellFolderPath,
+      documentPath: window.documentPath,
       hwnd: window.hwnd,
       bounds: window.bounds,
       monitorId: window.monitorId,
@@ -86,6 +94,7 @@ export function summarizeSnapshot(snapshot: DesktopContextSnapshot): string {
   return JSON.stringify(
     {
       targetWindow: pickWindow(snapshot.targetWindow),
+      browser: snapshot.browser,
       foregroundWindow: pickWindow(snapshot.foregroundWindow),
       windowUnderCursor: pickWindow(snapshot.windowUnderCursor),
       focusedElement: snapshot.focusedElement && {
@@ -96,6 +105,10 @@ export function summarizeSnapshot(snapshot: DesktopContextSnapshot): string {
       selectedDesktopItems: snapshot.selectedDesktopItems?.map(pickElement),
       selectedDesktopItemCount: snapshot.selectedDesktopItemCount,
       selectedDesktopItemsTruncated: snapshot.selectedDesktopItemsTruncated,
+      screenshot: snapshot.screenshot && {
+        imageWidth: snapshot.screenshot.imageWidth, imageHeight: snapshot.screenshot.imageHeight,
+        bounds: snapshot.screenshot.bounds,
+      },
       cursor: { ...snapshot.cursor, monitorId: cursorMonitor?.id },
       monitors: snapshot.monitors.map(monitor => ({
         id: monitor.id,
@@ -111,27 +124,29 @@ export function summarizeSnapshot(snapshot: DesktopContextSnapshot): string {
   );
 }
 
-export async function loadAgentResources(
-  extension: InlineExtension,
-  cwd = process.cwd(),
-  agentDir = getAgentDir(),
-): Promise<DefaultResourceLoader> {
-  const loader = new DefaultResourceLoader({
-    cwd,
-    agentDir,
-    extensionFactories: [extension],
-  });
-  await loader.reload();
-  return loader;
-}
+export const READ_ONLY_TOOLS = ["desktop_get_context", "desktop_refresh_context", "desktop_capture_window"];
 
 export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult> {
-  const { hostClient, contextId, prompt, snapshot, capturesDir, log, signal, onToolCall, onActivity } = options;
+  const live = await createLiveSession(options);
+  try { return await promptFirst(live, options); }
+  finally { await live.close(); }
+}
 
-  const extension = createComputerUseExtension(contextId, hostClient, capturesDir);
-  const loader = await loadAgentResources(extension);
+export async function createLiveSession(options: AgentRunOptions): Promise<LiveAgentSession> {
+  const { hostClient, contextId, snapshot, capturesDir, log, signal, onToolCall, onActivity } = options;
+  const lifetime = new AbortController();
+  const readOnly = options.readOnly ?? process.platform === "darwin";
+  const browser = process.platform === "darwin" && !readOnly && snapshot.browser?.mode === "cdp"
+    ? new BrowserSession(hostClient, contextId, lifetime.signal) : undefined;
+
+  if (signal?.aborted) throw abortError(signal);
+  const isolated = effectiveResourceMode(process.platform, readOnly, options.resourceSelection) === "isolated";
+  const extension = createComputerUseExtension(contextId, hostClient, capturesDir, readOnly, process.platform, snapshot.screenshot?.imageId, browser);
+  const loader = await loadAgentResources(extension, process.cwd(), getAgentDir(), isolated);
 
   const modelRuntime = await ModelRuntime.create();
+  const disposeProviderBootstrap = !isolated ? await registerResourceProviders(loader, modelRuntime) : undefined;
+  if (signal?.aborted) { disposeProviderBootstrap?.(); throw abortError(signal); }
 
   // Settings-page selection (if any) -> concrete model for THIS invocation.
   const resolved = resolveModel(modelRuntime, options.modelSelection);
@@ -143,6 +158,12 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
     modelRuntime,
     resourceLoader: loader,
     sessionManager: SessionManager.inMemory(),
+    ...(isolated ? {
+      tools: readOnly ? READ_ONLY_TOOLS : [...READ_ONLY_TOOLS, ...(browser ? BROWSER_TOOLS : ["desktop_act"])],
+    } : {}),
+    ...(process.platform === "darwin" || isolated ? {
+      settingsManager: SettingsManager.create(process.cwd(), getAgentDir(), { projectTrusted: false }),
+    } : {}),
   };
   if (resolved.model) {
     sessionOptions.model = resolved.model;
@@ -152,77 +173,50 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
     }
   }
 
-  const { session } = await createAgentSession(sessionOptions);
+  let created: Awaited<ReturnType<typeof createAgentSession>>;
+  try { created = await createAgentSession(sessionOptions); }
+  catch (error) { disposeProviderBootstrap?.(); throw error; }
+  const { session } = created;
   log(
     `[agent] model=${session.model ? `${session.model.provider}/${session.model.id}` : "default"}` +
     ` effort=${session.thinkingLevel}`,
   );
 
-  let responseText = "";
-  let toolCalls = 0;
-  let providerError: string | undefined;
-  session.subscribe((event) => {
-    if (event.type === "tool_execution_start") {
-      toolCalls += 1;
-      log(`[agent] tool -> ${event.toolName}`);
-      onToolCall?.(event.toolName);
-      onActivity?.(event.toolName);
-    } else if (event.type === "tool_execution_end") {
-      onActivity?.(undefined);
-    } else if (event.type === "message_update") {
-      const kind = event.assistantMessageEvent.type;
-      if (kind === "thinking_delta") {
-        onActivity?.("thinking");
-      } else if (kind === "text_delta") {
-        // Narration started: thinking is over.
-        onActivity?.(undefined);
-      }
-    } else if (event.type === "message_end" && event.message.role === "assistant") {
-      // Keep only the most recently completed assistant message. Earlier
-      // messages can be narration before tool calls, not the final answer.
-      responseText = assistantMessageText(event.message);
-
-      // Provider/model failures arrive as a synthetic assistant message
-      // (stopReason "error"); prompt() still resolves normally.
-      if (event.message.stopReason === "error" && event.message.errorMessage) {
-        providerError = event.message.errorMessage;
-        log(`[agent] provider error: ${providerError}`);
-      }
-    }
+  let first = true;
+  return new LiveAgentSession(session, lifetime, { log, onToolCall, onActivity }, async () => {
+    try { await browser?.dispose(); } finally { disposeProviderBootstrap?.(); }
+  }, () => {
+    if (!first) { extension.invalidateScreenshot(); browser?.invalidateReferences(); }
+    first = false;
   });
+}
 
-  if (signal) {
-    // The SDK has no signal input for prompt(); it exposes abort() instead.
-    signal.addEventListener("abort", () => void session.abort(), { once: true });
-  }
-
+export async function promptFirst(live: LiveAgentSession, options: AgentRunOptions): Promise<AgentRunResult> {
+  const { snapshot, prompt, capturesDir, signal } = options;
+  const isolated = effectiveResourceMode(process.platform, options.readOnly ?? process.platform === "darwin", options.resourceSelection) === "isolated";
   const userMessage = [
-    "## Pinned desktop context (captured before you were invoked)",
+    "## Desktop context (target identity pinned before the prompt appeared)",
     summarizeSnapshot(snapshot),
     "",
+    ...(!isolated && process.platform === "darwin" ? ["## Trusted pi compatibility", TRUST_WARNING,
+      "Desktop tool refusals must not be bypassed through another input path.", ""] : []),
     "## Request",
     prompt,
   ].join("\n");
 
-  try {
-    const image = snapshot.screenshot?.filePath
-      ? await loadScreenshotImage(snapshot.screenshot.filePath, capturesDir).catch(() => null)
-      : null;
-    await session.prompt(userMessage, image ? { images: [image] } : undefined);
-  } finally {
-    session.dispose();
-  }
+  if (signal?.aborted) throw abortError(signal);
+  const image = snapshot.screenshot?.filePath
+    ? await loadScreenshotImage(snapshot.screenshot.filePath, capturesDir) : undefined;
+  return live.prompt(userMessage, signal, image);
+}
 
-  if (signal?.aborted) {
-    throw abortError(signal);
-  }
-
-  if (providerError !== undefined) {
-    // Fail the invocation with the real reason instead of completing empty.
-    throw new Error(providerError);
-  }
-
-  return { responseText: responseText.trim(), toolCalls };
+export function promptFollowup(live: LiveAgentSession, prompt: string, signal?: AbortSignal): Promise<AgentRunResult> {
+  return live.prompt([
+    "## Follow-up on the same pinned target",
+    "Keep the thread's original target; never retarget. Earlier screenshots and browser references are historical.",
+    "Take a fresh desktop_capture_window or browser_snapshot before acting. All safety and cumulative input budgets still apply.",
+    "## Request", prompt,
+  ].join("\n"), signal);
 }
 
 /** Normalize an aborted signal into a classifiable error. */

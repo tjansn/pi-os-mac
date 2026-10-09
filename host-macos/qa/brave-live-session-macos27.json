@@ -1,0 +1,22 @@
+{
+  "timestamp": "2026-09-21T17:49:41.985Z",
+  "status": "passed",
+  "checks": [
+    "Attached to the already-running Brave endpoint",
+    "Two identical fixture tabs have separate target identities",
+    "Accessibility snapshot resolves one named textbox",
+    "Unicode input delivered with an input event",
+    "Named Like fixture clicked exactly once, state verified",
+    "Duplicate canary fixture received no text or click",
+    "Pre-existing page targets remain open at their original URLs",
+    "Only fixture page sessions were attached",
+    "Both fixture sessions explicitly detached"
+  ],
+  "scope": "Live transport/fixture proof only; not installed pi-os integration or a deletion sandbox.",
+  "browserVersion": "Chrome/153.0.8010.37",
+  "browserStillRunning": true,
+  "fixtureTabsLeftOpen": 2,
+  "authStoresRead": false,
+  "accountActionsPerformed": false,
+  "browserRestarted": false
+}

@@ -1,8 +1,12 @@
 # Development
 
-This project has a C# Windows host and a Node.js agent harness. The host owns
-the desktop UI and native Windows operations. The Node harness runs the pi
-agent and its tools.
+This project has native C# Windows and Swift/AppKit macOS hosts and a shared
+Node.js agent harness. Hosts own desktop UI and native operations; Node runs
+the pi agent and its tools.
+
+**macOS:** see [`host-macos/README.md`](host-macos/README.md) for build, launch,
+permissions, tests, configuration and installed-preview refresh. The instructions
+below cover Windows unless noted otherwise.
 
 ## Prerequisites
 
@@ -38,9 +42,14 @@ C# host after a C# or XAML change.
 
 Use two terminals when working frequently on the Node harness.
 
+Choose one random token (for example, generate it with
+`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`) and set
+the **same value in both terminals**. Do not commit it.
+
 Terminal 1:
 
 ```powershell
+$env:PI_OS_TOKEN = "<same-random-token>"
 cd node-harness
 npm run dev
 ```
@@ -49,12 +58,14 @@ Terminal 2:
 
 ```powershell
 $env:PI_OS_SUPERVISOR = "0"
+$env:PI_OS_TOKEN = "<same-random-token>"
 cd host-dotnet/WindowsHarness.Host
 dotnet run
 ```
 
-Leave `PI_OS_TOKEN` unset in this workflow. The local services then use their
-development mode without token validation.
+Missing tokens now fail closed. Only for an isolated, intentionally unauthenticated
+dev setup may you set `PI_OS_INSECURE_DEV=1` in both processes instead. Never use
+that switch in an installed build; Mac supervised mode forbids it.
 
 ## Tests
 
@@ -93,7 +104,7 @@ values.
 
 | Variable | Purpose |
 |----------|---------|
-| `PI_OS_TOKEN` | Internal authentication token shared by the two processes. The supervisor generates and passes it automatically. Leave it unset during normal and split development. |
+| `PI_OS_TOKEN` | Internal authentication token shared by the two processes. The supervisor generates and passes it automatically in normal launches; split development must explicitly share the same token. |
 | `PI_OS_HOTKEY` | Overrides the global hotkey, for example `Ctrl+Shift+F9` (default `Ctrl+Alt+Space`). |
 | `PI_OS_AGENT` | Set to `0` or `false` to use deterministic test mode without LLM calls. The agent is enabled by default. |
 | `PI_OS_NODE_PORT` | Changes the Node harness listening port (default `17832`). Also set `PI_OS_NODE_URL` to the matching address for the C# host. |

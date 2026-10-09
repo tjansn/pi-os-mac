@@ -36,6 +36,8 @@ export interface InvocationRecord {
   responseText?: string;
   /** Why the invocation failed/aborted/timed out; terminal failure states only. */
   failureMessage?: string;
+  /** True only while this record owns an open thread. */
+  followupAvailable?: boolean;
 }
 
 const MAX_RECORDS = 200;
@@ -79,6 +81,15 @@ export class InvocationStore {
     this.mutate(id, (r) => {
       r.steps.push({ tool, at: new Date().toISOString(), ok, ...(detail !== undefined ? { detail } : {}) });
     });
+  }
+
+  requeueForFollowup(id: string, prompt: string): boolean {
+    const record = this.records.get(id);
+    if (!record || record.state === "queued" || record.state === "running") return false;
+    record.prompt = prompt; record.state = "queued";
+    delete record.startedAt; delete record.finishedAt; delete record.activity;
+    delete record.responseText; delete record.failureMessage;
+    return true;
   }
 
   /** Publish/clear the live activity line (result-surfacing pill). */

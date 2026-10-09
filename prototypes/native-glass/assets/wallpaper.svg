@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1000" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="sky" x2=".2" y2="1"><stop stop-color="#cfdfeb"/><stop offset=".58" stop-color="#ecede9"/><stop offset="1" stop-color="#e4d5bf"/></linearGradient>
+    <linearGradient id="sand" x1=".12" y1=".04" x2=".8" y2="1"><stop stop-color="#f1e4cf"/><stop offset=".38" stop-color="#dcc3a5"/><stop offset="1" stop-color="#b1937c"/></linearGradient>
+    <linearGradient id="stone" x1="1" x2="0" y2="1"><stop stop-color="#d9d2c7"/><stop offset=".42" stop-color="#b3bec0"/><stop offset="1" stop-color="#728e98"/></linearGradient>
+    <linearGradient id="blue" x1="1" x2=".2" y2="1"><stop stop-color="#92adb9"/><stop offset=".55" stop-color="#678995"/><stop offset="1" stop-color="#355766"/></linearGradient>
+    <linearGradient id="edge" x2="1" y2="1"><stop stop-color="#f9edd8"/><stop offset="1" stop-color="#dcc09f" stop-opacity="0"/></linearGradient>
+    <radialGradient id="sun"><stop stop-color="#fff8e8" stop-opacity=".85"/><stop offset="1" stop-color="#fff8e8" stop-opacity="0"/></radialGradient>
+    <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency=".72" numOctaves="3" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="linear" slope=".045"/></feComponentTransfer><feBlend in="SourceGraphic" mode="soft-light"/></filter>
+  </defs>
+  <g filter="url(#grain)">
+    <path fill="url(#sky)" d="M0 0h1600v1000H0z"/>
+    <ellipse cx="370" cy="300" rx="720" ry="610" fill="url(#sun)"/>
+    <path fill="url(#stone)" d="M1600 331C1400 377 1352 501 1239 551c-234 105-363-12-624 73C355 709 300 936 0 985v15h1600z"/>
+    <path fill="url(#sand)" d="M0 371c296-37 484 213 631 307 220 139 379 43 569 198 70 57 127 92 204 124H0z"/>
+    <path fill="url(#edge)" d="M0 371c296-37 484 213 631 307 220 139 379 43 569 198-224-125-349-30-573-168C464 607 288 387 0 387z"/>
+    <path fill="url(#blue)" d="M1600 530c-141 86-136 237-316 298-149 50-228 63-319 113-53 29-81 42-118 59h753z"/>
+    <path fill="#b5c9cd" opacity=".32" d="M1600 530c-141 86-136 237-316 298-149 50-228 63-319 113-53 29-81 42-118 59 145-61 270-96 383-130 203-61 202-237 370-326z"/>
+  </g>
+</svg>

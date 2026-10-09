@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>pi-os — Choose a native direction</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    body { min-height: 100svh; height: auto; overflow: auto; background: #f5f5f7; color: #232429; }
+    .gallery { max-width: 1460px; margin: auto; padding: 35px 48px 45px; }
+    .gallery-nav { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #77797f; }
+    .gallery-nav .lab-brand { color: #24252a; }.gallery-nav a:last-child { padding: 12px 0; }
+    .gallery-header { margin: 65px 0 34px; display: flex; align-items: end; justify-content: space-between; gap: 28px; }
+    .eyebrow { display: block; color: #85868d; font-size: 10px; letter-spacing: 1.5px; font-weight: 500; margin-bottom: 17px; }
+    h1 { font-weight: 500; font-size: 36px; letter-spacing: -1.35px; line-height: 1.15; margin: 0 0 15px; }
+    .intro { font-size: 14px; line-height: 1.7; color: #72747a; max-width: 570px; margin: 0; }
+    .gallery-controls { display: flex; align-items: center; gap: 15px; padding-bottom: 4px; }.gallery-controls label { font-size: 10px; color: #797b82; display: flex; flex-direction: column; gap: 8px; }
+    .gallery-controls select { font-size: 12px; background: #fff; border: 1px solid #dddde3; border-radius: 9px; padding: 8px 28px 8px 10px; min-width: 115px; cursor: pointer; color: #393b42; }
+    .concepts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; }
+    .concept { min-width: 0; background: white; border-radius: 19px; box-shadow: 0 0 0 1px #00000006, 0 3px 12px #00000003; overflow: hidden; }
+    .preview-stage { width: 100%; aspect-ratio: 1000 / 760; position: relative; overflow: hidden; background: #d7e1e3; border-bottom: 1px solid #00000005; }
+    .preview-stage iframe { width: 1000px; height: 760px; position: absolute; left: 0; top: 0; border: 0; transform: scale(var(--preview-scale, .4)); transform-origin: top left; pointer-events: none; }
+    .concept-copy { padding: 24px 25px 23px; }.concept-heading { display: flex; align-items: baseline; gap: 10px; }.concept-heading > span { font-size: 10px; color: #9c9da3; font-variant-numeric: tabular-nums; }.concept h2 { font-size: 18px; font-weight: 500; letter-spacing: -.35px; margin: 0; }
+    .concept p { color: #787a81; font-size: 12px; line-height: 1.7; margin: 12px 0 20px; min-height: 62px; }.spec { display: flex; gap: 7px; flex-wrap: wrap; margin: 0 0 24px; }.spec span { border-radius: 5px; background: #f5f5f7; padding: 5px 7px; font-size: 9px; color: #7d7e86; }
+    .open-preview { display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: 500; padding-top: 15px; border-top: 1px solid #f0f0f3; }.open-preview > span { color: #96979d; font-size: 17px; }.open-preview:hover { color: #0064cf; }
+    .principles { margin: 36px 0 0; padding: 23px 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 30px; border-top: 1px solid #dfdfe5; }
+    .principles strong { font-size: 11px; font-weight: 500; }.principles p { font-size: 11px; color: #85868d; line-height: 1.7; margin: 8px 0 0; max-width: 340px; }
+    .gallery-footer { padding-top: 12px; font-size: 10px; line-height: 1.7; color: #96979e; display: flex; justify-content: space-between; gap: 25px; }
+    @media(max-width: 1000px) { .gallery { padding: 30px; }h1 { font-size: 31px; }.gallery-header { align-items: start; flex-direction: column; margin-top: 45px; }.concepts { gap: 15px; }.concept-copy { padding: 18px; }.concept p { min-height: 100px; }.principles { gap: 20px; } }
+    @media(max-width: 720px) { .gallery { padding: 25px 20px; }.concepts { grid-template-columns: 1fr; gap: 24px; }.concept p { min-height: auto; }.gallery-header { margin-top: 35px; }.preview-stage { aspect-ratio: 1000 / 600; }.preview-stage iframe { top: -160px; transform: translateY(calc(160px * (1 - var(--preview-scale)))) scale(var(--preview-scale)); }.principles { grid-template-columns: 1fr; gap: 16px; }.gallery-footer { flex-direction: column; } }
+  </style>
+</head>
+<body>
+<main class="gallery">
+  <nav class="gallery-nav" aria-label="Prototype navigation"><a class="lab-brand" href="index.html"><span class="brand-pi">π</span><span>pi-os <span class="brand-sub">/ material studies</span></span></a><a href="index.html">Open the interactive playground ↗</a></nav>
+  <header class="gallery-header"><div><span class="eyebrow">NATIVE, QUIET, YOURS.</span><h1>A quieter place for pi-os.</h1><p class="intro">Bottom-centered. One line until you need more.<br>Three disposable directions for a real native Mac interface.</p></div><div class="gallery-controls"><label>Shared preset<select id="preset" aria-label="Shared theme preset"><option value="clear">Clear · light</option><option value="frost">Frost · soft</option><option value="graphite">Graphite · dark</option><option value="warm">Warm · pearl</option><option value="contrast">Contrast · solid</option></select></label><label>Compare state<select id="state" aria-label="Comparison state"><option value="ready">Ready</option><option value="working">Working</option><option value="answer">Answer</option><option value="error">Error</option></select></label></div></header>
+  <section class="concepts" aria-label="Three design concepts">
+    <article class="concept"><div class="preview-stage"><iframe title="Clear capsule visual preview" data-direction="clear" tabindex="-1" aria-hidden="true" src="index.html?direction=clear&amp;focus=1&amp;embed=1"></iframe></div><div class="concept-copy"><div class="concept-heading"><span>01</span><h2>Clear capsule</h2></div><p>One continuous piece of glass. A quiet π, your words, one action. The answer floats just above it.</p><div class="spec"><span>640 × 58 pt</span><span>Floating answer</span><span>Clear glass</span></div><a class="open-preview" data-open="clear" href="index.html?direction=clear">Try Clear <span>↗</span></a></div></article>
+    <article class="concept"><div class="preview-stage"><iframe title="Native shelf visual preview" data-direction="shelf" tabindex="-1" aria-hidden="true" src="index.html?direction=shelf&amp;focus=1&amp;embed=1"></iframe></div><div class="concept-copy"><div class="concept-heading"><span>02</span><h2>Native shelf</h2></div><p>A little more structure. A visible app anchor and softer rectangular corners. Answer and composer become one surface.</p><div class="spec"><span>680 × 60 pt</span><span>Connected answer</span><span>Frosted material</span></div><a class="open-preview" data-open="shelf" href="index.html?direction=shelf">Try Shelf <span>↗</span></a></div></article>
+    <article class="concept"><div class="preview-stage"><iframe title="Whisper visual preview" data-direction="whisper" tabindex="-1" aria-hidden="true" src="index.html?direction=whisper&amp;focus=1&amp;embed=1"></iframe></div><div class="concept-copy"><div class="concept-heading"><span>03</span><h2>Whisper</h2></div><p>The smallest footprint. Appearance and context live behind π. A short answer stays close to the original line.</p><div class="spec"><span>480 × 50 pt</span><span>Context menu</span><span>Minimal chrome</span></div><a class="open-preview" data-open="whisper" href="index.html?direction=whisper">Try Whisper <span>↗</span></a></div></article>
+  </section>
+  <section class="principles" aria-label="Shared design principles"><div><strong>Anchored to the lower edge.</strong><p>32 pt above the visible work area by default. Grows upward. An optional Dock preview shows the safe-area behavior.</p></div><div><strong>Appearance, not a new app.</strong><p>Five presets. Larger type and an opaque fallback. Target identity and permissions stay independent of visual choices.</p></div><div><strong>Native in the eventual implementation.</strong><p>System typography, system symbols and native materials. HTML approximates the look; it is not a WebView implementation proposal.</p></div></section>
+  <footer class="gallery-footer"><span>Try typing, Shift-Return, follow-ups, working/cancel, errors and appearance options.<br>Answer previews remain open on outside clicks. Escape explicitly closes.</span><span>Simulation only · No model or native control calls.<br>Production app and installed build 11 are unchanged.</span></footer>
+</main>
+<script>
+(() => {
+  const stages = document.querySelectorAll('.preview-stage');
+  const resize = new ResizeObserver(entries => entries.forEach(entry => entry.target.style.setProperty('--preview-scale', entry.contentRect.width / 1000)));
+  stages.forEach(stage => resize.observe(stage));
+  const preset = document.getElementById('preset'), state = document.getElementById('state');
+  function update() {
+    document.querySelectorAll('iframe').forEach(frame => {
+      const params = new URLSearchParams({ direction: frame.dataset.direction, theme: preset.value, state: state.value, focus: '1', embed: '1' });
+      frame.src = 'index.html?' + params;
+    });
+    document.querySelectorAll('[data-open]').forEach(link => { link.href = 'index.html?' + new URLSearchParams({ direction: link.dataset.open, theme: preset.value, state: state.value }); });
+  }
+  preset.addEventListener('change', update); state.addEventListener('change', update);
+})();
+</script>
+</body>
+</html>
