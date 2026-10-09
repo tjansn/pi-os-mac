@@ -19,12 +19,14 @@ public struct ContextWire: Codable, Equatable {
     public var source: ContextSource
     /// Advisory 0...1 score the chip used; telemetry and labels only.
     public var scopeHint: Double?
+    /// Continuity: the pinned target's content-free facts (`InstantContracts.swift`). Nil keeps today's body.
+    public var target: ContextTarget?
 
-    public init(scope: ContextScope, pull: ContextPull, source: ContextSource, scopeHint: Double? = nil) {
-        self.scope = scope; self.pull = pull; self.source = source; self.scopeHint = scopeHint
+    public init(scope: ContextScope, pull: ContextPull, source: ContextSource, scopeHint: Double? = nil, target: ContextTarget? = nil) {
+        self.scope = scope; self.pull = pull; self.source = source; self.scopeHint = scopeHint; self.target = target
     }
 
-    private enum Keys: String, CodingKey { case scope, pull, source, scopeHint }
+    private enum Keys: String, CodingKey { case scope, pull, source, scopeHint, target }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
@@ -32,6 +34,7 @@ public struct ContextWire: Codable, Equatable {
         pull = try c.decode(ContextPull.self, forKey: .pull)
         source = try c.decode(ContextSource.self, forKey: .source)
         scopeHint = try c.decodeIfPresent(Double.self, forKey: .scopeHint)
+        target = try c.decodeIfPresent(ContextTarget.self, forKey: .target)
         if let scopeHint, !ScopeThresholds.isUnit(scopeHint) {
             throw DecodingError.dataCorruptedError(forKey: .scopeHint, in: c, debugDescription: "scopeHint must be 0...1")
         }

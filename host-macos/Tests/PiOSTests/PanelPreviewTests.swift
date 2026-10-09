@@ -252,6 +252,33 @@ import XCTest
         XCTAssertEqual(spoken.map(\.text), ["Listening"], "Nothing is spoken over dictation")
     }
 
+    func testVoiceOverHearsWhatReturnDoesOnTheMaskedCardAndTheTypingOffer() throws {
+        // Review: on these cards ↩ types (into the password field, into the app) instead of what it did before; the footer
+        // says so and is spoken, with the keys as words, and the masked subtitle is never read as bullet characters.
+        let panel = panel(); defer { panel.hide() }
+        var spoken: [String] = []
+        panel.announce = { _, notification, info in
+            if notification == .announcementRequested, let text = info?[.announcement] as? String { spoken.append(text) }
+        }
+        panel.setComposerText(FillCopy.secretMask)
+        panel.presentVoiceDecision(VoiceDecisionPresentation(kind: .secret, title: FillCopy.secretTitle(.credential), subtitle: FillCopy.secretSubtitle,
+                                                             footer: FillCopy.secretFooter(canType: true)), onChip: nil)
+        XCTAssertEqual(spoken.last, "Password field — pi didn’t send this anywhere. Heard text hidden. Return: Type it. Option-Return: Ask pi anyway")
+        XCTAssertFalse(spoken.joined().contains("•"))
+        panel.presentVoiceDecision(VoiceDecisionPresentation(kind: .secret, title: FillCopy.secretTitle(.sensitive), subtitle: FillCopy.secretSubtitle,
+                                                             footer: FillCopy.secretFooter(canType: false, blocked: .optIn)), onChip: nil)
+        XCTAssertTrue(spoken.last?.hasSuffix("Option-Return: Ask pi anyway. To type here, allow password and code fields in Settings → General") == true,
+                      "\(spoken)")
+        panel.setComposerText("git status")
+        panel.presentVoiceDecision(VoiceDecisionPresentation(kind: .check, title: VoiceCopy.checkTitle, subtitle: VoiceCopy.checkEdit,
+                                                             footer: FillCopy.offerFooter(app: "Terminal")), onChip: { _ in })
+        XCTAssertTrue(spoken.last?.hasSuffix("Return: Type into Terminal. Option-Return: Ask pi") == true, "\(spoken)")
+        // Today's check card keeps today's announcement.
+        panel.presentVoiceDecision(VoiceDecisionPresentation(kind: .check, title: VoiceCopy.checkTitle, subtitle: VoiceCopy.checkEdit,
+                                                             footer: VoiceCopy.checkFooter), onChip: { _ in })
+        XCTAssertEqual(spoken.last, VoiceCopy.checkTitle + ". " + VoiceCopy.checkEdit)
+    }
+
     func testArrowingThroughAPreviewedListIsAnnounced() throws {
         let panel = panel(); defer { panel.hide() }
         var spoken: [String] = []
@@ -585,6 +612,94 @@ import XCTest
         XCTAssertNil(panel.voiceToastAnchor)
         panel.presentVoiceDecision(nil, onChip: nil)
         XCTAssertNil(panel.voiceToastAnchor, "a dismissed note never comes back")
+    }
+
+    // MARK: Continuity (DESIGN5 §3.7)
+
+    func testTheFillCaptionSitsUnderTheTranscriptOnlyWhileListening() throws {
+        let caption = FillCaption(text: FillCopy.caption(app: "Safari", kind: .search), help: FillCopy.captionHelp)
+        for preset in AppearancePreset.allCases {
+            for larger in [false, true] {
+                try withAppearance(preset, larger: larger) {
+                    let name = "caption-\(preset.rawValue)-\(larger)"
+                    let panel = panel(); defer { panel.hide() }
+                    let bar = panel.displayedFrame.height, bottom = panel.displayedFrame.minY
+                    panel.setFillCaption(caption)
+                    XCTAssertNil(panel.displayedFillCaption, "\(name): not before listening")
+                    panel.setListening(.listening)
+                    panel.setVoiceTranscript(finalized: "Albert", volatile: "Einstein")
+                    XCTAssertEqual(panel.displayedFillCaption, "Speak to type into Safari · Search", name)
+                    let frame = try XCTUnwrap(panel.fillCaptionFrame, name)
+                    XCTAssertGreaterThan(panel.displayedFrame.height, bar, "\(name): the bar makes room")
+                    XCTAssertEqual(panel.displayedFrame.minY, bottom, "\(name): grows upward only")
+                    XCTAssertTrue(NSRect(origin: .zero, size: panel.composerFrame.size).contains(frame), "\(name): inside the bar")
+                    XCTAssertFalse(frame.intersects(panel.editorFrame), "\(name): under the transcript, never over it")
+                    XCTAssertGreaterThanOrEqual(frame.minY, panel.editorFrame.maxY - 1, "\(name): below the editor")
+                    assertRenders(panel, name)
+                    panel.setListening(.off)
+                    XCTAssertNil(panel.displayedFillCaption, "\(name): only while listening")
+                    XCTAssertEqual(panel.displayedFrame.height, bar, "\(name): the bar is back to its height")
+                    panel.setFillCaption(nil)
+                }
+            }
+        }
+    }
+
+    func testFillNotesKeepTheirWordsAndButtons() {
+        let toasts = [VoiceToast(kind: .typed, text: "Typed into Safari · Search", actions: ["Undo", "Ask pi"], dwell: 5),
+                      VoiceToast(kind: .typed, text: "Searched in Brave Browser · Address bar", actions: ["Undo", "Ask pi"], dwell: 5),
+                      VoiceToast(kind: .notTyped, text: FillCopy.focusMoved, actions: ["Copy"], dwell: 4),
+                      VoiceToast(kind: .notTyped, text: FillCopy.undoRefused, dwell: 4)]
+        for preset in AppearancePreset.allCases {
+            for larger in [false, true] {
+                withAppearance(preset, larger: larger) {
+                    let panel = panel(); defer { panel.hide(); panel.dismissVoiceToast() }
+                    panel.hide()
+                    for toast in toasts {
+                        var pressed: [Int] = []
+                        panel.presentVoiceToast(toast) { pressed.append($0) }
+                        XCTAssertEqual(panel.displayedVoiceToast, toast)
+                        let label = panel.voiceToastLabel
+                        XCTAssertGreaterThanOrEqual(label.frame.width + 0.5, label.needed, "\(toast.text) \(preset) \(larger): never truncated")
+                        let surface = panel.voiceToastSnapshot
+                        guard let rep = surface.content.bitmapImageRepForCachingDisplay(in: surface.content.bounds) else { return XCTFail() }
+                        surface.content.cacheDisplay(in: surface.content.bounds, to: rep)
+                        XCTAssertGreaterThan(rep.pixelsWide, 200)
+                        if !toast.actions.isEmpty {
+                            panel.pressVoiceToast(toast.actions.count - 1)
+                            XCTAssertEqual(pressed, [toast.actions.count - 1], "\(toast.text): the button reports its index")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    func testTheMaskedCardAndTheTypingOfferSitAboveTheBar() throws {
+        let secret = VoiceDecisionPresentation(kind: .secret, title: FillCopy.secretTitle(.credential), subtitle: FillCopy.secretSubtitle,
+                                               footer: FillCopy.secretFooter(canType: true))
+        let offer = VoiceDecisionPresentation(kind: .check, title: VoiceCopy.checkTitle, subtitle: VoiceCopy.checkEdit,
+                                              footer: FillCopy.offerFooter(app: "Terminal"))
+        for preset in AppearancePreset.allCases {
+            for larger in [false, true] {
+                try withAppearance(preset, larger: larger) {
+                    let name = "\(preset.rawValue)-\(larger)"
+                    let panel = panel(); defer { panel.hide() }
+                    panel.setComposerText(FillCopy.secretMask)
+                    panel.presentVoiceDecision(secret, onChip: nil)
+                    XCTAssertEqual(panel.decisionTexts.title, "Password field — pi didn’t send this anywhere")
+                    XCTAssertEqual(panel.decisionTexts.subtitle, "Heard “•••”")
+                    XCTAssertEqual(panel.composerText, "•••", "\(name): the heard words are never shown")
+                    try assertDecisionLayout(panel, "secret-" + name)
+                    assertRenders(panel, "secret-" + name)
+                    panel.setComposerText("git status")
+                    panel.presentVoiceDecision(offer, onChip: { _ in })
+                    XCTAssertEqual(panel.decisionTexts.footer, "↩ Type into Terminal  ·  ⌥↩ Ask pi")
+                    try assertDecisionLayout(panel, "offer-" + name)
+                    assertRenders(panel, "offer-" + name)
+                }
+            }
+        }
     }
 
     func testEveryPresetAndAppearanceLaysOutTheNewStates() throws {

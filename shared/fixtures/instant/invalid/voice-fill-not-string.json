@@ -1,0 +1,17 @@
+{
+  "seq": 2,
+  "elapsedMs": 1,
+  "source": "grammar",
+  "decision": "act",
+  "intent": "open_app",
+  "title": "Open Pages",
+  "action": {
+    "type": "openApp",
+    "bundleId": "com.apple.Pages"
+  },
+  "confirm": false,
+  "voice": {
+    "via": "exact",
+    "fill": true
+  }
+}

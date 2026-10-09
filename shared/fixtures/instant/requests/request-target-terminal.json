@@ -1,0 +1,23 @@
+{
+  "text": "git status",
+  "phase": "final",
+  "seq": 2,
+  "takeId": "take-55",
+  "contextId": "ctx-127",
+  "locale": "en-US",
+  "inputMode": "voice",
+  "accept": [
+    "suggest",
+    "check",
+    "confirm",
+    "fill"
+  ],
+  "target": {
+    "app": "terminal",
+    "field": {
+      "kind": "terminal",
+      "empty": true,
+      "ready": true
+    }
+  }
+}

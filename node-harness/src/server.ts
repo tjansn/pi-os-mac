@@ -28,7 +28,10 @@ import { DictionaryStore, nonCountingLookup } from "./instant/dictionary.js";
 import { appRecords, applyEdit, createLearnLane, displayName, learnFromGesture, outcomeFields, type LearnLane } from "./instant/learned.js";
 import { InMemoryTakeMemo, takeDetailsOf, takeRecordFor } from "./instant/takeMemo.js";
 import { isCommonWord } from "./instant/lexicon.js";
-import { parseInstantRequest, type ClassifierHints, type InstantResponse, type IntentClassifier } from "./contracts/instant.js";
+import {
+  accepts, FILL_NEVER_KINDS, fillActConsistent, fillSubmitAllowed, parseInstantRequest,
+  type ClassifierHints, type InstantRequest, type InstantResponse, type IntentClassifier,
+} from "./contracts/instant.js";
 import { DICTIONARY_LIMITS, parseEditRequest, parseLearnRequest, parseRecognizerTermsMax } from "./contracts/dictionary.js";
 import type { AppRecord } from "./contracts/launcher.js";
 import { HOST_ACTION_TYPES } from "./contracts/actions.js";
@@ -740,7 +743,7 @@ export class HarnessServer {
     }
     response.once("close", () => { if (!response.writableFinished) controller.abort(); });
     const raw = await this.instant.dispatch(body, controller.signal);
-    const result = await this.checkInstantCard(raw);
+    const result = this.checkInstantFill(body, await this.checkInstantCard(raw));
     const entry = key === undefined ? undefined : this.instantLatest.get(key);
     if (entry?.controller === controller) delete entry.controller;
     // Advisory hints that arrived for this take; /invoke may fuse them (never waits for them).
@@ -822,6 +825,36 @@ export class HarnessServer {
       default:
         return this.json(response, 404, { error: { code: "not_found", message: `No route: ${route}` } });
     }
+  }
+
+  /**
+   * Defense in depth for continuity (protocol.md "Continuity"; the dispatcher already decides this way): a fill goes
+   * only to a final that declared `fill` and sent a ready `target.field` it may type into, as one line
+   * (`fillActConsistent`), with `submit` only where the contract allows Return; no other act carries `submit`; a
+   * check card's fill offer only to such a request. A fill that fails becomes a plain miss, an offer that fails is
+   * dropped from the card. The warning names the field kind only.
+   */
+  private checkInstantFill(request: InstantRequest, response: InstantResponse): InstantResponse {
+    const field = request.target?.field;
+    const kind = field?.kind;
+    const fillable = request.phase === "final" && accepts(request, "fill") && kind !== undefined && field?.ready === true
+      && !(FILL_NEVER_KINDS as readonly string[]).includes(kind);
+    if (response.decision === "act") {
+      const fill = response.intent === "fill";
+      const submit = response.action.type === "typeIntoPinned" && response.action.submit === true;
+      if (fillActConsistent(response.intent, response.action) && (!fill || (fillable && (!submit || fillSubmitAllowed(kind!, false))))) return response;
+      console.warn(`[instant] dropped an inconsistent fill act field=${kind ?? "none"}`);
+      return {
+        seq: response.seq, elapsedMs: response.elapsedMs, source: response.source,
+        ...(response.scope ? { scope: response.scope } : {}), decision: "fallthrough", reason: "no_match",
+      };
+    }
+    if (response.decision === "fallthrough" && response.voice?.fill !== undefined && !(fillable && response.voice.check === true)) {
+      const { fill: _offer, ...voice } = response.voice;
+      console.warn(`[instant] dropped a fill offer field=${kind ?? "none"}`);
+      return { ...response, voice };
+    }
+    return response;
   }
 
   /** Defense in depth: every instant card must pass the strict catalog check before a host sees it. */
@@ -1623,6 +1656,8 @@ export class HarnessServer {
       ...(context ? { source: context.source, pull: context.pull } : {}),
       general, followup, window: unavailable === undefined, ...(unavailable ? { code: unavailable } : {}),
       rules, band: scopeBand(rulesScore), ...hint,
+      // Continuity (closed vocabulary): the focused field's kind and whether pi-os's own open put the app in front.
+      ...(context?.target?.field ? { field: context.target.field } : {}), ...(context?.target?.anchored ? { anchored: true } : {}),
       attachments: turn.attachments?.length ?? 0, kinds: attachmentKinds(turn.attachments), images: stats.images, chars: stats.textChars,
     });
     if (context?.source === "user") {

@@ -9,6 +9,8 @@
  * prompt and tools): the Windows host and older Mac builds send none.
  */
 
+import { INSTANT_FIELD_KINDS, type InstantFieldKind } from "./instant.js";
+
 export const CONTEXT_SCOPES = ["general", "window"] as const;
 export type ContextScope = (typeof CONTEXT_SCOPES)[number];
 
@@ -31,6 +33,17 @@ export interface ContextWire {
   source: ContextSource;
   /** Advisory 0..1 score the host's chip used (rules fused with its local scorer). Telemetry and labels only. */
   scopeHint?: number;
+  /**
+   * Continuity (DESIGN5 §8.4), macOS only: content-free facts about the pinned target, rendered as at most one
+   * prompt sentence. Never a name, title, URL, label or value; it grants no tool or authority. Absent: today.
+   */
+  target?: ContextTarget;
+}
+
+/** `context.target`: the bound focused field's kind at the final, and whether pi-os's own open put the app in front. */
+export interface ContextTarget {
+  field?: InstantFieldKind;
+  anchored?: boolean;
 }
 
 export type ContextParse = { ok: true; context?: ContextWire } | { ok: false; error: string };
@@ -50,8 +63,8 @@ function oneOf<T extends string>(values: readonly T[], value: unknown): value is
 /**
  * Strict validation of `context` (400 `invalid_arguments` on failure; errors never echo values).
  * Absent or null → `{ok: true, context: undefined}`, which means legacy window behaviour. Unknown keys
- * are dropped and `scopeHint: null` counts as absent (protocol convention, as Swift's Codable decodes
- * it); the returned object is a normalized copy.
+ * are dropped (also inside `target`) and null on an optional member counts as absent (protocol
+ * convention, as Swift's Codable decodes it); the returned object is a normalized copy.
  */
 export function parseContext(value: unknown): ContextParse {
   if (value === undefined || value === null) return { ok: true };
@@ -63,6 +76,20 @@ export function parseContext(value: unknown): ContextParse {
   if (value.scopeHint !== undefined && value.scopeHint !== null) {
     if (!isUnit(value.scopeHint)) return { ok: false, error: "context.scopeHint must be 0..1" };
     context.scopeHint = value.scopeHint;
+  }
+  if (value.target !== undefined && value.target !== null) {
+    const target = value.target;
+    if (!isRecord(target)) return { ok: false, error: "context.target must be an object" };
+    const parsed: ContextTarget = {};
+    if (target.field !== undefined && target.field !== null) {
+      if (!oneOf(INSTANT_FIELD_KINDS, target.field)) return { ok: false, error: "context.target.field must be a field kind" };
+      parsed.field = target.field;
+    }
+    if (target.anchored !== undefined && target.anchored !== null) {
+      if (typeof target.anchored !== "boolean") return { ok: false, error: "context.target.anchored must be a boolean" };
+      parsed.anchored = target.anchored;
+    }
+    context.target = parsed;
   }
   return { ok: true, context };
 }

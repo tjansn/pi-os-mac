@@ -3,6 +3,80 @@
 2026-09-15. Target machine: Apple Silicon, macOS 26.5.2, Xcode 26.6 / Swift 6.3.3,
 Node 24.15.0. Deployment target is macOS 14; that OS has not been exercised here.
 
+## 2026-10-08 continuity — Mac side; stage A installed (main e9ab5ca), the rest built and tested offline, NOT installed
+
+Branch `feat/continuity`. Tom: after "open Safari", the next command acts in that Safari window, and the next words go
+into the field that has the caret, while questions about the page still go to the agent. Overview, Tom's decisions,
+the decision order and what is measured: [VOICE_MAGIC.md](../VOICE_MAGIC.md#pass-5-2026-10-08-continuity); wire:
+[protocol.md](../shared/protocol/protocol.md) "Continuity"; live QA plan: [qa/continuity/README.md](qa/continuity/README.md).
+**Installed:** stage A only (links in the browser in front, the wire contract). Everything else here is not in the
+installed app; refresh only with `PI_OS_SIGN_IDENTITY` (never ad hoc).
+
+- **Links in the browser in front** (stage A, installed; `LauncherService.swift`, `PiOSCore/BrowserFamily.swift`):
+  `execute(.openURL)` picks a browser after `validateURL` (a browser pi-os launched ≤ 5 s ago with no other activation
+  since, unless the take chose its target explicitly; else the take's pinned app if it is one of 20 allowlisted bundle
+  ids, matched case-insensitively; else the default handler) and opens through `NSWorkspace.open([url],
+  withApplicationAt:)` with `activates = true`, for instant acts and the agent's `launcher.open` alike. A refusal falls
+  back to the default browser with an `open_fallback` note. `PendingLaunches` keeps the launched app's
+  `NSRunningApplication` (dropped on another activation, failure, quit or after 5 s). `launcher-actions.jsonl` gets the
+  closed `browser` label (launching, pinned, default, fallback). No Apple Events, no new permission.
+- **Anchor and race** (`PiOSCore/Continuity.swift`, `Application.swift`, `ContextChipController.swift`): the 120 s
+  anchor from a successful pi-os open on either route; settle (front app, first on-screen window and focused window
+  agree; 25 ms polls, ≤ 1.5 s / 4 s cold; the first AX message to the new app, which also wakes a Chromium web tree, is
+  paid there); dropped on another activation, quit, process change, window off screen at key-down, 120 s, Not
+  this / No I meant on the opening take, sleep, lock, session resign and computer control off. A take that starts while
+  a launch is pending or settling (≤ 5 s) is marked awaiting (no field bound, chip "Safari (opening…)"), re-pins through
+  `retarget(…, include: false)` when the launching app is in front with a window before the final, and waits ≤ 150 ms
+  at the final. Explicit choices (Tab, ⇧ chord, tether, pointing, Ask About This Window…) ignore the anchor and skip a
+  pending launch for links. Chip tooltip "· opened by your last command".
+- **Field facts** (`PiOSCore/FieldKind.swift`, `FieldFacts.swift`, `DesktopAX.swift`, `CredentialFields.swift`): four
+  quick reads after today's key-down summary (inside the existing 25 ms cap), the classification off the main thread
+  after the bar (≤ 24 ancestors, labels matched against closed EN/DE lists and dropped, lengths only, nothing for a
+  credential field), and the app's own focused element re-read at the final as the `BoundField` (`CFEqual`, else pid,
+  role, frame and DOM id). Kinds: credential, rename (Finder), confirm, sensitive, terminal, address, search, text,
+  multiline. Not ready: frame mostly outside the window, a loading or nested web area, an incomplete ancestor walk with
+  no web area seen, a selection in a text field, text area or terminal, focus that moved between two eligible fields
+  during the hold. WebKit's `AXValueAutofillType` credentials/strong password marks a credential field.
+  `AXManualAccessibility` is set only for allowlisted Chromium browsers, once per process (never Electron apps, C9).
+- **Fills** (`FillSession.swift`, `CommandController.swift`, `PromptPanel.swift`, `NativeInput.swift`,
+  `PiOSCore/TextInput.swift`, `LauncherPolicy.swift`): finals carry the content-free `target`; `accept` gains `fill`
+  only with the Settings switch on, computer control ready, a bound field, and for credential or code fields the
+  credential opt-in. A fill hides the bar, types one line (`TextInput.singleLine`) through `DesktopService.act` bound to
+  the field (focus regained within 120 ms, every event re-checked), adds one separating space after other text, then
+  presses Return as its own gated `pressKey` only where `LauncherPolicy.pressesReturn` allows it for the host's bound
+  field (search box, address bar) and the lengths show the field holds exactly the typed text. Undo (bare "nein/no" or
+  the note within 5 s): exact element, lengths and caret match, typed range selected and read back, one gated
+  Backspace; refused when unproven; after a submitted search nothing is deleted ("Already searched — go back with ⌘[").
+  "nein, X" replaces within 30 s (`ownFill` on the wire), Ask pi undoes and asks. The check card's fill offer types the
+  (edited) card text without Return. Read-only mode reports only credential or code fields (`reportedField`), never
+  declares a fill.
+- **Password and code fields** (critic C5): every undecided fallthrough (all reasons but `deictic` and `compound`, below
+  the window band, not "frag pi …"), and a final with no answer, shows the masked card ("Password field — pi didn't send
+  this anywhere", "•••", "↩ Type it" only with the opt-in and a bound field, else the reason; "⌥↩ Ask pi anyway"). The
+  words never show in the bar or a live preview, are never journaled (`VoiceJournal.keeps(field:)`), never offered on
+  Copy, and a secret fill keeps no text in memory.
+- **Typing path for everyone:** the Unicode payload goes on key-down only (`PI_OS_TYPE_KEYUP_PAYLOAD=1` restores it),
+  the per-event duplicate inspect is gone, and `PI_OS_TYPE_CHUNK` (off by default) sends ≤ 20 UTF-16 units per event.
+- **Settings:** Voice → "Type into the focused field" (default on; the kill switch). General → "Allow input in username
+  and password fields" keeps its title; its tooltip and consent text now name code, PIN and payment fields.
+- **Safari same tab** (`SafariAddressRoute.swift`, `PI_OS_SAFARI_SAME_TAB=1`, default off): `AXValue` + `AXConfirm` on
+  Safari's empty start page pi-os just opened, verified ≤ 1.5 s; an unknown outcome ends as a note with "Open in a new
+  tab", never a second copy on its own.
+- **QA fixtures** (`PiOSInputFixture --continuity`, `qa/continuity/page-fixture`, `ax-counts.swift`): live QA only,
+  with Tom; `--self-test` and the page server's tests run in CI without a window.
+- **Logs:** `[perf] fill kind=… outcome=… return=… verify=… ms=…` and the `[launcher] … browser=…` line of a link (with
+  `PI_OS_PERF=1`), closed vocabulary only; never a value, label, title, URL or transcript. Fills go through
+  `FillSession`, not the launcher, so `launcher-actions.jsonl` has no line for them (its `submit` label belongs to a
+  launcher-path `typeIntoPinned` with `submit`, which no host path sends today).
+- **Verified offline** (the integration head, `afb2f72` plus the docs): `npm run check` and `npm run build` clean;
+  guarded `npm test` 731/731; `swift build` and `swift build --build-tests` after `swift package clean`, 0 warnings;
+  `PI_OFFLINE=1 PI_OS_AGENT=0 swift test` 858 tests, 0 failures, 3 skipped (the 2 Parakeet opt-in tests and the opt-in
+  live desktop probe); `npm run test:macos` 1/1.
+- **Not verified live** (Q1–Q11 in the QA plan): Safari's empty-tab reuse and `AXConfirm`; WebKit/Chromium field kinds
+  for real search boxes; `CFEqual` identity between the per-app and system-wide focused element for web fields (pass
+  or fail for every fill); the 120 ms focus settle; selection read-back for Undo and the length check per engine;
+  chunking and the key-up payload per engine (Electron); the race on a cold launch; Spaces, full screen, Stage Manager.
+
 ## 2026-10-08 visible items and auto-minimize — Mac side, installed 2026-10-08 (signed, main 1f114f1)
 
 Branch `vis/swift` on `feat/visible-open` (contract `53ede15`). Tom: "öffne Radfotos" on the desktop should open the

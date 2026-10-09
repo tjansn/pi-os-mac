@@ -60,6 +60,19 @@ public enum ContextChipCopy {
         guard included || pulled, let appName else { return "Ready for a follow-up" }
         return "Ready for a follow-up · " + (pulled ? "Looked at \(shortName(appName))" : "\(shortName(appName)) included")
     }
+
+    // Continuity (DESIGN5 §3.7). The chip keeps meaning what the agent sees; these only say where it came from.
+    /// The chip while pi-os is still opening the app the take will re-pin to (§3.5): "Safari (opening…)".
+    public static func opening(_ app: String) -> String { shortName(app) + " (opening…)" }
+    /// Appended to the tooltip of a take pinned to the app pi-os's previous command opened.
+    public static let anchoredSuffix = " · opened by your last command"
+    /// The tooltip with the continuity provenance (`anchored`): no suffix for a hidden chip or a follow-up's.
+    public static func tooltip(_ chip: ContextChipPresentation, anchored: Bool) -> String {
+        let base = tooltip(chip)
+        guard anchored, !chip.isFollowup, chip.state != .hidden, !base.isEmpty else { return base }
+        let lines = base.components(separatedBy: "\n")
+        return ([lines[0] + anchoredSuffix] + lines.dropFirst()).joined(separator: "\n")
+    }
 }
 
 @MainActor public final class ContextChipController {
@@ -89,7 +102,33 @@ public enum ContextChipCopy {
         }
     }
 
-    public var presentation: ContextChipPresentation { choice.presentation(appName: appName, bundleId: bundleId) }
+    /// Continuity (DESIGN5 §3.5, §3.7): where the take's app came from.
+    public enum Provenance: Equatable {
+        case none
+        /// pi-os is still opening this app; the take re-pins to it if it comes to the front before the final.
+        case opening(appName: String, bundleId: String?)
+        /// The pinned app is the one pi-os's previous command opened.
+        case anchored
+    }
+    public private(set) var provenance: Provenance = .none
+
+    public var presentation: ContextChipPresentation {
+        if case .opening(let name, let bundle) = provenance {
+            return choice.presentation(appName: ContextChipCopy.opening(name), bundleId: bundle)
+        }
+        return choice.presentation(appName: appName, bundleId: bundleId)
+    }
+    /// The chip's tooltip including the provenance suffix.
+    public var tooltip: String { ContextChipCopy.tooltip(presentation, anchored: provenance == .anchored) }
+
+    /// The take is racing a pi-os launch (§3.5): the chip names the app being opened until the re-pin, or until the
+    /// race ends (`setProvenance(.none)`) and the chip names the pinned app again. Display only: the choice, the scope
+    /// and the capture start are untouched (safe before `onStartCapture` is wired).
+    public func setProvenance(_ next: Provenance) {
+        guard provenance != next else { return }
+        provenance = next
+        surface?.showContextChip(presentation)
+    }
     /// What /invoke (or /followup) sends.
     public var wire: ContextWire { choice.wire }
     public var included: Bool { choice.effective == .window }
@@ -132,10 +171,12 @@ public enum ContextChipCopy {
         refresh()
     }
 
-    /// Tab or a click: off ↔ on, suggested → off. Sticky for the take.
+    /// Tab or a click: off ↔ on, suggested → off. Sticky for the take. An explicit choice is about the window in front,
+    /// so a pending "(opening…)" label goes (§3.6: explicit choices beat continuity).
     public func toggle() {
         guard choice.available else { return }
         choice.toggle()
+        if case .opening = provenance { provenance = .none }
         refresh()
     }
 
@@ -143,6 +184,7 @@ public enum ContextChipCopy {
     public func choose(include: Bool) {
         guard choice.available else { return }
         choice.choose(include: include)
+        if case .opening = provenance { provenance = .none }
         refresh()
     }
 
@@ -150,7 +192,7 @@ public enum ContextChipCopy {
     /// Pointing at an element of another window re-pins without a choice (`include: false`): the element
     /// then suggests its window (`setPointing`), and an earlier Tab that left the window out still does.
     public func retarget(appName: String, bundleId: String?, include: Bool = true) {
-        self.appName = appName; self.bundleId = bundleId
+        self.appName = appName; self.bundleId = bundleId; provenance = .none
         var next = ContextChoice(available: true, setting: choice.setting, userChoice: include ? true : choice.userChoice == false ? false : nil,
                                  threadScope: choice.threadScope, capturePolicy: choice.capturePolicy)
         next.pRules = choice.pRules; next.pLR = choice.pLR; next.rulesAnchored = choice.rulesAnchored

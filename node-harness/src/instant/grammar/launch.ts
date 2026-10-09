@@ -1,6 +1,7 @@
 import { isHttpUrl } from "../../contracts/actions.js";
 import { normalizeSpokenUrl, spokenCore, type Normalized } from "../normalize.js";
 import type { MatchContext, Parsed } from "../types.js";
+import { testSiteUrl } from "./testSites.js";
 
 /**
  * System toggles, web search, quicklinks, URLs and "open X" (EN + DE).
@@ -137,6 +138,48 @@ export function isWebSearchPhrase(lower: string): boolean {
   return WEB_RULES.some(([pattern]) => pattern.test(lower));
 }
 
+/**
+ * Bare search forms (continuity, DESIGN5 §4.6): "search for X", "search X", "look for X", "such nach X", "suche
+ * (nach) X", "such mal nach X". Not the web and site grammar above ("search the web for", "google X", "suche auf
+ * YouTube nach"), and not a search of one's own things ("search my files for", "suche meine Rechnung"). Only a
+ * final that declares `accept: "fill"` with a browser target, or a focused search field, reads them: the query goes
+ * into that search box with one Return, or a browser without one opens the default web search. Everywhere else
+ * these words keep today's meaning (a file search, the agent).
+ */
+const BARE_SEARCH_EN = /^(?:search\s+for|search|look\s+for)\s+(?!(?:the\s+)?(?:web|internet|net)(?![\p{L}\p{N}_])|online(?![\p{L}\p{N}_])|(?:on|in|for|my)(?:\s|$)|(?:youtube|wikipedia|google|github|amazon|reddit|twitter|maps|apple\s+maps)(?![\p{L}\p{N}_])|x\s+for(?![\p{L}\p{N}_]))(.+)$/iu;
+const BARE_SEARCH_DE = /^such(?:e)?(?:\s+(?:mal|bitte|doch|jetzt))*(?:\s+nach)?\s+(?!(?:im|in|auf|bei|mit|nach)(?:\s|$)|(?:mein|meine|meinen|meinem|meiner)(?![\p{L}\p{N}_]))(.+)$/iu;
+
+/** The query of a bare search form in `said` (NFC text, original case, leading fillers removed), or null. */
+export function bareSearchQuery(said: string): string | null {
+  const m = BARE_SEARCH_EN.exec(said) ?? BARE_SEARCH_DE.exec(said);
+  const query = m?.[1]?.trim();
+  return query || null;
+}
+
+/** The registrable part of a URL's host, roughly its last two labels ("de.wikipedia.org" → "wikipedia.org"); "" when unparsable. */
+function siteOf(url: string): string {
+  try {
+    return new URL(url).hostname.toLowerCase().replace(/\.$/, "").split(".").slice(-2).join(".");
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * DESIGN5 §4.6 step 2: the search of the known search site an anchored page belongs to ("open wikipedia" then "such
+ * nach Albert Einstein" with no search box focused searches Wikipedia; DE picks the German edition, as the site
+ * grammar does), or null for any other page. Node's take memo supplies the URL; it never crosses the wire.
+ */
+export function siteSearchFor(pageUrl: string, query: string, lang: "en" | "de"): { url: string; engine: string } | null {
+  const site = siteOf(pageUrl);
+  if (!site.includes(".")) return null;
+  const keys = Object.keys(SITE_SEARCH).filter((key) => siteOf(SITE_SEARCH[key]!.template.replace("%s", "q")) === site);
+  const key = keys.find((candidate) => candidate.endsWith("-de") === (lang === "de")) ?? keys[0];
+  if (!key) return null;
+  const url = expandTemplate(SITE_SEARCH[key]!.template, query);
+  return isHttpUrl(url) ? { url, engine: SITE_SEARCH[key]!.engine } : null;
+}
+
 /** Encodes like a form field (spaces as "+"), the way search engines expect. */
 export function expandTemplate(template: string, query: string): string {
   return template.replace("%s", encodeURIComponent(query).replace(/%20/g, "+"));
@@ -242,7 +285,9 @@ function openResult(rawTarget: string, strength?: OpenStrength): Parsed | null {
   const named = /^(?:app|page) \S/.test(target) ? target.slice(target.indexOf(" ") + 1) : undefined;
   const url = toWebUrl(target) ?? (named ? toWebUrl(named) : null);
   if (url) return effective === "bare" ? null : { kind: "url", url, label: urlLabel(url) };
-  const site = effective === "bare" ? undefined : SITE_HOME[target] ?? (named && strength === undefined ? SITE_HOME[named] : undefined);
+  // QA-only fixture names come after the real sites; the table is empty unless PI_OS_TEST_SITES_PORT is set (WP6).
+  const site = effective === "bare" ? undefined
+    : SITE_HOME[target] ?? testSiteUrl(target) ?? (named && strength === undefined ? SITE_HOME[named] : undefined);
   const parsed: OpenParse = site ? { kind: "open", target, siteUrl: site } : { kind: "open", target };
   if (effective !== "strong") parsed.strength = effective;
   return parsed;

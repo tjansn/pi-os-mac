@@ -28,6 +28,48 @@ public enum DesktopAX {
             guard let value = read(object, name), CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
             return (value as! AXUIElement)
         }
+        /// `AXUIElementIsAttributeSettable` within the budget; false when the budget is spent or the call fails.
+        func settable(_ element: AXUIElement, _ name: String) -> Bool {
+            let remaining = deadline.timeIntervalSinceNow
+            guard remaining > 0 else { return false }
+            AXUIElementSetMessagingTimeout(element, Float(min(remaining, 0.08)))
+            var settable: DarwinBoolean = false
+            return AXUIElementIsAttributeSettable(element, name as CFString, &settable) == .success && settable.boolValue
+        }
+    }
+    /// The focused control at key-down (DESIGN5 §5.1 row 1), read before the bar takes keys: the element itself (host
+    /// memory only, never logged or sent) and four quick facts. No value is read for these.
+    public struct KeyDownField {
+        public let element: AXUIElement
+        public let subrole: String?
+        public let valueSettable: Bool
+        public let focused: Bool?
+        /// `AXSelectedTextRange` length: 0 is a caret.
+        public let selectionLength: Int?
+    }
+    /// The length of an `AXSelectedTextRange` value (a CFRange inside an AXValue); nil for anything else.
+    static func rangeLength(_ value: Any?) -> Int? {
+        guard let value, CFGetTypeID(value as CFTypeRef) == AXValueGetTypeID() else { return nil }
+        let ax = value as! AXValue
+        var range = CFRange()
+        guard AXValueGetType(ax) == .cfRange, AXValueGetValue(ax, .cfRange, &range) else { return nil }
+        return range.length
+    }
+    /// A frame from `AXPosition` and `AXSize` values; nil unless both decode.
+    static func frame(position: Any?, size: Any?) -> Rect? {
+        guard let position, let size, CFGetTypeID(position as CFTypeRef) == AXValueGetTypeID(),
+              CFGetTypeID(size as CFTypeRef) == AXValueGetTypeID() else { return nil }
+        var point = CGPoint.zero, extent = CGSize.zero
+        guard AXValueGetValue(position as! AXValue, .cgPoint, &point), AXValueGetValue(size as! AXValue, .cgSize, &extent) else { return nil }
+        return Rect(x: point.x, y: point.y, width: extent.width, height: extent.height)
+    }
+    /// The app's own `AXFocusedUIElement` when `window` owns it (DESIGN5 §5.1). Unlike the system-wide read it stays
+    /// valid while pi-os's nonactivating bar is key ("remembered" focus, macos §3), and it works from callers where the
+    /// system-wide read fails with -25204. Gate it with a fresh check before any input.
+    static func perAppFocusedElement(pid: pid_t, window: AXUIElement, budget: Budget) -> AXUIElement? {
+        guard let focused = budget.element(AXUIElementCreateApplication(pid), kAXFocusedUIElementAttribute),
+              let owner = budget.element(focused, kAXWindowAttribute), CFEqual(owner, window) else { return nil }
+        return focused
     }
     public static func sameFrame(_ a: Rect, _ b: Rect) -> Bool {
         abs(a.x - b.x) <= 0.5 && abs(a.y - b.y) <= 0.5 && abs(a.width - b.width) <= 0.5 && abs(a.height - b.height) <= 0.5
@@ -163,13 +205,21 @@ public enum DesktopAX {
         }
     }
     /// Must run BEFORE the prompt steals key focus. The caller may omit it if the budget expires.
-    public static func enrichBeforePanel(_ snapshot: inout Snapshot) {
-        guard AXIsProcessTrusted(), let target = snapshot.targetWindow, !FinderDesktop.isDesktop(target) else { return }
+    /// Returns the focused control for continuity (DESIGN5 §5.1): its four extra reads run after today's summary
+    /// (critic C9), so the shared 25 ms budget can only starve them, never the summary window turns rely on.
+    @discardableResult
+    public static func enrichBeforePanel(_ snapshot: inout Snapshot) -> KeyDownField? {
+        guard AXIsProcessTrusted(), let target = snapshot.targetWindow, !FinderDesktop.isDesktop(target) else { return nil }
         let budget = Budget(0.025)
         let app = AXUIElementCreateApplication(target.processId)
         guard let window = budget.element(app, kAXFocusedWindowAttribute),
               let frame = budget.frame(window), sameFrame(frame, target.bounds),
-              let element = focusedElement(target, window: window, budget: budget) else { return }
+              let element = focusedElement(target, window: window, budget: budget) else { return nil }
         snapshot.focusedElement = summary(element, budget: budget)
+        guard budget.deadline.timeIntervalSinceNow > 0 else { return nil }
+        return KeyDownField(element: element, subrole: budget.read(element, kAXSubroleAttribute) as? String,
+                            valueSettable: budget.settable(element, kAXValueAttribute),
+                            focused: budget.read(element, kAXFocusedAttribute) as? Bool,
+                            selectionLength: rangeLength(budget.read(element, kAXSelectedTextRangeAttribute)))
     }
 }

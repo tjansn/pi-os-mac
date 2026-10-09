@@ -1,0 +1,12 @@
+{
+  "seq": 5,
+  "elapsedMs": 1,
+  "source": "grammar",
+  "decision": "fallthrough",
+  "reason": "low_confidence",
+  "voice": {
+    "source": "parakeet-v3",
+    "check": true,
+    "fill": "offer"
+  }
+}

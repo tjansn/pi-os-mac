@@ -1,4 +1,4 @@
-import type { HostAction } from "./actions.js";
+import { isOneLineText, type HostAction } from "./actions.js";
 import type { CardSpec } from "./cards.js";
 import type { InstantScope } from "./context.js";
 
@@ -15,6 +15,13 @@ import type { InstantScope } from "./context.js";
  * (`VoiceHypothesis` in `VoiceTypes.swift`); fixtures: `shared/fixtures/instant/*.json` (responses) and
  * `shared/fixtures/instant/requests/*.json` (request bodies).
  * Hypothesis texts are user content: never logged (counts, roles and sources only).
+ *
+ * Continuity additions (DESIGN5 §8 with TOM-ANSWERS applied): a final may carry content-free `target` facts
+ * (app class, pi-os's own open as an anchor, the bound focused field), the host may declare `accept: "fill"`,
+ * and Node may answer `act` intent `fill` (`typeIntoPinned`, optionally `submit: true`), `voice.via: "field"`
+ * and `voice.fill: "offer"` on the check card. All optional and additive: a request without `target` and
+ * without `"fill"` gets exactly today's decisions. Fixtures: `shared/fixtures/instant/requests/request-target-*`,
+ * `instant/act-fill*.json`, `instant/fallthrough-check-fill-offer.json`, `instant/invalid-action/`.
  */
 
 export type InstantPhase = "typing" | "partial" | "final";
@@ -105,8 +112,12 @@ export interface VoiceHypothesis {
  * - `confirm`: the host holds `act` with `confirm: true` for one Return (it always has). Node uses it for
  *   voice uncertainty (a secondary engine, a low-confidence peer, a bare secondary name, an unknown
  *   spoken domain) only for such hosts.
+ * - `fill`: the host types into the bound focused field of `target.field`: `act` intent `fill`
+ *   (`typeIntoPinned`, `voice.via: "field"`) and `voice.fill: "offer"` on the check card. Node decides a fill
+ *   only when the request also carries an eligible `target.field` (FILL_* below); without `"fill"` it never
+ *   does, whatever `target` says. The host declares it only while Settings' fill switch is on.
  */
-export const INSTANT_ACCEPTS = ["suggest", "check", "confirm"] as const;
+export const INSTANT_ACCEPTS = ["suggest", "check", "confirm", "fill"] as const;
 export type InstantAccept = (typeof INSTANT_ACCEPTS)[number];
 
 export interface InstantRequest {
@@ -135,6 +146,86 @@ export interface InstantRequest {
   hypotheses?: VoiceHypothesis[];
   /** Decision kinds the host understands (INSTANT_ACCEPTS). Absent or empty means today's set. */
   accept?: InstantAccept[];
+  /**
+   * macOS host, `final` phase (typed and voice): content-free facts about the take's pinned target at the
+   * final. Parsed on every phase, used on finals only. Absent (Windows never sends it; older Mac builds;
+   * no pinned target) means today's behaviour.
+   */
+  target?: InstantTarget;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Continuity: the take's target (DESIGN5 §8.1, TOM-ANSWERS). Closed vocabularies; never a bundle id, app
+// name, window title, URL, label, field value or length. Swift mirror: `InstantTarget`, `InstantAppClass`,
+// `InstantFieldKind` in `PiOSCore/InstantContracts.swift`.
+
+/** Host class of the pinned app: an allowlisted browser, Finder, a terminal, or anything else. */
+export const INSTANT_APP_CLASSES = ["browser", "finder", "terminal", "other"] as const;
+export type InstantAppClass = (typeof INSTANT_APP_CLASSES)[number];
+
+/**
+ * Kind of the bound focused control (host classifier, first match wins; DESIGN5 §5.2):
+ * `search` (AXSearchField, a search-labelled text field, text area or combo box), `address` (a browser's
+ * address bar), `text` (single-line editable), `multiline` (text areas, contenteditable: chats, documents,
+ * notes), `terminal`, `sensitive` (one-time/2FA codes, card numbers, IBAN, CVV), `credential` (username and
+ * password fields), `confirm` ("type DELETE to confirm"), `rename` (a Finder rename editor). A control the
+ * host cannot type into is no `field` at all.
+ */
+export const INSTANT_FIELD_KINDS = ["search", "address", "text", "multiline", "terminal", "sensitive", "credential", "confirm", "rename"] as const;
+export type InstantFieldKind = (typeof INSTANT_FIELD_KINDS)[number];
+
+/**
+ * Field eligibility (TOM-ANSWERS 1, D6). Implicit fill — "everything except commands" — only into these
+ * kinds, and only while `ready`, empty or not, single- or multi-line.
+ */
+export const FILL_IMPLICIT_KINDS = ["search", "address", "text", "multiline"] as const;
+/** Explicit "tippe …/type …" only, and only with the Settings credential opt-in. Never journaled, never sent to a remote classifier. */
+export const FILL_OPT_IN_KINDS = ["sensitive", "credential"] as const;
+/** Never typed into, not even explicitly. */
+export const FILL_NEVER_KINDS = ["confirm", "rename"] as const;
+// The remaining kind, `terminal`, is explicit only: "tippe …", or the check card's "↩ Type into Terminal" (`voice.fill: "offer"`).
+
+/** Return after a fill without being asked (TOM-ANSWERS 2: auto-Return in search boxes and the address bar). */
+export const SUBMIT_AUTO_KINDS = ["search", "address"] as const;
+/**
+ * Never Return, not even an explicit submit: documents and chats (TOM-ANSWERS 1: "Return never pressed there"),
+ * terminals execute, codes, credentials, confirmations and renames commit.
+ */
+export const SUBMIT_NEVER_KINDS = ["multiline", "terminal", "sensitive", "credential", "confirm", "rename"] as const;
+
+/**
+ * May a fill into `kind` carry `submit: true`? Auto only into SUBMIT_AUTO_KINDS; an explicit submit request
+ * also into a single-line `text` field; never into SUBMIT_NEVER_KINDS. Node decides with it, and the host
+ * re-checks its own bound field before the separate gated Return.
+ */
+export function fillSubmitAllowed(kind: InstantFieldKind, explicit: boolean): boolean {
+  if ((SUBMIT_AUTO_KINDS as readonly string[]).includes(kind)) return true;
+  return explicit && !(SUBMIT_NEVER_KINDS as readonly string[]).includes(kind);
+}
+
+/** pi-os's own open put the pinned app in front and nothing else was activated since (host memory, ≤ 120 s). */
+export interface InstantTargetAnchor {
+  /** The instant take that opened it (TAKE_ID pattern). Absent for agent opens. Node looks its own take memo up. */
+  takeId?: string;
+  /** The app is still launching or not yet settled (the race). A literal `true`; `false` is sent as absent. */
+  settling?: true;
+}
+
+/** The bound focused control at the final (DESIGN5 §5.1). */
+export interface InstantTargetField {
+  kind: InstantFieldKind;
+  /** No characters and no selection. Never present for `credential` (a length would reveal a password's). */
+  empty?: boolean;
+  /** Visible and loaded: no web area, or a loaded top-level one; never a nested frame. */
+  ready: boolean;
+  /** The field still holds exactly pi-os's last fill (host memory). A literal `true`; `false` is sent as absent. */
+  ownFill?: true;
+}
+
+export interface InstantTarget {
+  app: InstantAppClass;
+  anchor?: InstantTargetAnchor;
+  field?: InstantTargetField;
 }
 
 /**
@@ -157,7 +248,9 @@ export type InstantIntent =
   | "url"
   | "web"
   | "system"
-  | "refuse";
+  | "refuse"
+  /** Continuity: an `act` that types the take's words into the bound focused field (`typeIntoPinned`). */
+  | "fill";
 
 export type FallthroughReason =
   | "no_match"
@@ -185,9 +278,10 @@ interface InstantBase {
  * learned app name or fix. `sound`: the sound-alike tier. `peer`: a Phase A peer language.
  * `secondary`: a gated secondary hypothesis. `url`: a spoken domain (the voice URL guard).
  * `visible`: a visible item of the take's target context (`open_item`); hosts offer no "Not this" for it
- * and nothing is learned from it.
+ * and nothing is learned from it. `field`: a fill into the bound focused field (intent `fill`); no "Not
+ * this" (a bare "nein/no" within 5 s undoes the typing instead) and nothing is learned from it.
  */
-export const VOICE_VIAS = ["exact", "alias", "learned", "sound", "peer", "secondary", "url", "visible"] as const;
+export const VOICE_VIAS = ["exact", "alias", "learned", "sound", "peer", "secondary", "url", "visible", "field"] as const;
 export type VoiceVia = (typeof VOICE_VIAS)[number];
 
 /**
@@ -207,6 +301,12 @@ export interface VoiceMeta {
   didYouMean?: boolean;
   /** `fallthrough` `low_confidence` only, and only for hosts that declared `accept: ["check"]`. */
   check?: boolean;
+  /**
+   * With `check` only, and only for hosts that declared `accept: ["fill"]`: the check card's ↩ types the
+   * (possibly edited) card text into the bound field (never with Return) instead of resending it; ⌥↩ still
+   * asks pi. Open set for receivers: an unknown value is dropped on its own.
+   */
+  fill?: VoiceFill;
   /** A learned dictionary rule decided: "Not this" → POST /dictionary/learn `reject` with this id. */
   learnedEntryId?: string;
   /**
@@ -215,6 +315,10 @@ export interface VoiceMeta {
    */
   correctsTakeId?: string;
 }
+
+/** `voice.fill` values (VoiceMeta.fill). */
+export const VOICE_FILLS = ["offer"] as const;
+export type VoiceFill = (typeof VOICE_FILLS)[number];
 
 export type InstantResponse = InstantBase &
   (
@@ -341,12 +445,74 @@ export function parseInstantRequest(value: unknown): InstantParse<InstantRequest
   const accept = parseInstantAccept(value.accept);
   if (!accept.ok) return accept;
   if (accept.value) request.accept = accept.value;
+  const target = parseInstantTarget(value.target);
+  if (!target.ok) return target;
+  if (target.value) request.target = target.value;
   return { ok: true, value: request };
+}
+
+/** A literal-`true` flag: absent, null and `false` are absent; anything but a boolean is invalid. */
+function trueFlag(value: unknown): { ok: boolean; set: boolean } {
+  if (!present(value) || value === false) return { ok: true, set: false };
+  return { ok: value === true, set: value === true };
+}
+
+/**
+ * `target`: absent/null → undefined. Strict: closed vocabularies, `ready` required, `takeId` in the TAKE_ID
+ * pattern, `credential` never with `empty` (present at all). Unknown keys are dropped at every level; null on
+ * an optional member is absent. Errors name the member, never a value. Same rules as Swift `InstantTarget`.
+ */
+export function parseInstantTarget(value: unknown): InstantParse<InstantTarget | undefined> {
+  if (!present(value)) return { ok: true, value: undefined };
+  if (!isRecord(value)) return { ok: false, error: "target must be an object" };
+  if (!oneOf(INSTANT_APP_CLASSES, value.app)) return { ok: false, error: "target.app must be browser, finder, terminal or other" };
+  const target: InstantTarget = { app: value.app };
+  if (present(value.anchor)) {
+    const anchor = value.anchor;
+    if (!isRecord(anchor)) return { ok: false, error: "target.anchor must be an object" };
+    const parsed: InstantTargetAnchor = {};
+    if (present(anchor.takeId)) {
+      if (typeof anchor.takeId !== "string" || !TAKE_ID.test(anchor.takeId)) return { ok: false, error: "Invalid target.anchor.takeId" };
+      parsed.takeId = anchor.takeId;
+    }
+    const settling = trueFlag(anchor.settling);
+    if (!settling.ok) return { ok: false, error: "target.anchor.settling must be true or absent" };
+    if (settling.set) parsed.settling = true;
+    target.anchor = parsed;
+  }
+  if (present(value.field)) {
+    const field = value.field;
+    if (!isRecord(field)) return { ok: false, error: "target.field must be an object" };
+    if (!oneOf(INSTANT_FIELD_KINDS, field.kind)) return { ok: false, error: "target.field.kind must be a field kind" };
+    if (typeof field.ready !== "boolean") return { ok: false, error: "target.field.ready must be a boolean" };
+    if (present(field.empty)) {
+      if (field.kind === "credential") return { ok: false, error: "target.field.empty is never sent for a credential field" };
+      if (typeof field.empty !== "boolean") return { ok: false, error: "target.field.empty must be a boolean" };
+    }
+    // Wire order: kind, empty, ready, ownFill.
+    const parsed: InstantTargetField = { kind: field.kind, ...(typeof field.empty === "boolean" ? { empty: field.empty } : {}), ready: field.ready };
+    const ownFill = trueFlag(field.ownFill);
+    if (!ownFill.ok) return { ok: false, error: "target.field.ownFill must be true or absent" };
+    if (ownFill.set) parsed.ownFill = true;
+    target.field = parsed;
+  }
+  return { ok: true, value: target };
+}
+
+/**
+ * `act` consistency for continuity (both sides): intent `fill` carries `typeIntoPinned` with one-line text
+ * (submitting or not: a CR/LF would be a Return of its own, a Tab would move focus), and only a fill carries
+ * `submit`. Swift's `InstantResponse` decoder rejects every other combination.
+ */
+export function fillActConsistent(intent: string, action: HostAction): boolean {
+  const typing = action.type === "typeIntoPinned";
+  if (intent === "fill") return typing && isOneLineText(action.text);
+  return !(typing && action.submit === true);
 }
 
 /**
  * Structural check of a response's `voice` (hosts drop a malformed one, never the response). An unknown
- * `via` is dropped on its own (open set); any other bad member makes the whole meta null.
+ * `via` or `fill` string is dropped on its own (open sets); any other bad member makes the whole meta null.
  */
 export function parseVoiceMeta(value: unknown): VoiceMeta | null {
   if (!isRecord(value)) return null;
@@ -375,6 +541,10 @@ export function parseVoiceMeta(value: unknown): VoiceMeta | null {
   if (present(value.correctsTakeId)) {
     if (typeof value.correctsTakeId !== "string" || !TAKE_ID.test(value.correctsTakeId)) return null;
     meta.correctsTakeId = value.correctsTakeId;
+  }
+  if (present(value.fill)) {
+    if (typeof value.fill !== "string") return null;
+    if (oneOf(VOICE_FILLS, value.fill)) meta.fill = value.fill;
   }
   return meta;
 }

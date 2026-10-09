@@ -20,6 +20,9 @@ enum NativeInputEvent {
 protocol DesktopInputDriver {
     func inspect(_ target: WindowContext) throws -> Rect
     func focus(_ target: WindowContext) async throws
+    /// After `focus` and before the first event of a keyboard action: a driver bound to one control (`InputBinding`)
+    /// waits until that control has keyboard focus again, or throws without posting anything (critic C3).
+    func settleFocus(_ target: WindowContext) async throws
     func validateFocusAndSecurity(_ target: WindowContext, action: InputAction, arguments: InputArguments) throws
     func validateActionPoint(_ point: Point, target: WindowContext, action: InputAction) throws
     func validatePoint(_ point: Point, target: WindowContext) throws
@@ -30,14 +33,39 @@ protocol DesktopInputDriver {
 
 extension DesktopInputDriver {
     func validateActionPoint(_ point: Point, target: WindowContext, action: InputAction) throws {}
+    func settleFocus(_ target: WindowContext) async throws {}
+}
+
+/// The one control a continuity fill (and its Return or Undo) may reach (DESIGN5 §5.1 "bound insert target", critic
+/// C2/C3): every keyboard event of the action is posted only while the system-wide focused element of the pinned window
+/// is that control. Host memory only; never logged.
+struct InputBinding: @unchecked Sendable {
+    /// The system-wide focused element (already owned by the pinned window) is the bound control: `CFEqual`, else the
+    /// fallback identity of `BoundField.matches` (pid, role, frame, DOM id).
+    let matches: (AXUIElement) -> Bool
+    /// How long the bound control may take to get focus back after the bar ordered out, and the poll interval (§7 row
+    /// 12a′: typically 25–50 ms, cap 120 ms; live check Q7).
+    var settle: TimeInterval = 0.12
+    var poll: TimeInterval = 0.01
+    /// `matches` accepts only the very element (`CFEqual`), no fallback identity (Undo's Backspace: `InputBinding.exactly`).
+    let exact: Bool
+    init(matches: @escaping (AXUIElement) -> Bool, settle: TimeInterval = 0.12, poll: TimeInterval = 0.01, exact: Bool = false) {
+        self.matches = matches; self.settle = settle; self.poll = poll; self.exact = exact
+    }
+    init(_ field: BoundField) { self.init(matches: { field.matches($0) }) }
+    /// Thrown when the bound control does not have focus: before any event (refused, nothing typed) or, mid-typing,
+    /// wrapped as the uncertain `input_failed`.
+    static let focusMoved = DomainError("focus_moved", "The field pi-os was typing into no longer has keyboard focus")
 }
 
 final class NativeDesktopDriver: DesktopInputDriver {
     let fingerprint: ProcessFingerprint
+    /// Set for a continuity fill: keyboard events go only to this control (`settleFocus`, `validateFocusAndSecurity`).
+    let binding: InputBinding?
     var matchedWindow: AXUIElement?
     private var inspectedElement: AXUIElement?
     private var inspectedSurfaces: [InputSurface] = []
-    init(fingerprint: ProcessFingerprint) { self.fingerprint = fingerprint }
+    init(fingerprint: ProcessFingerprint, binding: InputBinding? = nil) { self.fingerprint = fingerprint; self.binding = binding }
     static func fingerprint(_ pid: pid_t) -> ProcessFingerprint? {
         var info = proc_bsdinfo()
         let size = Int32(MemoryLayout<proc_bsdinfo>.size)
@@ -69,8 +97,21 @@ final class NativeDesktopDriver: DesktopInputDriver {
         AXUIElementSetMessagingTimeout(app, 0.05)
         _ = AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
     }
+    /// Critic C3: a web view restores DOM focus a few ms after its window is key again. Poll the system-wide focused
+    /// element (10 ms, ≤ 120 ms) until it is the bound control; nothing has been posted yet, so a timeout refuses cleanly.
+    func settleFocus(_ target: WindowContext) async throws {
+        guard let binding, let window = matchedWindow else { return }
+        let deadline = Date().addingTimeInterval(binding.settle)
+        while true {
+            try Task.checkCancellation()
+            if let element = DesktopAX.focusedElement(target, window: window, budget: DesktopAX.Budget(0.05)), binding.matches(element) { return }
+            guard Date() < deadline else { throw InputBinding.focusMoved }
+            try await Task.sleep(nanoseconds: UInt64(binding.poll * 1_000_000_000))
+        }
+    }
+    /// The caller's `check()` inspected identity, ownership and permissions immediately before this (`beforeMutation`);
+    /// it is not repeated here (critic C14: two CG window-list reads fewer per event, nothing else changes).
     func validateFocusAndSecurity(_ target: WindowContext, action: InputAction, arguments: InputArguments) throws {
-        _ = try inspect(target)
         guard let window = matchedWindow, DesktopAX.exactFrontWindow(target, matched: window) else {
             throw DomainError("focus_failed", "Keyboard focus left the exact pinned window")
         }
@@ -82,6 +123,8 @@ final class NativeDesktopDriver: DesktopInputDriver {
               let role = budget.read(element, kAXRoleAttribute) as? String, role != kAXWindowRole else {
             throw DomainError("focus_unknown", "The focused control could not be inspected safely")
         }
+        // A continuity fill: the focused control must still be the one pi-os bound at the final (critic C2).
+        if let binding, ![.click, .scroll].contains(action), !binding.matches(element) { throw InputBinding.focusMoved }
         if ![.click, .scroll, .focus].contains(action) {
             // Reinspect metadata and the live setting before every keyboard chunk/chord
             // step. Missing labels alone are not evidence of a credential field.
@@ -213,8 +256,14 @@ final class DesktopInputController {
     let driver: DesktopInputDriver
     let enabled: () -> Bool
     let typeInterval: Double
-    init(driver: DesktopInputDriver, enabled: @escaping () -> Bool = { true }, typeInterval: Double = TextInput.intervalMilliseconds()) {
+    /// UTF-16 units per Unicode event (`PI_OS_TYPE_CHUNK`); nil: one scalar per event.
+    let chunk: Int?
+    /// The Unicode payload also rides on key-up (`PI_OS_TYPE_KEYUP_PAYLOAD=1`); by default key-down only (DESIGN5 §5.6).
+    let keyUpPayload: Bool
+    init(driver: DesktopInputDriver, enabled: @escaping () -> Bool = { true }, typeInterval: Double = TextInput.intervalMilliseconds(),
+         chunk: Int? = TextInput.chunkLimit(), keyUpPayload: Bool = TextInput.keyUpPayload()) {
         self.driver = driver; self.enabled = enabled; self.typeInterval = typeInterval
+        self.chunk = chunk; self.keyUpPayload = keyUpPayload
     }
     func execute(_ action: InputAction, args: InputArguments, target: WindowContext,
                  transform: CaptureTransform?, coordinatesFresh: Bool = true, lease: ContextLease) async throws -> InputResult {
@@ -243,7 +292,7 @@ final class DesktopInputController {
         }
         do {
             try action.validate(args)
-            let textStrokes = action == .typeText ? TextInput.strokes(args.text!) : []
+            let textStrokes = action == .typeText ? TextInput.strokes(args.text!, chunk: chunk) : []
             // The HTTP tool has a bounded 30-second deadline. Reject an oversized
             // paced request BEFORE focus/input rather than silently delivering a prefix.
             if Double(textStrokes.count) * typeInterval > 20_000 {
@@ -256,6 +305,8 @@ final class DesktopInputController {
             }
             try await driver.focus(target)
             _ = try check()
+            // Keyboard actions of a bound driver wait for its control (no-op otherwise); every event still re-checks below.
+            if ![.click, .scroll].contains(action) { try await driver.settleFocus(target) }
             if action == .focus { return InputResult(action: "focus", postedEvents: 0) }
             try beforeMutation()
             var point: Point?
@@ -294,7 +345,7 @@ final class DesktopInputController {
             case .typeText:
                 for (index, stroke) in textStrokes.enumerated() {
                     switch stroke {
-                    case .unicode(let units): try pair(.unicode(units, true), .unicode(units, false))
+                    case .unicode(let units): try pair(.unicode(units, true), .unicode(keyUpPayload ? units : [], false))
                     case .enter: try pair(.key(36, true, []), .key(36, false, []))
                     }
                     if index + 1 < textStrokes.count && typeInterval > 0 {

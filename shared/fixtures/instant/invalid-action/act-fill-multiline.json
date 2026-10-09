@@ -1,0 +1,16 @@
+{
+  "seq": 4,
+  "elapsedMs": 1,
+  "source": "grammar",
+  "decision": "act",
+  "intent": "fill",
+  "title": "Type into the text field",
+  "action": {
+    "type": "typeIntoPinned",
+    "text": "Liebe Grüße\nfixture"
+  },
+  "confirm": false,
+  "voice": {
+    "via": "field"
+  }
+}

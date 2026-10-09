@@ -92,6 +92,18 @@ import XCTest
     }
     /// Mirrors the app: the bar is hidden and the take released.
     func finishInstant() { finished += 1; surface?.showsComposer = false }
+    /// Continuity (FillFlowTests): what each final's `target` is, the field it bound and the caption's preview. Unset (as
+    /// in every other suite) a take has no target, exactly as on a host without continuity.
+    var target: InstantTarget?
+    var bound: BoundField?
+    var preview: InstantTarget.Field?
+    private(set) var targetRequests: [String] = []
+    func instantTarget(contextId: String) async -> InstantTarget? { targetRequests.append(contextId); return target }
+    /// As Application: only a context whose final read the target (`instantTarget`) has a bound field.
+    func boundField(contextId: String) -> BoundField? { target?.field == nil || !targetRequests.contains(contextId) ? nil : bound }
+    func fieldPreview(contextId: String) async -> InstantTarget.Field? { preview }
+    private(set) var rejected: [String] = []
+    func continuityRejected(takeId: String) { rejected.append(takeId) }
 }
 
 @MainActor final class RecordingSurface: CommandSurface {
@@ -153,6 +165,12 @@ import XCTest
     func presentConfirmation(_ text: String) { confirmations.append(text); showsComposer = false }
     func presentFailure(_ error: Error) { failures.append((error as? DomainError)?.code ?? "unknown"); showsComposer = false }
     func presentActionNotice(_ text: String) { notices.append(text) }
+    /// Continuity (FillFlowTests): the bar stepping aside before typing, and the caption while listening.
+    var hides = 0
+    var onHide: (() -> Void)?
+    var captions: [FillCaption?] = []
+    func hideForInput() { hides += 1; showsComposer = false; onHide?() }
+    func setFillCaption(_ caption: FillCaption?) { captions.append(caption) }
 }
 
 @MainActor final class CommandFlowTests: XCTestCase {

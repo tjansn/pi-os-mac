@@ -1,0 +1,24 @@
+{
+  "text": "Relativitätstheorie",
+  "phase": "final",
+  "seq": 6,
+  "takeId": "take-53",
+  "contextId": "ctx-124",
+  "locale": "de-DE",
+  "inputMode": "text",
+  "accept": [
+    "suggest",
+    "check",
+    "confirm",
+    "fill"
+  ],
+  "target": {
+    "app": "browser",
+    "field": {
+      "kind": "search",
+      "empty": false,
+      "ready": true,
+      "ownFill": true
+    }
+  }
+}

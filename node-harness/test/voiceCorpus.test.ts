@@ -3,7 +3,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { INSTANT_ACCEPTS, INSTANT_LIMITS, type InstantRequest, type VoiceHypothesis } from "../src/contracts/instant.js";
+import { INSTANT_LIMITS, type InstantAccept, type InstantRequest, type VoiceHypothesis } from "../src/contracts/instant.js";
 import { DictionaryStore } from "../src/instant/dictionary.js";
 import {
   appRows, buildAttempt, createEvalLane, crossTakeLearning, fixtureApps, groupTakes, isInstantItem, labelGold, loadCorpus, main,
@@ -20,7 +20,11 @@ import {
  * content); no host, no model, no network, nothing logged. Provenance: test/fixtures/voice/README.md.
  */
 
-const ACCEPT = [...INSTANT_ACCEPTS];
+/**
+ * The decision kinds these replays declare: an explicit list, never `INSTANT_ACCEPTS` as a whole, so a kind added to
+ * the contract (continuity's `fill`) never changes what the corpus measures. The replays carry no `target` either.
+ */
+const ACCEPT: InstantAccept[] = ["suggest", "check", "confirm"];
 const corpus = loadCorpus();
 const bench = (...names: string[]): Take[] => {
   const run = readBench(names.map((name) => join(VOICE_FIXTURES, "bench", name)));

@@ -296,6 +296,16 @@ final class VoiceJournalTests: XCTestCase {
         XCTAssertEqual(String(describing: take), "VoiceTakeRecord(outcome: acted, hypotheses: 2, audio: false)")
     }
 
+    /// DESIGN5 §5.8 (C6, D6): a take spoken at a credential or code field may be the secret itself: never kept.
+    func testCredentialAndCodeFieldTakesAreNeverKept() {
+        XCTAssertFalse(VoiceJournal.keeps(field: .credential))
+        XCTAssertFalse(VoiceJournal.keeps(field: .sensitive))
+        for kind in InstantFieldKind.allCases where kind != .credential && kind != .sensitive {
+            XCTAssertTrue(VoiceJournal.keeps(field: kind), "\(kind)")
+        }
+        XCTAssertTrue(VoiceJournal.keeps(field: nil), "no field: today's journal")
+    }
+
     // MARK: Journal (files)
 
     func testOffByDefaultTheJournalWritesNothingAndSendsNothing() async throws {

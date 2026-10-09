@@ -3,7 +3,7 @@ import {
   type DictionaryEditRequest, type DictionaryEntryInput, type DictionaryLearnRequest, type DictionaryList, type DictionaryLookup,
   type DictionaryMatch, type DictionarySource, type DictionaryWriteCode, type DictionaryWriteResponse, type RegressionTake, type SafeTarget,
 } from "../contracts/dictionary.js";
-import { INSTANT_ACCEPTS, isVoiceText, RECOGNIZERS, type InstantResponse, type VoiceHypothesis } from "../contracts/instant.js";
+import { isVoiceText, RECOGNIZERS, type InstantAccept, type InstantResponse, type VoiceHypothesis } from "../contracts/instant.js";
 import type { AppRecord } from "../contracts/launcher.js";
 import { BUILTIN_APP_ALIASES } from "./apps.js";
 import {
@@ -165,7 +165,7 @@ export function createLearnLane(options: LaneOptions): LearnLane {
     async outcome(take, rule, signal) {
       try {
         const response = await options.dispatcher.dispatch({
-          text: take.text, phase: "final", seq: 0, inputMode: "voice", accept: [...INSTANT_ACCEPTS],
+          text: take.text, phase: "final", seq: 0, inputMode: "voice", accept: [...REPLAY_ACCEPTS],
           hypotheses: [{ text: take.text, source: take.source, role: "primary" }],
         }, signal, { dictionary: rule ? withCandidate(base, rule) : base });
         return takeOutcome(response);
@@ -176,6 +176,12 @@ export function createLearnLane(options: LaneOptions): LearnLane {
     ...(options.isCommonWord ? { isCommonWord: options.isCommonWord } : {}),
   };
 }
+
+/**
+ * The decision kinds a learned-rule replay declares: an explicit list, never `INSTANT_ACCEPTS` as a whole. A replay
+ * carries no `target`, and it never declares `fill` either, so a regression check can never decide a fill.
+ */
+export const REPLAY_ACCEPTS: readonly InstantAccept[] = ["suggest", "check", "confirm"];
 
 function takeOutcome(response: InstantResponse): TakeOutcome {
   if (response.decision === "act") return { kind: "act", target: safeTargetOf(response.action) };
@@ -546,6 +552,8 @@ export async function learnFromGesture(request: DictionaryLearnRequest, deps: Le
   const { store, memo } = deps;
   const record = memo.get(request.takeId);
   if (!record) return refused("unknown_take", store.revision());
+  // A take that typed into a field (continuity) teaches nothing: no pick, confirm, edit, correction or rejection.
+  if (record.fill) return refused("nothing_to_learn", store.revision());
   if (request.kind === "reject") return reject(request, record, store);
   // A pick or a confirm of an app is app usage (frecency), whatever is learned from it.
   const used = request.kind === "pick" ? request.bundleId

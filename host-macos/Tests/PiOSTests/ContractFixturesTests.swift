@@ -443,6 +443,11 @@ final class ContractFixturesTests: XCTestCase {
         try check("learnRequest", DictionaryLearnRequest.self)
         try check("visibleItemsRequest", VisibleItemsRequest.self)
         try check("visibleItemsResult", VisibleItemsResult.self)
+        try check("instantTarget", InstantTarget.self)
+        try check("instantRequestTarget", InstantRequest.self)
+        try check("voiceMetaFill", VoiceMeta.self)
+        try check("hostActionTypeIntoPinned", HostAction.self)
+        try check("contextTarget", ContextWire.self)
         let attachments = try JSONDecoder().decode([Attachment].self, from: JSONSerialization.data(withJSONObject: XCTUnwrap((root["attachments"] as? [String: Any])?["wire"])))
         XCTAssertEqual(AttachmentValidation.issues(attachments), [])
     }
@@ -582,5 +587,163 @@ final class ContractFixturesTests: XCTestCase {
                     #"{"type":"system","op":"power.restart"}"#] {
             XCTAssertThrowsError(try JSONDecoder().decode(HostAction.self, from: Data(bad.utf8)), bad)
         }
+    }
+
+    // MARK: Continuity (DESIGN5 §8 with TOM-ANSWERS: target facts, fill, submit, voice.fill, context.target)
+
+    private func nodeList(_ name: String, in source: String) throws -> [String] {
+        let start = try XCTUnwrap(source.range(of: "export const \(name) = ["), name)
+        let end = try XCTUnwrap(source.range(of: "] as const;", range: start.upperBound..<source.endIndex), name)
+        let body = String(source[start.upperBound..<end.lowerBound])
+        let quoted = try NSRegularExpression(pattern: #""([^"]*)""#)
+        return quoted.matches(in: body, range: NSRange(body.startIndex..., in: body)).map { String(body[Range($0.range(at: 1), in: body)!]) }
+    }
+
+    /// Requests without `target` encode byte for byte as today; target fixtures round-trip and stay content-free.
+    func testContinuityRequestGoldenAndTargets() throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let today = InstantRequest(text: "open Pages", phase: .final, seq: 2, takeId: "take-40", contextId: "ctx-123", locale: "en-US", inputMode: "voice",
+                                   accept: [.suggest, .check, .confirm])
+        XCTAssertEqual(String(decoding: try encoder.encode(today), as: UTF8.self),
+                       #"{"accept":["suggest","check","confirm"],"contextId":"ctx-123","inputMode":"voice","locale":"en-US","phase":"final","seq":2,"takeId":"take-40","text":"open Pages"}"#)
+        var targeted = today
+        targeted.target = nil
+        XCTAssertEqual(try encoder.encode(targeted), try encoder.encode(today))
+        for file in try jsonFiles("instant/requests") where !file.lastPathComponent.hasPrefix("request-target-") {
+            let request = try JSONDecoder().decode(InstantRequest.self, from: data(file))
+            XCTAssertNil(request.target, file.lastPathComponent)
+            XCTAssertFalse(request.accept?.contains(.fill) ?? false, file.lastPathComponent)
+        }
+
+        let targets = try jsonFiles("instant/requests").filter { $0.lastPathComponent.hasPrefix("request-target-") }
+        XCTAssertGreaterThanOrEqual(targets.count, 7)
+        for file in targets {
+            let request = try JSONDecoder().decode(InstantRequest.self, from: data(file))
+            let target = try XCTUnwrap(request.target, file.lastPathComponent)
+            if target.field?.kind == .credential { XCTAssertNil(target.field?.empty, file.lastPathComponent) }
+        }
+        func decode(_ name: String) throws -> InstantRequest {
+            try JSONDecoder().decode(InstantRequest.self, from: data(fixtures.appendingPathComponent("instant/requests/\(name)")))
+        }
+        let search = try decode("request-target-search.json")
+        XCTAssertEqual(search.accept, [.suggest, .check, .confirm, .fill])
+        XCTAssertEqual(search.target, InstantTarget(app: .browser, anchor: .init(takeId: "take-50"), field: .init(kind: .search, empty: true, ready: true)))
+        XCTAssertEqual(try decode("request-target-address-settling.json").target?.anchor, .init(takeId: "take-50", settling: true))
+        XCTAssertEqual(try decode("request-target-own-fill.json").target?.field, .init(kind: .search, empty: false, ready: true, ownFill: true))
+        XCTAssertEqual(try decode("request-target-credential.json").target?.field, .init(kind: .credential, ready: true))
+        XCTAssertEqual(try decode("request-target-finder-rename.json").target, InstantTarget(app: .finder, anchor: .init(), field: .init(kind: .rename, empty: false, ready: true)))
+        XCTAssertEqual(try decode("request-target-without-fill.json").accept, [.suggest, .check, .confirm])
+
+        // The host can never emit a length fact for a credential field, nor a false literal-true flag.
+        let credential = InstantTarget.Field(kind: .credential, empty: true, ready: true)
+        XCTAssertNil(credential.empty)
+        var forced = credential
+        forced.empty = false
+        XCTAssertEqual(String(decoding: try encoder.encode(forced), as: UTF8.self), #"{"kind":"credential","ready":true}"#)
+        let quiet = InstantTarget(app: .other, anchor: .init(settling: false), field: .init(kind: .text, ready: false, ownFill: false))
+        XCTAssertEqual(String(decoding: try encoder.encode(quiet), as: UTF8.self), #"{"anchor":{},"app":"other","field":{"kind":"text","ready":false}}"#)
+        // Unknown keys are dropped; false on a literal-true flag reads as absent.
+        let extra = try JSONDecoder().decode(InstantTarget.self, from: Data(#"{"app":"browser","bundleId":"com.apple.Safari","anchor":{"takeId":"take-50","settling":false,"url":"u"},"field":{"kind":"search","ready":true,"ownFill":false,"label":"Search"}}"#.utf8))
+        XCTAssertEqual(extra, InstantTarget(app: .browser, anchor: .init(takeId: "take-50"), field: .init(kind: .search, ready: true)))
+
+        let invalid = try jsonFiles("instant/requests/invalid").filter { $0.lastPathComponent.hasPrefix("target-") }
+        XCTAssertGreaterThanOrEqual(invalid.count, 12)
+        for file in invalid {
+            XCTAssertThrowsError(try JSONDecoder().decode(InstantRequest.self, from: data(file)), file.lastPathComponent)
+        }
+    }
+
+    /// `act` intent `fill`, `submit` only in a fill, `via: field`, and the check card's fill offer; invalid pairings reject the response.
+    func testContinuityResponses() throws {
+        func decode(_ name: String) throws -> InstantResponse {
+            try JSONDecoder().decode(InstantResponse.self, from: data(fixtures.appendingPathComponent("instant/\(name)")))
+        }
+        let fill = try decode("act-fill.json")
+        guard case .act("fill", _, .typeIntoPinned("Liebe Grüße", false), false, nil) = fill.decision else { return XCTFail("expected a fill") }
+        XCTAssertTrue(fill.isFill)
+        XCTAssertEqual(fill.voice, VoiceMeta(source: "parakeet-v3", via: .field))
+        let submit = try decode("act-fill-submit.json")
+        guard case .act("fill", _, .typeIntoPinned("Albert Einstein", true), false, nil) = submit.decision else { return XCTFail("expected a submitting fill") }
+        let offer = try decode("fallthrough-check-fill-offer.json")
+        XCTAssertTrue(offer.isCheck)
+        XCTAssertTrue(offer.offersFill)
+        XCTAssertEqual(offer.voice, VoiceMeta(source: "parakeet-v3", check: true, fill: .offer))
+        XCTAssertFalse(try decode("fallthrough-low-confidence.json").offersFill)
+        XCTAssertFalse(try decode("act-open-app.json").isFill)
+        // A fill offer outside the check card is ignored; an unknown fill word is dropped on its own.
+        XCTAssertFalse(try decode("fallthrough-no-match.json").offersFill)
+        XCTAssertEqual(try JSONDecoder().decode(VoiceMeta.self, from: Data(#"{"check":true,"fill":"auto"}"#.utf8)), VoiceMeta(check: true))
+        for file in try jsonFiles("instant/invalid-action") {
+            XCTAssertThrowsError(try JSONDecoder().decode(InstantResponse.self, from: data(file)), file.lastPathComponent)
+        }
+    }
+
+    func testTypeIntoPinnedSubmitRoundTrips() throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        XCTAssertEqual(HostAction.typeIntoPinned("x"), .typeIntoPinned("x", submit: false))
+        XCTAssertEqual(String(decoding: try encoder.encode(HostAction.typeIntoPinned("hi")), as: UTF8.self), #"{"text":"hi","type":"typeIntoPinned"}"#)
+        XCTAssertEqual(String(decoding: try encoder.encode(HostAction.typeIntoPinned("hi", submit: true)), as: UTF8.self),
+                       #"{"submit":true,"text":"hi","type":"typeIntoPinned"}"#)
+        for action: HostAction in [.typeIntoPinned("a\nb"), .typeIntoPinned("Albert Einstein", submit: true)] {
+            XCTAssertEqual(try JSONDecoder().decode(HostAction.self, from: JSONEncoder().encode(action)), action)
+        }
+        XCTAssertEqual(try JSONDecoder().decode(HostAction.self, from: Data(#"{"type":"typeIntoPinned","text":"a\nb","submit":false}"#.utf8)), .typeIntoPinned("a\nb"))
+        for bad in [#"{"type":"typeIntoPinned","text":"a\nb","submit":true}"#, #"{"type":"typeIntoPinned","text":"a\tb","submit":true}"#,
+                    #"{"type":"typeIntoPinned","text":"x","submit":"yes"}"#, #"{"type":"typeIntoPinned","text":"x","submit":1}"#] {
+            XCTAssertThrowsError(try JSONDecoder().decode(HostAction.self, from: Data(bad.utf8)), bad)
+        }
+    }
+
+    /// A fill types one line whether or not it submits (a CR/LF would be a Return of its own, a Tab would move focus),
+    /// and a card binding never carries `submit` (the catalog's `typeIntoPinned` binding is `{text}` only).
+    func testFillTextIsOneLineAndBindingsNeverSubmit() throws {
+        func act(_ text: String, intent: String = "fill") -> Data {
+            Data(#"{"seq":1,"elapsedMs":1,"source":"grammar","decision":"act","intent":"\#(intent)","title":"t","action":{"type":"typeIntoPinned","text":\#(text)},"confirm":false}"#.utf8)
+        }
+        for bad in [#""a\nb""#, #""a\rb""#, #""a\tb""#, #""a b""#, #""a\u0085b""#] {
+            XCTAssertThrowsError(try JSONDecoder().decode(InstantResponse.self, from: act(bad)), bad)
+        }
+        XCTAssertTrue(try JSONDecoder().decode(InstantResponse.self, from: act(#""Liebe Grüße""#)).isFill)
+        // Today's typing acts (not a fill) keep their text as it is.
+        XCTAssertFalse(try JSONDecoder().decode(InstantResponse.self, from: act(#""a\nb""#, intent: "open_app")).isFill)
+        for submit: JSONValue in [.bool(true), .bool(false), .null] {
+            XCTAssertThrowsError(try HostAction.fromBinding(action: "typeIntoPinned", params: ["text": .string("x"), "submit": submit]), "\(submit)")
+        }
+        XCTAssertEqual(try HostAction.fromBinding(action: "typeIntoPinned", params: ["text": .string("x")]), .typeIntoPinned("x"))
+        XCTAssertThrowsError(try JSONDecoder().decode(CardElement.self, from: Data(
+            #"{"type":"Item","props":{"title":"a"},"on":{"primary":{"action":"typeIntoPinned","params":{"text":"hi","submit":true}}}}"#.utf8)))
+    }
+
+    func testContextTargetIsOptionalAndStrict() throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let today = ContextWire(scope: .general, pull: .allowed, source: .default)
+        XCTAssertEqual(String(decoding: try encoder.encode(today), as: UTF8.self), #"{"pull":"allowed","scope":"general","source":"default"}"#)
+        let targeted = ContextWire(scope: .general, pull: .allowed, source: .default, target: ContextTarget(field: .search, anchored: true))
+        XCTAssertEqual(try JSONDecoder().decode(ContextWire.self, from: encoder.encode(targeted)), targeted)
+        let extra = try JSONDecoder().decode(ContextWire.self, from: Data(#"{"scope":"window","pull":"allowed","source":"user","target":{"field":"address","app":"Safari"}}"#.utf8))
+        XCTAssertEqual(extra.target, ContextTarget(field: .address))
+        for bad in [#"{"field":"password"}"#, #"{"anchored":"yes"}"#, #""search""#] {
+            XCTAssertThrowsError(try JSONDecoder().decode(ContextWire.self, from: Data(#"{"scope":"general","pull":"allowed","source":"default","target":\#(bad)}"#.utf8)), bad)
+        }
+    }
+
+    /// The Swift vocabularies and eligibility tables are exactly Node's (instant.ts).
+    func testContinuityVocabulariesMatchNode() throws {
+        let root = fixtures.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("node-harness/src/contracts")
+        let instant = try String(contentsOf: root.appendingPathComponent("instant.ts"), encoding: .utf8)
+        XCTAssertEqual(InstantAccept.allCases.map(\.rawValue), try nodeList("INSTANT_ACCEPTS", in: instant))
+        XCTAssertEqual(InstantAppClass.allCases.map(\.rawValue), try nodeList("INSTANT_APP_CLASSES", in: instant))
+        XCTAssertEqual(InstantFieldKind.allCases.map(\.rawValue), try nodeList("INSTANT_FIELD_KINDS", in: instant))
+        XCTAssertEqual(VoiceFill.allCases.map(\.rawValue), try nodeList("VOICE_FILLS", in: instant))
+        func kinds(_ filter: (InstantFieldKind) -> Bool) -> [String] { InstantFieldKind.allCases.filter(filter).map(\.rawValue) }
+        XCTAssertEqual(kinds { $0.fill == .implicit }, try nodeList("FILL_IMPLICIT_KINDS", in: instant))
+        XCTAssertEqual(kinds { $0.fill == .optIn }, try nodeList("FILL_OPT_IN_KINDS", in: instant))
+        XCTAssertEqual(kinds { $0.fill == .never }, try nodeList("FILL_NEVER_KINDS", in: instant))
+        XCTAssertEqual(kinds { $0.fill == .explicitOnly }, ["terminal"])
+        XCTAssertEqual(kinds { $0.submitAllowed(explicit: false) }, try nodeList("SUBMIT_AUTO_KINDS", in: instant))
+        XCTAssertEqual(kinds { !$0.submitAllowed(explicit: true) }, try nodeList("SUBMIT_NEVER_KINDS", in: instant))
     }
 }

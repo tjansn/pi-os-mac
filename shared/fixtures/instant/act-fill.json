@@ -1,0 +1,17 @@
+{
+  "seq": 3,
+  "elapsedMs": 1,
+  "source": "grammar",
+  "decision": "act",
+  "intent": "fill",
+  "title": "Type into the text field",
+  "action": {
+    "type": "typeIntoPinned",
+    "text": "Liebe Grüße"
+  },
+  "confirm": false,
+  "voice": {
+    "source": "parakeet-v3",
+    "via": "field"
+  }
+}

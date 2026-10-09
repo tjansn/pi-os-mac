@@ -1,0 +1,36 @@
+{
+  "text": "Albert Einstein",
+  "phase": "final",
+  "seq": 4,
+  "takeId": "take-51",
+  "contextId": "ctx-124",
+  "locale": "de-DE",
+  "inputMode": "voice",
+  "hypotheses": [
+    {
+      "text": "Albert Einstein",
+      "source": "parakeet-v3",
+      "role": "primary",
+      "confidence": 0.93,
+      "minConfidence": 0.71,
+      "locale": "de-DE"
+    }
+  ],
+  "accept": [
+    "suggest",
+    "check",
+    "confirm",
+    "fill"
+  ],
+  "target": {
+    "app": "browser",
+    "anchor": {
+      "takeId": "take-50"
+    },
+    "field": {
+      "kind": "search",
+      "empty": true,
+      "ready": true
+    }
+  }
+}

@@ -4,9 +4,12 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { HOST_ACTION_TYPES, parseHostAction } from "../src/contracts/actions.js";
 import { bindingToHostAction, buildCard, type CardSpec, ui } from "../src/contracts/cards.js";
+import { parseContext } from "../src/contracts/context.js";
 import {
-  accepts, appleDictationRecognizer, appleSpeechRecognizer, INSTANT_ACCEPTS, INSTANT_LIMITS, isRecognizerId, parseInstantAccept,
-  parseInstantRequest, parseVoiceHypothesis, parseVoiceMeta, RECOGNIZERS, recognizerEngine, VOICE_VIAS, type InstantRequest, type InstantResponse,
+  accepts, appleDictationRecognizer, appleSpeechRecognizer, FILL_IMPLICIT_KINDS, FILL_NEVER_KINDS, FILL_OPT_IN_KINDS, fillActConsistent, fillSubmitAllowed,
+  INSTANT_ACCEPTS, INSTANT_APP_CLASSES, INSTANT_FIELD_KINDS, INSTANT_LIMITS, isRecognizerId, parseInstantAccept, parseInstantRequest, parseInstantTarget,
+  parseVoiceHypothesis, parseVoiceMeta, RECOGNIZERS, recognizerEngine, SUBMIT_AUTO_KINDS, SUBMIT_NEVER_KINDS, VOICE_FILLS, VOICE_VIAS, type InstantFieldKind,
+  type InstantRequest, type InstantResponse,
 } from "../src/contracts/instant.js";
 import {
   LAUNCHER_ROUTES, parseFileCandidate, parseVisibleItemsRequest, parseVisibleItemsResult, VISIBLE_ITEMS_LIMITS, VISIBLE_SOURCE_KINDS,
@@ -35,6 +38,16 @@ test("host actions: closed vocabulary, http(s) only, host tokens only", () => {
   assert.equal(parseHostAction({ type: "openApp", bundleId: "Figma" }), null);
   assert.deepEqual(parseHostAction({ type: "system", op: "volume.set", value: 0.3 }), { type: "system", op: "volume.set", value: 0.3 });
   assert.equal(parseHostAction({ type: "copyText", text: "x".repeat(4_001) }), null);
+  // typeIntoPinned `submit` (continuity fills): a literal true on one-line text; false and null read as absent.
+  assert.deepEqual(parseHostAction({ type: "typeIntoPinned", text: "Albert Einstein", submit: true }), { type: "typeIntoPinned", text: "Albert Einstein", submit: true });
+  for (const submit of [false, null, undefined]) {
+    assert.deepEqual(parseHostAction({ type: "typeIntoPinned", text: "a\nb", submit }), { type: "typeIntoPinned", text: "a\nb" }, String(submit));
+  }
+  for (const text of ["a\nb", "a\rb", "a\tb", "a\u2028b", "a\u0085b"]) {
+    assert.equal(parseHostAction({ type: "typeIntoPinned", text, submit: true }), null, JSON.stringify(text));
+  }
+  for (const submit of ["yes", 1, {}]) assert.equal(parseHostAction({ type: "typeIntoPinned", text: "x", submit }), null, JSON.stringify(submit));
+  assert.deepEqual(parseHostAction({ type: "copyText", text: "x", submit: true }), { type: "copyText", text: "x" }, "copyText never submits");
 });
 
 test("buildCard flattens deterministically and binds actions as json-render bindings", () => {
@@ -66,8 +79,13 @@ test("instant fixtures carry valid actions, cards and voice meta", () => {
   const responses = jsonFiles("instant");
   assert.ok(responses.length >= 15);
   for (const file of responses) {
-    const response = readJson(file) as { decision: string; action?: unknown; card?: CardSpec; voice?: unknown };
-    if (response.decision === "act") assert.notEqual(parseHostAction(response.action), null, file);
+    const response = readJson(file) as { decision: string; intent?: string; action?: unknown; card?: CardSpec; voice?: unknown };
+    if (response.decision === "act") {
+      const action = parseHostAction(response.action);
+      assert.notEqual(action, null, file);
+      assert.deepEqual(action, response.action, file);
+      assert.ok(action && fillActConsistent(response.intent ?? "", action), `${file}: a fill types, and only a fill submits`);
+    }
     if (["answer", "list", "refuse"].includes(response.decision)) assert.equal(response.card?.format, "pi-os-ui/1", file);
     if (response.voice !== undefined) {
       assert.ok(["act", "list", "fallthrough"].includes(response.decision), `${file}: voice only on act, list and fallthrough`);
@@ -137,7 +155,7 @@ test("instant invalid response fixtures: a malformed voice meta is dropped, neve
 });
 
 test("instant request: accept vocabulary, hypotheses and limits", () => {
-  assert.deepEqual(INSTANT_ACCEPTS, ["suggest", "check", "confirm"]);
+  assert.deepEqual(INSTANT_ACCEPTS, ["suggest", "check", "confirm", "fill"]);
   // Unknown words are ignored (newer hosts may declare more); duplicates collapse into canonical order.
   assert.deepEqual(parseInstantAccept(["confirm", "futureKind", "suggest", "confirm"]), { ok: true, value: ["suggest", "confirm"] });
   assert.deepEqual(parseInstantAccept([]), { ok: true, value: [] });
@@ -176,6 +194,11 @@ test("instant request: accept vocabulary, hypotheses and limits", () => {
     locale: "en-US", inputMode: "voice", silenceMs: 1234, hypotheses, accept: [...INSTANT_ACCEPTS] };
   assert.ok(parseInstantRequest(body).ok);
   assert.ok(Buffer.byteLength(JSON.stringify(body)) <= INSTANT_LIMITS.maxBodyBytes, String(Buffer.byteLength(JSON.stringify(body))));
+  // The largest continuity target still fits next to them (the host never drops `target` to fit).
+  const target = { app: "browser", anchor: { takeId: "a".repeat(128), settling: true }, field: { kind: "multiline", empty: false, ready: true, ownFill: true } };
+  const withTarget = { ...body, target };
+  assert.ok(parseInstantRequest(withTarget).ok);
+  assert.ok(Buffer.byteLength(JSON.stringify(withTarget)) <= INSTANT_LIMITS.maxBodyBytes, String(Buffer.byteLength(JSON.stringify(withTarget))));
 });
 
 test("explicit null on the new optional members is absent (Swift decodeIfPresent parity)", () => {
@@ -185,6 +208,16 @@ test("explicit null on the new optional members is absent (Swift decodeIfPresent
   assert.deepEqual(parseVoiceMeta(n.voiceMeta!.wire), n.voiceMeta!.normalized);
   assert.deepEqual(parseVisibleItemsRequest(n.visibleItemsRequest!.wire), { ok: true, value: n.visibleItemsRequest!.normalized });
   assert.deepEqual(parseVisibleItemsResult(n.visibleItemsResult!.wire), { ok: true, value: n.visibleItemsResult!.normalized });
+  // Continuity members.
+  assert.deepEqual(parseInstantTarget(n.instantTarget!.wire), { ok: true, value: n.instantTarget!.normalized });
+  assert.deepEqual(parseInstantRequest(n.instantRequestTarget!.wire), { ok: true, value: n.instantRequestTarget!.normalized });
+  assert.deepEqual(parseVoiceMeta(n.voiceMetaFill!.wire), n.voiceMetaFill!.normalized);
+  assert.deepEqual(parseHostAction(n.hostActionTypeIntoPinned!.wire), n.hostActionTypeIntoPinned!.normalized);
+  assert.deepEqual(parseContext(n.contextTarget!.wire), { ok: true, context: n.contextTarget!.normalized });
+  // Required members stay required: null never stands in for `app`, `kind` or `ready`.
+  assert.equal(parseInstantTarget({ app: null }).ok, false);
+  assert.equal(parseInstantTarget({ app: "browser", field: { kind: null, ready: true } }).ok, false);
+  assert.equal(parseInstantTarget({ app: "browser", field: { kind: "search", ready: null } }).ok, false);
 });
 
 // ---------------------------------------------------------------- visible items (launcher.visibleItems, open_item)
@@ -278,7 +311,146 @@ test("open_item fixtures: an act on a visible folder and a did-you-mean with a f
   const desktop = readJson(join(fixtures, "launcher", "visible-items.response-desktop.json")) as { result: { items: VisibleItem[] } };
   const tokens = new Set(desktop.result.items.map((entry) => entry.token));
   assert.ok(tokens.has("tok_7c1e0a9f3b2d") && tokens.has("tok_2b8d4f6a1c3e"));
-  // Older vias keep parsing exactly as before; "visible" is one more open-set value.
-  assert.deepEqual(VOICE_VIAS, ["exact", "alias", "learned", "sound", "peer", "secondary", "url", "visible"]);
+  // Older vias keep parsing exactly as before; "visible" and "field" are more open-set values.
+  assert.deepEqual(VOICE_VIAS, ["exact", "alias", "learned", "sound", "peer", "secondary", "url", "visible", "field"]);
   assert.deepEqual(parseVoiceMeta({ via: "visible", heard: "radfotos" }), { heard: "radfotos", via: "visible" });
+});
+
+// ---------------------------------------------------------------- continuity (DESIGN5 §8, TOM-ANSWERS)
+
+const TARGET_FIXTURE = /request-target-.*\.json$/;
+
+test("continuity golden: request bodies without target or fill parse to exactly their bytes; target fixtures round-trip byte for byte", () => {
+  const files = jsonFiles("instant/requests");
+  const legacy = files.filter((file) => !TARGET_FIXTURE.test(file));
+  const continuity = files.filter((file) => TARGET_FIXTURE.test(file));
+  assert.ok(legacy.length >= 6 && continuity.length >= 7, `${legacy.length} + ${continuity.length}`);
+  for (const file of files) {
+    const raw = readFileSync(file, "utf8");
+    const parsed = parseInstantRequest(JSON.parse(raw));
+    assert.ok(parsed.ok, `${file}: ${parsed.ok ? "" : parsed.error}`);
+    if (!parsed.ok) continue;
+    assert.equal(`${JSON.stringify(parsed.value, null, 2)}\n`, raw, `${file}: byte-identical`);
+    if (!TARGET_FIXTURE.test(file)) {
+      assert.equal(parsed.value.target, undefined, file);
+      assert.equal(parsed.value.accept?.includes("fill") ?? false, false, `${file}: today's bodies never declare fill`);
+    }
+  }
+  // Every target fixture is content-free: closed words, take ids and booleans only.
+  for (const file of continuity) {
+    const parsed = parseInstantRequest(readJson(file));
+    assert.ok(parsed.ok && parsed.value.target, file);
+    if (!parsed.ok || !parsed.value.target) continue;
+    const { app, anchor, field } = parsed.value.target;
+    assert.ok((INSTANT_APP_CLASSES as readonly string[]).includes(app), file);
+    assert.ok(anchor === undefined || Object.keys(anchor).every((key) => key === "takeId" || key === "settling"), file);
+    assert.ok(field === undefined || Object.keys(field).every((key) => ["kind", "empty", "ready", "ownFill"].includes(key)), file);
+    if (field?.kind === "credential") assert.equal("empty" in field, false, `${file}: no length facts for credential fields`);
+  }
+});
+
+test("continuity target: strict parse, unknown keys dropped, credential never has empty, invalid takeId refused, no value echoed", () => {
+  assert.deepEqual(INSTANT_APP_CLASSES, ["browser", "finder", "terminal", "other"]);
+  assert.deepEqual(INSTANT_FIELD_KINDS, ["search", "address", "text", "multiline", "terminal", "sensitive", "credential", "confirm", "rename"]);
+  // Unknown keys are dropped at every level; false on a literal-true flag is absent.
+  assert.deepEqual(parseInstantTarget({ app: "browser", bundleId: "com.apple.Safari", anchor: { takeId: "take-50", settling: false, url: "https://x.example/" },
+    field: { kind: "search", empty: true, ready: true, ownFill: false, label: "Search", value: "secret" } }),
+  { ok: true, value: { app: "browser", anchor: { takeId: "take-50" }, field: { kind: "search", empty: true, ready: true } } });
+  assert.deepEqual(parseInstantTarget({ app: "finder", anchor: {} }), { ok: true, value: { app: "finder", anchor: {} } });
+  assert.deepEqual(parseInstantTarget(undefined), { ok: true, value: undefined });
+  // A credential field carries no length fact at all, not even `empty: false`.
+  for (const empty of [true, false]) assert.equal(parseInstantTarget({ app: "browser", field: { kind: "credential", empty, ready: true } }).ok, false);
+  assert.deepEqual(parseInstantTarget({ app: "browser", field: { kind: "credential", empty: null, ready: true } }),
+    { ok: true, value: { app: "browser", field: { kind: "credential", ready: true } } });
+  for (const kind of INSTANT_FIELD_KINDS) assert.equal(parseInstantTarget({ app: "other", field: { kind, ready: false } }).ok, true, kind);
+  for (const takeId of ["", "take 50", "take/50", "t".repeat(129), 50]) {
+    assert.equal(parseInstantTarget({ app: "browser", anchor: { takeId } }).ok, false, JSON.stringify(takeId));
+  }
+  // Invalid request fixtures: rejected with an error that names the member and never the value.
+  const invalid = jsonFiles("instant/requests/invalid").filter((file) => file.includes("/target-"));
+  assert.ok(invalid.length >= 12, String(invalid.length));
+  for (const file of invalid) {
+    const parsed = parseInstantRequest(readJson(file));
+    assert.equal(parsed.ok, false, file);
+    if (!parsed.ok) {
+      assert.match(parsed.error, /target/, file);
+      for (const value of ["mail", "password", "take 50", "xxxxxxxx", "yes", "Albert"]) assert.ok(!parsed.error.includes(value), `${file} echoes ${value}`);
+    }
+  }
+  // `target` on a typing preview parses too (Node uses it on finals only).
+  assert.equal(parseInstantRequest({ text: "Alb", phase: "typing", seq: 1, target: { app: "browser" } }).ok, true);
+});
+
+test("continuity responses: act fill types (submit only into a fill), via field, and the check card's fill offer", () => {
+  const fill = readJson(join(fixtures, "instant", "act-fill.json")) as InstantResponse;
+  assert.ok(fill.decision === "act" && fill.intent === "fill" && fill.confirm === false);
+  if (fill.decision !== "act") return;
+  assert.deepEqual(fill.action, { type: "typeIntoPinned", text: "Liebe Grüße" });
+  assert.deepEqual(fill.voice, { source: "parakeet-v3", via: "field" });
+  const submit = readJson(join(fixtures, "instant", "act-fill-submit.json")) as InstantResponse;
+  assert.ok(submit.decision === "act" && submit.intent === "fill");
+  if (submit.decision !== "act") return;
+  assert.deepEqual(submit.action, { type: "typeIntoPinned", text: "Albert Einstein", submit: true });
+  const offer = readJson(join(fixtures, "instant", "fallthrough-check-fill-offer.json")) as InstantResponse;
+  assert.ok(offer.decision === "fallthrough" && offer.reason === "low_confidence");
+  if (offer.decision !== "fallthrough") return;
+  assert.deepEqual(offer.voice, { source: "parakeet-v3", check: true, fill: "offer" });
+  assert.deepEqual(VOICE_FILLS, ["offer"]);
+  // An unknown fill word is dropped on its own; a non-string spoils the meta (the response survives).
+  assert.deepEqual(parseVoiceMeta({ check: true, fill: "auto" }), { check: true });
+  assert.equal(parseVoiceMeta({ check: true, fill: true }), null);
+  // Pairing rule (Swift's decoder enforces the same).
+  assert.equal(fillActConsistent("fill", { type: "typeIntoPinned", text: "x" }), true);
+  assert.equal(fillActConsistent("fill", { type: "openURL", url: "https://example.com/" }), false);
+  assert.equal(fillActConsistent("web", { type: "typeIntoPinned", text: "x", submit: true }), false);
+  assert.equal(fillActConsistent("open_app", { type: "typeIntoPinned", text: "x" }), true, "today's shapes stay valid");
+  // A fill types one line whether or not it submits: a CR/LF would be a Return of its own, a Tab moves focus.
+  for (const text of ["a\nb", "a\rb", "a\tb", "a\u2028b", "a\u0085b"]) {
+    assert.equal(fillActConsistent("fill", { type: "typeIntoPinned", text }), false, JSON.stringify(text));
+  }
+  assert.equal(fillActConsistent("open_app", { type: "typeIntoPinned", text: "a\nb" }), true, "today's typing acts keep their text");
+  // invalid-action fixtures: a bad action or pairing rejects the whole response.
+  const invalid = jsonFiles("instant/invalid-action");
+  assert.ok(invalid.length >= 6);
+  for (const file of invalid) {
+    const response = readJson(file) as { decision: string; intent: string; action: unknown };
+    assert.equal(response.decision, "act", file);
+    const action = parseHostAction(response.action);
+    assert.ok(action === null || !fillActConsistent(response.intent, action), file);
+  }
+});
+
+test("continuity eligibility: fill tiers and Return rules partition the field kinds (TOM-ANSWERS 1, 2, D6)", () => {
+  const kinds = new Set<string>(INSTANT_FIELD_KINDS);
+  const tiers = [FILL_IMPLICIT_KINDS, FILL_OPT_IN_KINDS, FILL_NEVER_KINDS].flat() as string[];
+  assert.equal(new Set(tiers).size, tiers.length, "disjoint");
+  assert.deepEqual([...kinds].filter((kind) => !tiers.includes(kind)), ["terminal"], "terminal is the explicit-only kind");
+  assert.deepEqual(FILL_IMPLICIT_KINDS, ["search", "address", "text", "multiline"]);
+  assert.deepEqual([...FILL_OPT_IN_KINDS], ["sensitive", "credential"]);
+  assert.deepEqual([...FILL_NEVER_KINDS], ["confirm", "rename"]);
+  assert.deepEqual([...SUBMIT_AUTO_KINDS], ["search", "address"]);
+  const expected: Record<InstantFieldKind, [auto: boolean, explicit: boolean]> = {
+    // TOM-ANSWERS 1: documents and chats (multiline) never get a Return, not even an explicit one.
+    search: [true, true], address: [true, true], text: [false, true], multiline: [false, false],
+    terminal: [false, false], sensitive: [false, false], credential: [false, false], confirm: [false, false], rename: [false, false],
+  };
+  for (const kind of INSTANT_FIELD_KINDS) {
+    assert.deepEqual([fillSubmitAllowed(kind, false), fillSubmitAllowed(kind, true)], expected[kind], kind);
+    assert.equal((SUBMIT_NEVER_KINDS as readonly string[]).includes(kind), !expected[kind][1], kind);
+  }
+});
+
+test("context.target: content-free, strict, optional; requests without it stay exactly as before", () => {
+  const base = { scope: "general", pull: "allowed", source: "default" };
+  assert.deepEqual(parseContext(base), { ok: true, context: base });
+  assert.deepEqual(parseContext({ ...base, target: { field: "search", anchored: true, app: "Safari", title: "x" } }),
+    { ok: true, context: { ...base, target: { field: "search", anchored: true } } });
+  assert.deepEqual(parseContext({ ...base, target: {} }), { ok: true, context: { ...base, target: {} } });
+  assert.deepEqual(parseContext({ ...base, target: null }), { ok: true, context: base });
+  for (const field of INSTANT_FIELD_KINDS) assert.equal(parseContext({ ...base, target: { field } }).ok, true, field);
+  for (const target of ["search", [], { field: "password" }, { field: 1 }, { anchored: "yes" }]) {
+    const parsed = parseContext({ ...base, target });
+    assert.equal(parsed.ok, false, JSON.stringify(target));
+    if (!parsed.ok) for (const value of ["password", "yes"]) assert.ok(!parsed.error.includes(value), parsed.error);
+  }
 });

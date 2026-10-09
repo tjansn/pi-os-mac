@@ -82,6 +82,8 @@ extension HarnessClient: ModelSettingsService {}
     private let login = NSButton(checkboxWithTitle: "Open pi-os at login", target: nil, action: nil)
     private let credentials = NSButton(checkboxWithTitle: "Allow input in username and password fields", target: nil, action: nil)
     private let voiceToggle = NSButton(checkboxWithTitle: "Hold the shortcut to talk", target: nil, action: nil)
+    /// Continuity's kill switch (DESIGN5 §3.8): voice goes into the focused field; on by default.
+    private let fillToggle = NSButton(checkboxWithTitle: FillSettings.title, target: nil, action: nil)
     private let microphoneStatus = PanelStyle.label("", size: 12, color: .labelColor)
     private let speechStatus = PanelStyle.label("", size: 12, color: .labelColor)
     private let microphoneButton = NSButton(title: "Request Access…", target: nil, action: nil)
@@ -296,6 +298,8 @@ extension HarnessClient: ModelSettingsService {}
         credentials.state = CredentialFields.allowed ? .on : .off
         credentials.isEnabled = ControlAvailability.ready
         credentials.target = self; credentials.action = #selector(credentialsChanged); view.addSubview(credentials)
+        // The same permission lets voice typing ("tippe …") into verification-code, PIN and payment-card fields (review).
+        credentials.toolTip = "Also allows voice typing (“tippe …”) into verification-code, PIN and payment-card fields."
         let credentialHint = NSTextField(wrappingLabelWithString: "Off by default. Only clearly identified login fields are blocked; ordinary typing stays available. Field values remain omitted from text snapshots.")
         credentialHint.font = .systemFont(ofSize: 11); credentialHint.textColor = PanelStyle.secondaryInk
         credentialHint.frame = NSRect(x: 48, y: 548, width: 470, height: 38); view.addSubview(credentialHint)
@@ -421,6 +425,12 @@ extension HarnessClient: ModelSettingsService {}
             voiceToggle.target = self; voiceToggle.action = #selector(voiceToggled); block.addSubview(voiceToggle)
             voiceNote.font = .systemFont(ofSize: 11); voiceNote.textColor = PanelStyle.secondaryInk
             voiceNote.frame = NSRect(x: 48, y: 100, width: 470, height: 44); block.addSubview(voiceNote)
+        }
+        section(114, gap: 14) { block in
+            fillToggle.frame = NSRect(x: 28, y: 0, width: 502, height: 24)
+            fillToggle.state = FillSettings.enabled() ? .on : .off
+            fillToggle.target = self; fillToggle.action = #selector(fillToggled); block.addSubview(fillToggle)
+            _ = note(FillSettings.note, NSRect(x: 48, y: 26, width: 470, height: 88), in: block)
         }
         section(110, gap: 20) { block in
             let rows: [(String, NSTextField, NSButton, Selector)] = [
@@ -634,6 +644,8 @@ extension HarnessClient: ModelSettingsService {}
             if SMAppService.mainApp.status == .requiresApproval { status.stringValue = "Approve pi-os in System Settings → General → Login Items." }
         } catch { login.state = SMAppService.mainApp.status == .enabled ? .on : .off; status.stringValue = error.localizedDescription }
     }
+    /// Applied at once (host-local): the next take declares `fill` only while this is on.
+    @objc private func fillToggled() { FillSettings.setEnabled(fillToggle.state == .on) }
     @objc private func credentialsChanged() {
         let allow = credentials.state == .on
         if allow && !CredentialFields.confirmEnable() { credentials.state = .off; return }
@@ -932,6 +944,7 @@ extension HarnessClient: ModelSettingsService {}
         control.state = ControlAvailability.requested ? .on : .off
         credentials.state = CredentialFields.allowed ? .on : .off
         credentials.isEnabled = ControlAvailability.ready
+        fillToggle.state = FillSettings.enabled() ? .on : .off
         compatibility.isEnabled = !busy && ControlAvailability.ready && catalog != nil
         refreshVoice()
     }

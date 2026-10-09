@@ -5,19 +5,40 @@ import XCTest
 /// Records effects instead of performing them: no app is launched, no link opened, no pasteboard touched.
 @MainActor final class FakeLauncherEffects: LauncherEffects {
     var launched: [String] = [], opened: [String] = [], revealed: [String] = [], copied: [String] = []
+    /// Links a browser took: "<bundle id> <url>".
+    var openedIn: [String] = []
+    /// Every browser a link was handed to, including ones that refused it.
+    var browserTargets: [AppInstance] = []
     var inspections: [String: FileInspection] = [:]
     /// A slow launch: `openApplication` waits for this before it returns (or throws `launchError`).
     var launchGate: (() async -> Void)?
     var launchError: Error?
+    /// The process macOS reports for a launch (nil: no answer before the deadline).
+    var launchedApp: ((URL) -> AppInstance?)?
+    /// A browser that refuses links; `defaultOpens` false: the default handler fails too.
+    var browserError: Error?
+    var defaultOpens = true
+    /// The default handler's bundle id per URL (`"*"`: any), for the continuity anchor; none by default.
+    var handlers: [String: String] = [:]
+    func defaultHandler(for url: URL) -> String? { handlers[url.isFileURL ? url.path : url.absoluteString] ?? handlers["*"] }
     private(set) var launchesFinished = 0
-    var total: Int { launched.count + opened.count + revealed.count + copied.count }
-    func openApplication(at url: URL) async throws {
+    var total: Int { launched.count + opened.count + openedIn.count + revealed.count + copied.count }
+    func openApplication(at url: URL) async throws -> AppInstance? {
         launched.append(url.path)
         await launchGate?()
         launchesFinished += 1
         if let launchError { throw launchError }
+        return launchedApp?(url)
     }
-    func open(_ url: URL) -> Bool { opened.append(url.isFileURL ? url.path : url.absoluteString); return true }
+    func open(_ url: URL) -> Bool {
+        guard defaultOpens else { return false }
+        opened.append(url.isFileURL ? url.path : url.absoluteString); return true
+    }
+    func open(_ url: URL, in browser: AppInstance) async throws {
+        browserTargets.append(browser)
+        if let browserError { throw browserError }
+        openedIn.append("\(browser.bundleId) \(url.absoluteString)")
+    }
     func reveal(_ url: URL) { revealed.append(url.path) }
     func copy(_ text: String) { copied.append(text) }
     func inspect(_ url: URL) -> FileInspection { inspections[url.path] ?? FileInspection(exists: true) }
@@ -62,13 +83,20 @@ enum LauncherFixtures {
         AppSeed(bundleId: "com.apple.Terminal", path: "/System/Applications/Utilities/Terminal.app", name: "Terminal"),
     ]
 
-    @MainActor static func host(hits: [SpotlightHit] = hits, effects: FakeLauncherEffects, system: FakeSystemControls = FakeSystemControls(),
-                                running: Set<String> = ["com.microsoft.vscode"]) -> LauncherHost {
+    /// The browsers of the link-routing tests (DESIGN5 §4.1), beside two apps that are not browsers.
+    static let browserApps = apps + [
+        AppSeed(bundleId: "com.apple.Safari", path: "/Applications/Safari.app", name: "Safari"),
+        AppSeed(bundleId: "com.brave.Browser", path: "/Applications/Brave Browser.app", name: "Brave Browser"),
+    ]
+
+    @MainActor static func host(hits: [SpotlightHit] = hits, apps: [AppSeed] = apps, effects: FakeLauncherEffects,
+                                system: FakeSystemControls = FakeSystemControls(), running: Set<String> = ["com.microsoft.vscode"],
+                                launches: PendingLaunches? = nil) -> LauncherHost {
         let tokens = FileTokenStore()
         let index = AppIndex(scanner: { apps }, running: { running }, observeWorkspace: false)
         let files = FileSearch(tokens: tokens, home: home, engine: { _, _, _ in hits })
         return LauncherHost(tokens: tokens, files: files, apps: index,
-                            service: LauncherService(tokens: tokens, apps: index, system: system, effects: effects))
+                            service: LauncherService(tokens: tokens, apps: index, system: system, effects: effects, launches: launches))
     }
 }
 
@@ -477,8 +505,492 @@ final class LauncherServiceTests: XCTestCase {
         XCTAssertEqual((catalog["tools"] as? [Any])?.count, 3, "The default catalog is unchanged")
     }
 
+    // MARK: Links open in the browser in front, or the one pi-os is launching (DESIGN5 §4.1, critic C11/C17 Phase 1a)
+
+    /// Pins as the host's context registry reports them: bundle id and pid only.
+    private static let pins: [String: AppInstance] = [
+        "ctx-safari": AppInstance(bundleId: "com.apple.Safari", pid: 101),
+        "ctx-brave": AppInstance(bundleId: "com.brave.browser", pid: 102), // LaunchServices' spelling
+        "ctx-codex": AppInstance(bundleId: "com.openai.codex", pid: 103), // claims https, is not a browser
+        "ctx-cmux": AppInstance(bundleId: "com.cmuxterm.app", pid: 104),
+        "ctx-finder": AppInstance(bundleId: "com.apple.finder", pid: 105),
+        "ctx-terminal": AppInstance(bundleId: "com.apple.Terminal", pid: 106),
+        "ctx-pwa": AppInstance(bundleId: "com.google.Chrome.app.abcdefghijklmnop", pid: 107),
+    ]
+    private static let safariLaunch = AppInstance(bundleId: "com.apple.Safari", pid: 4242)
+
+    @MainActor private func routingHost(_ effects: FakeLauncherEffects, now: Box<TimeInterval> = Box(1000),
+                                        lookups: Box<[String]> = Box([])) -> LauncherHost {
+        let host = LauncherFixtures.host(apps: LauncherFixtures.browserApps, effects: effects,
+                                         launches: PendingLaunches(clock: { now.value }, ownPID: 1))
+        host.service.pinnedApp = { id in lookups.value.append(id); return Self.pins[id] }
+        // macOS answers a Safari launch with its process; any other launch without one.
+        effects.launchedApp = { url in url.lastPathComponent == "Safari.app" ? Self.safariLaunch : nil }
+        return host
+    }
+    /// Lets the detached open (or launch) of the UI path run.
+    @MainActor private func settle(_ done: () -> Bool) async {
+        for _ in 0..<200 where !done() { await Task.yield() }
+    }
+
+    @MainActor func testALinkOpensInThePinnedBrowserAndOtherAppsKeepTheDefault() async throws {
+        let effects = FakeLauncherEffects()
+        let host = routingHost(effects)
+        var events: [LauncherTraceEvent] = []
+        host.service.trace = { events.append($0) }
+        var status = try await host.service.perform(.openURL("https://www.google.com/"), contextId: "ctx-safari", confirmed: false)
+        XCTAssertEqual(status, "Opened www.google.com in Safari")
+        await settle { effects.openedIn.count == 1 }
+        XCTAssertEqual(effects.openedIn, ["com.apple.Safari https://www.google.com/"])
+        XCTAssertEqual(effects.browserTargets.last, AppInstance(bundleId: "com.apple.Safari", pid: 101), "the pinned process")
+        status = try await host.service.perform(.openURL("https://www.wikipedia.org/"), contextId: "ctx-brave", confirmed: false)
+        XCTAssertEqual(status, "Opened www.wikipedia.org in Brave")
+        await settle { effects.openedIn.count == 2 }
+        XCTAssertEqual(effects.openedIn.last, "com.brave.browser https://www.wikipedia.org/")
+        XCTAssertTrue(effects.opened.isEmpty, "the default browser was not asked")
+        for context in ["ctx-codex", "ctx-cmux", "ctx-finder", "ctx-terminal", "ctx-pwa", "ctx-gone"] {
+            status = try await host.service.perform(.openURL("https://example.com/x"), contextId: context, confirmed: false)
+            XCTAssertEqual(status, "Opened example.com", context)
+        }
+        status = try await host.service.perform(.openURL("https://example.com/x"), contextId: nil, confirmed: false)
+        XCTAssertEqual(status, "Opened example.com")
+        XCTAssertEqual(effects.opened.count, 7, "no browser in front: the default browser, as before")
+        XCTAssertEqual(effects.openedIn.count, 2)
+        await settle { events.count == 9 }
+        XCTAssertEqual(events.filter { $0.browser == "pinned" }.count, 2)
+        XCTAssertEqual(events.filter { $0.browser == "default" }.count, 7)
+        XCTAssertEqual(Set(events.map(\.performed)), ["openURL"])
+        XCTAssertEqual(Set(events.map(\.outcome)), ["ok"])
+    }
+
+    /// The agent's launcher.open carries the take's contextId: the same ladder, awaited, with the same status.
+    @MainActor func testTheAgentRouteFollowsTheSameLadder() async throws {
+        let effects = FakeLauncherEffects()
+        let host = routingHost(effects)
+        var agentOpens: [String] = []
+        host.service.onAgentOpen = { _, result in agentOpens.append(result.status) }
+        var result = try await host.open(LauncherOpenRequest(contextId: "ctx-safari", action: .openURL("https://www.google.com/")))
+        XCTAssertEqual(result, LauncherOpenResult(status: "Opened www.google.com in Safari", performed: .openURL))
+        XCTAssertEqual(effects.openedIn, ["com.apple.Safari https://www.google.com/"], "done when the call returns")
+        result = try await host.open(LauncherOpenRequest(contextId: "ctx-brave", action: .openURL("https://www.wikipedia.org/")))
+        XCTAssertEqual(result.status, "Opened www.wikipedia.org in Brave")
+        result = try await host.open(LauncherOpenRequest(contextId: "ctx-codex", action: .openURL("https://example.com/x")))
+        XCTAssertEqual(result, LauncherOpenResult(status: "Opened example.com", performed: .openURL))
+        XCTAssertEqual(effects.opened, ["https://example.com/x"])
+        // An invocation pinned Brave, then opened Safari itself: its next link follows that launch, not the older pin.
+        _ = try await host.open(LauncherOpenRequest(contextId: "ctx-brave", action: .openApp(bundleId: "com.apple.Safari")))
+        XCTAssertEqual(host.service.launches.current?.app.pid, 4242)
+        result = try await host.open(LauncherOpenRequest(contextId: "ctx-brave", action: .openURL("https://www.google.com/")))
+        XCTAssertEqual(result.status, "Opened www.google.com in Safari")
+        XCTAssertEqual(effects.browserTargets.last?.bundleId, "com.apple.Safari")
+        XCTAssertEqual(effects.browserTargets.last?.pid, 4242, "the process macOS reported for the launch")
+        XCTAssertEqual(agentOpens.count, 5)
+    }
+
+    /// "öffne Safari" → "öffne Google" while a cold Safari is still starting: the next take pinned the app that was in
+    /// front before (Terminal), and macOS has not even answered the launch yet.
+    @MainActor func testALinkFollowsTheBrowserPiOSIsLaunching() async throws {
+        let effects = FakeLauncherEffects(), now = Box<TimeInterval>(1000)
+        let host = routingHost(effects, now: now)
+        let launches = host.service.launches
+        let (gate, answer) = AsyncStream<Void>.makeStream()
+        effects.launchGate = { for await _ in gate { break } }
+        var status = try await host.service.perform(.openApp(bundleId: "com.apple.Safari"), contextId: "ctx-terminal", confirmed: false)
+        XCTAssertEqual(status, "Opening Safari…")
+        XCTAssertEqual(launches.current?.app.bundleId, "com.apple.Safari", "pending from the moment it is performed")
+        XCTAssertNil(launches.current?.app.pid, "macOS has not answered yet")
+        now.value += 1.5
+        status = try await host.service.perform(.openURL("https://www.google.com/"), contextId: "ctx-terminal", confirmed: false)
+        XCTAssertEqual(status, "Opened www.google.com in Safari")
+        await settle { effects.openedIn.count == 1 }
+        XCTAssertEqual(effects.openedIn, ["com.apple.Safari https://www.google.com/"])
+        XCTAssertEqual(effects.browserTargets.last,
+                       AppInstance(bundleId: "com.apple.Safari", bundleURL: URL(fileURLWithPath: "/Applications/Safari.app", isDirectory: true)),
+                       "the copy pi-os is launching, before its pid is known")
+        answer.yield(); answer.finish()
+        await settle { launches.current?.app.pid != nil }
+        XCTAssertEqual(launches.current?.app.pid, 4242)
+        // The take pinned Brave, in front before the launch: the launch wins while no other app was activated.
+        status = try await host.service.perform(.openURL("https://www.wikipedia.org/"), contextId: "ctx-brave", confirmed: false)
+        XCTAssertEqual(status, "Opened www.wikipedia.org in Safari")
+        await settle { effects.openedIn.count == 2 }
+        XCTAssertEqual(effects.browserTargets.last?.pid, 4242)
+        XCTAssertTrue(effects.opened.isEmpty, "the default browser never activates on the Safari chain")
+    }
+
+    @MainActor func testAPendingLaunchEndsAfterFiveSecondsOnAnotherActivationOnQuitOrOnFailure() async throws {
+        let effects = FakeLauncherEffects(), now = Box<TimeInterval>(1000)
+        let host = routingHost(effects, now: now)
+        let service = host.service, launches = host.service.launches
+        func openSafari() async throws {
+            _ = try await service.perform(.openApp(bundleId: "com.apple.Safari"), contextId: "ctx-terminal", confirmed: false)
+            await settle { launches.current?.app.pid == 4242 }
+            XCTAssertEqual(launches.current?.app.pid, 4242)
+        }
+        func link() async throws -> String {
+            try await service.perform(.openURL("https://example.com/x"), contextId: "ctx-terminal", confirmed: false)
+        }
+        // 5 s after the open.
+        try await openSafari()
+        now.value += 5
+        var status = try await link()
+        XCTAssertEqual(status, "Opened example.com in Safari", "still within 5 s")
+        now.value += 0.01
+        XCTAssertNil(launches.current)
+        status = try await link()
+        XCTAssertEqual(status, "Opened example.com", "the default browser again")
+        // Another app came to the front (the user clicked Terminal): what they see wins.
+        try await openSafari()
+        launches.activated(pid: 4242, bundleId: "com.apple.Safari")
+        launches.activated(pid: 1, bundleId: "dev.pi-os.mac") // pi-os itself is never "another app"
+        XCTAssertNotNil(launches.current)
+        launches.activated(pid: 106, bundleId: "com.apple.Terminal")
+        XCTAssertNil(launches.current)
+        status = try await link()
+        XCTAssertEqual(status, "Opened example.com")
+        // Safari quit.
+        try await openSafari()
+        launches.terminated(pid: 999, bundleId: "com.apple.Safari") // another copy
+        XCTAssertNotNil(launches.current)
+        launches.terminated(pid: 4242, bundleId: "com.apple.Safari")
+        XCTAssertNil(launches.current)
+        status = try await link()
+        XCTAssertEqual(status, "Opened example.com")
+        // The launch failed.
+        var failures: [String] = []
+        service.onLaunchFailure = { failures.append($0.code) }
+        effects.launchError = DomainError("launch", "boom")
+        _ = try await service.perform(.openApp(bundleId: "com.apple.Safari"), contextId: "ctx-terminal", confirmed: false)
+        await settle { failures.count == 1 }
+        XCTAssertEqual(failures, ["open_failed"])
+        XCTAssertNil(launches.current)
+        status = try await link()
+        XCTAssertEqual(status, "Opened example.com")
+        // A later launch replaces it: Figma is not a browser, so links keep the default.
+        effects.launchError = nil
+        try await openSafari()
+        _ = try await service.perform(.openApp(bundleId: "com.figma.Desktop"), contextId: "ctx-terminal", confirmed: false)
+        XCTAssertEqual(launches.current?.app.bundleId, "com.figma.Desktop")
+        status = try await link()
+        XCTAssertEqual(status, "Opened example.com")
+        // Before its pid is known, a launch is matched by bundle id (any case).
+        let serial = launches.began(AppInstance(bundleId: "com.brave.Browser"))
+        launches.activated(pid: 77, bundleId: "com.brave.browser")
+        XCTAssertEqual(launches.current?.app.pid, 77, "its own activation names the process")
+        launches.reported(serial, AppInstance(bundleId: "com.apple.Safari", pid: 88))
+        XCTAssertEqual(launches.current?.app.pid, 77, "an answer naming another app changes nothing")
+        launches.reported(serial + 1, AppInstance(bundleId: "com.brave.Browser", pid: 99))
+        XCTAssertEqual(launches.current?.app.pid, 77, "an older launch's answer changes nothing")
+        launches.failed(serial - 1)
+        XCTAssertNotNil(launches.current, "nor does an older launch's failure")
+        launches.began(AppInstance(bundleId: "com.apple.Safari"))
+        launches.terminated(pid: 5, bundleId: "com.apple.Safari")
+        XCTAssertNil(launches.current, "quit before it answered")
+    }
+
+    /// Production follows NSWorkspace's notifications; here a private center posts them, and nothing is activated.
+    @MainActor func testPendingLaunchesFollowWorkspaceNotifications() async throws {
+        let center = NotificationCenter()
+        let runner = NSRunningApplication.current
+        // ownPID 1: the test runner's activation counts as another app's.
+        let launches = PendingLaunches(clock: { 1000 }, ownPID: 1)
+        launches.observe(center)
+        func post(_ name: Notification.Name) { center.post(name: name, object: nil, userInfo: [NSWorkspace.applicationUserInfoKey: runner]) }
+        launches.began(Self.safariLaunch)
+        post(NSWorkspace.didActivateApplicationNotification)
+        for _ in 0..<200 where launches.current != nil { try await Task.sleep(nanoseconds: 2_000_000) }
+        XCTAssertNil(launches.current, "another app came to the front")
+        // The runner's pid stands in for the launched app.
+        launches.began(AppInstance(bundleId: runner.bundleIdentifier ?? "com.example.runner", pid: runner.processIdentifier))
+        post(NSWorkspace.didActivateApplicationNotification)
+        try await Task.sleep(nanoseconds: 20_000_000)
+        XCTAssertNotNil(launches.current, "the launched app's own activation keeps it")
+        post(NSWorkspace.didTerminateApplicationNotification)
+        for _ in 0..<200 where launches.current != nil { try await Task.sleep(nanoseconds: 2_000_000) }
+        XCTAssertNil(launches.current, "the launched app quit")
+        launches.stopObserving()
+        launches.began(Self.safariLaunch)
+        post(NSWorkspace.didActivateApplicationNotification)
+        try await Task.sleep(nanoseconds: 20_000_000)
+        XCTAssertNotNil(launches.current, "no longer observed")
+    }
+
+    @MainActor func testABrowserThatRefusesTheLinkFallsBackToTheDefaultWithANote() async throws {
+        let effects = FakeLauncherEffects()
+        let host = routingHost(effects)
+        var notes: [DomainError] = [], events: [LauncherTraceEvent] = []
+        host.service.onLaunchFailure = { notes.append($0) }
+        host.service.trace = { events.append($0) }
+        effects.browserError = DomainError("launch", "refused")
+        let status = try await host.service.perform(.openURL("https://www.google.com/"), contextId: "ctx-safari", confirmed: false)
+        XCTAssertEqual(status, "Opened www.google.com in Safari", "the bar does not wait for the browser")
+        await settle { !notes.isEmpty }
+        XCTAssertEqual(notes.map(\.code), ["open_fallback"])
+        XCTAssertEqual(notes.first?.message, "Safari didn't open the link, so your default browser did.")
+        XCTAssertEqual(effects.opened, ["https://www.google.com/"], "opened once, by the default handler")
+        XCTAssertEqual(effects.browserTargets.count, 1)
+        await settle { events.count == 1 }
+        XCTAssertEqual(events.first?.outcome, "ok")
+        XCTAssertEqual(events.first?.browser, "fallback")
+        // The agent route says so in its result.
+        let result = try await host.open(LauncherOpenRequest(contextId: "ctx-safari", action: .openURL("https://www.google.com/")))
+        XCTAssertEqual(result, LauncherOpenResult(status: "Opened www.google.com in your default browser (Safari didn't open it)",
+                                                  performed: .openURL))
+        XCTAssertEqual(effects.opened.count, 2)
+        XCTAssertEqual(notes.count, 1, "the agent route reports through its result, not a note")
+        // Neither opened it.
+        effects.defaultOpens = false
+        _ = try await host.service.perform(.openURL("https://www.google.com/"), contextId: "ctx-safari", confirmed: false)
+        await settle { notes.count == 2 }
+        XCTAssertEqual(notes.last?.code, "open_failed")
+        XCTAssertEqual(notes.last?.message, "macOS could not open the link.")
+        await assertDomainError("open_failed") {
+            _ = try await host.open(LauncherOpenRequest(contextId: "ctx-safari", action: .openURL("https://www.google.com/")))
+        }
+        XCTAssertTrue(effects.openedIn.isEmpty)
+        XCTAssertEqual(notes.count, 2)
+    }
+
+    @MainActor func testInvalidLinksAreRefusedBeforeAnyRouting() async throws {
+        let effects = FakeLauncherEffects(), lookups = Box<[String]>([])
+        let host = routingHost(effects, lookups: lookups)
+        host.service.launches.began(Self.safariLaunch)
+        for link in ["file:///etc/passwd", "javascript:alert(1)", "https://user:secret@example.com/", "ftp://example.com/x"] {
+            await assertDomainError("policy_blocked") { _ = try await host.service.perform(.openURL(link), contextId: "ctx-safari", confirmed: false) }
+            await assertDomainError("policy_blocked") { _ = try await host.open(LauncherOpenRequest(contextId: "ctx-safari", action: .openURL(link))) }
+        }
+        XCTAssertEqual(effects.total, 0)
+        XCTAssertTrue(effects.browserTargets.isEmpty)
+        XCTAssertTrue(lookups.value.isEmpty, "the pin is not even looked up")
+    }
+
+    @MainActor func testLinkRoutingTracesNoContent() async throws {
+        let effects = FakeLauncherEffects()
+        let host = routingHost(effects)
+        var events: [LauncherTraceEvent] = []
+        host.service.trace = { events.append($0) }
+        _ = try await host.service.perform(.openURL("https://www.google.com/search?q=secret"), contextId: "ctx-safari", confirmed: false)
+        _ = try await host.open(LauncherOpenRequest(contextId: "ctx-brave", action: .openURL("https://de.wikipedia.org/wiki/Einstein")))
+        _ = try await host.service.perform(.openURL("https://example.com/private"), contextId: "ctx-codex", confirmed: false)
+        _ = try await host.service.perform(.openApp(bundleId: "com.apple.Safari"), contextId: "ctx-codex", confirmed: false)
+        await settle { events.count == 4 }
+        _ = try await host.service.perform(.openURL("https://example.com/private"), contextId: "ctx-codex", confirmed: false)
+        await settle { events.count == 5 }
+        effects.browserError = DomainError("launch", "refused")
+        _ = try await host.service.perform(.openURL("https://www.google.com/search?q=secret"), contextId: "ctx-safari", confirmed: false)
+        await settle { events.count == 6 }
+        XCTAssertEqual(events.count, 6)
+        XCTAssertEqual(Set(events.compactMap(\.browser)), ["pinned", "default", "launching", "fallback"])
+        XCTAssertNil(events.first { $0.action == "openApp" }?.browser)
+        let text = events.map { "\($0)" }.joined()
+        for secret in ["google", "wikipedia", "example", "secret", "Einstein", "http", "Safari", "Brave", "com.", "ctx-", "4242"] {
+            XCTAssertFalse(text.contains(secret), secret)
+        }
+    }
+
     private func assertDomainError(_ code: String, file: StaticString = #filePath, line: UInt = #line, _ work: () async throws -> Void) async {
         do { try await work(); XCTFail("expected \(code)", file: file, line: line) }
         catch { XCTAssertEqual((error as? DomainError)?.code, code, "\(error)", file: file, line: line) }
+    }
+}
+
+// MARK: - Continuity (DESIGN5 §3, §4.3, §5.7): a fill's Return, the anchor on both routes, explicit choices, same tab
+
+extension LauncherServiceTests {
+    @MainActor func testAFillTypesThenPressesOneGatedReturnOnlyIntoASearchBoxOrTheAddressBar() async throws {
+        let effects = FakeLauncherEffects()
+        let service = LauncherFixtures.host(effects: effects).service
+        var steps: [String] = [], events: [LauncherTraceEvent] = []
+        var kind: InstantFieldKind? = .search
+        service.typeIntoPinned = { id, text in steps.append("type \(id) \(text)") }
+        service.pressReturnInPinned = { id in steps.append("return \(id)") }
+        service.boundFieldKind = { _ in kind }
+        service.trace = { events.append($0) }
+        var status = try await service.perform(.typeIntoPinned("Albert Einstein", submit: true), contextId: "ctx-1", confirmed: false)
+        XCTAssertEqual(steps, ["type ctx-1 Albert Einstein", "return ctx-1"], "the text first, then its own key press")
+        XCTAssertEqual(status, "Typed into the pinned window and pressed Return")
+        kind = .address; steps = []
+        _ = try await service.perform(.typeIntoPinned("wikipedia einstein", submit: true), contextId: "ctx-1", confirmed: false)
+        XCTAssertEqual(steps, ["type ctx-1 wikipedia einstein", "return ctx-1"])
+        // Every other kind: typed, never a Return on its own (TOM-ANSWERS 2; documents and chats never).
+        for other in InstantFieldKind.allCases where ![.search, .address].contains(other) {
+            kind = other; steps = []
+            status = try await service.perform(.typeIntoPinned("x", submit: true), contextId: "ctx-1", confirmed: false)
+            XCTAssertEqual(steps, ["type ctx-1 x"], other.rawValue)
+            XCTAssertEqual(status, "Typed into the pinned window", other.rawValue)
+        }
+        // Node's word alone is never enough: no bound field, no Return.
+        kind = nil; steps = []
+        _ = try await service.perform(.typeIntoPinned("x", submit: true), contextId: "ctx-1", confirmed: false)
+        XCTAssertEqual(steps, ["type ctx-1 x"])
+        // No submit: never a Return, even into a search box (cards and the ⌘↩ path never set it).
+        kind = .search; steps = []
+        _ = try await service.perform(.typeIntoPinned("x"), contextId: "ctx-1", confirmed: false)
+        XCTAssertEqual(steps, ["type ctx-1 x"])
+        // A native gate refused the key: the text stays typed and the take says so.
+        service.pressReturnInPinned = { _ in steps.append("refused"); throw DomainError("file_deletion_blocked", "no") }
+        steps = []
+        status = try await service.perform(.typeIntoPinned("x", submit: true), contextId: "ctx-1", confirmed: false)
+        XCTAssertEqual(steps, ["type ctx-1 x", "refused"])
+        XCTAssertEqual(status, "Typed into the pinned window · Return not pressed")
+        // An uncertain key press surfaces as such (the context is poisoned by the native path), never as "not pressed".
+        service.pressReturnInPinned = { _ in throw DomainError("input_failed", "uncertain") }
+        await assertDomainError("input_failed") { _ = try await service.perform(.typeIntoPinned("x", submit: true), contextId: "ctx-1", confirmed: false) }
+        // Typing failed: no Return at all.
+        service.typeIntoPinned = { _, _ in throw DomainError("focus_failed", "moved") }
+        service.pressReturnInPinned = { _ in XCTFail("no Return after a failed typing") }
+        await assertDomainError("focus_failed") { _ = try await service.perform(.typeIntoPinned("x", submit: true), contextId: "ctx-1", confirmed: false) }
+        // No Return wired: skipped.
+        service.typeIntoPinned = { _, _ in }
+        service.pressReturnInPinned = nil
+        status = try await service.perform(.typeIntoPinned("x", submit: true), contextId: "ctx-1", confirmed: false)
+        XCTAssertEqual(status, "Typed into the pinned window")
+        let submits = events.compactMap(\.submit)
+        XCTAssertEqual(Set(submits), ["pressed", "skipped", "refused"])
+        XCTAssertEqual(submits.filter { $0 == "pressed" }.count, 2)
+        let text = events.map { "\($0)" }.joined()
+        for secret in ["Albert", "Einstein", "wikipedia", "ctx-1"] { XCTAssertFalse(text.contains(secret), secret) }
+    }
+
+    func testTheSubmitPlanAndItsTable() throws {
+        XCTAssertEqual(try LauncherPolicy.plan(.typeIntoPinned("Albert Einstein", submit: true)), .typeIntoPinned("Albert Einstein", submit: true))
+        XCTAssertEqual(try LauncherPolicy.plan(.typeIntoPinned("a\nb")), .typeIntoPinned("a\nb", submit: false), "typing without a Return is unchanged")
+        for text in ["a\nb", "a\rb", "a\tb", "a\u{2028}b"] {
+            XCTAssertThrowsError(try LauncherPolicy.plan(.typeIntoPinned(text, submit: true)), "a Return only after one line")
+        }
+        for kind in InstantFieldKind.allCases {
+            XCTAssertEqual(LauncherPolicy.pressesReturn(submit: true, boundKind: kind), [.search, .address].contains(kind), kind.rawValue)
+            XCTAssertEqual(LauncherPolicy.pressesReturn(submit: true, boundKind: kind, explicit: true),
+                           [.search, .address, .text].contains(kind), "explicit: \(kind.rawValue)")
+            XCTAssertFalse(LauncherPolicy.pressesReturn(submit: false, boundKind: kind, explicit: true))
+        }
+        XCTAssertFalse(LauncherPolicy.pressesReturn(submit: true, boundKind: nil, explicit: true))
+    }
+
+    @MainActor func testOpensCreateTheContinuityAnchorOnBothRoutes() async throws {
+        let effects = FakeLauncherEffects(), now = Box<TimeInterval>(1000)
+        let host = routingHost(effects, now: now)
+        let service = host.service, anchors = service.anchors
+        var take: String? = "take-1"
+        service.currentTakeId = { take }
+        // The bar's instant act: pending at once, named after its take, confirmed by macOS's answer.
+        _ = try await service.perform(.openApp(bundleId: "com.apple.Safari"), contextId: "ctx-terminal", confirmed: false)
+        XCTAssertEqual(anchors.current?.kind, .app)
+        XCTAssertEqual(anchors.current?.originTakeId, "take-1")
+        await settle { anchors.current?.pid == 4242 }
+        XCTAssertEqual(anchors.current?.confirmed, true)
+        // The agent's open has no take, even while a take is current.
+        _ = try await host.open(LauncherOpenRequest(contextId: "ctx-terminal", action: .openApp(bundleId: "com.figma.Desktop")))
+        XCTAssertEqual(anchors.current?.bundleId, "com.figma.Desktop")
+        XCTAssertNil(anchors.current?.originTakeId)
+        // A failed launch leaves nothing.
+        effects.launchError = DomainError("launch", "boom")
+        await assertDomainError("open_failed") { _ = try await host.open(LauncherOpenRequest(contextId: nil, action: .openApp(bundleId: "com.apple.Safari"))) }
+        XCTAssertNil(anchors.current)
+        effects.launchError = nil
+        // A link: the browser that took it.
+        take = "take-2"
+        _ = try await service.perform(.openURL("https://www.google.com/"), contextId: "ctx-safari", confirmed: false)
+        await settle { anchors.current?.confirmed == true }
+        XCTAssertEqual(anchors.current?.kind, .url)
+        XCTAssertEqual(anchors.current?.bundleId, "com.apple.Safari")
+        XCTAssertEqual(anchors.current?.pid, 101)
+        XCTAssertEqual(anchors.current?.originTakeId, "take-2")
+        // The default browser, when LaunchServices names it.
+        effects.handlers["*"] = "com.brave.Browser"
+        _ = try await service.perform(.openURL("https://example.com/"), contextId: "ctx-codex", confirmed: false)
+        XCTAssertEqual(anchors.current?.bundleId, "com.brave.Browser")
+        XCTAssertEqual(anchors.current?.confirmed, true)
+        // A reveal anchors Finder, never the file's app; an opened file anchors its app.
+        let found = try await host.files.search(FileSearchRequest(contextId: "ctx-1", nameGroups: [["invoice"]]))
+        let item = try XCTUnwrap(found.items.first { $0.name == "Invoice-2026-03.pdf" })
+        _ = try await service.perform(.revealFile(token: item.token), contextId: "ctx-1", confirmed: false)
+        XCTAssertEqual(anchors.current?.bundleId, "com.apple.finder")
+        XCTAssertEqual(anchors.current?.kind, .folder)
+        effects.handlers[item.path] = "com.apple.Preview"
+        _ = try await service.perform(.openFile(token: item.token), contextId: "ctx-1", confirmed: false)
+        XCTAssertEqual(anchors.current?.bundleId, "com.apple.Preview")
+        XCTAssertEqual(anchors.current?.kind, .file)
+        // "Not this" on the take that launched it drops the pending launch too (§3.4).
+        _ = try await service.perform(.openApp(bundleId: "com.apple.Safari"), contextId: "ctx-terminal", confirmed: false)
+        service.launches.rejected(takeId: "take-1")
+        XCTAssertNotNil(service.launches.current)
+        service.launches.rejected(takeId: "take-2")
+        XCTAssertNil(service.launches.current)
+        anchors.rejected(takeId: "take-2")
+        XCTAssertNil(anchors.current)
+        // Sleep, the screen lock and a session resign end a pending launch as well.
+        let workspace = NotificationCenter(), distributed = NotificationCenter()
+        service.launches.observe(workspace, distributed: distributed)
+        for (center, name) in SessionEnd.workspace.map({ (workspace, $0) }) + [(distributed, SessionEnd.screenLocked)] {
+            service.launches.began(AppInstance(bundleId: "com.apple.Safari", pid: 4242))
+            center.post(name: name, object: nil)
+            for _ in 0..<200 where service.launches.current != nil { try await Task.sleep(nanoseconds: 2_000_000) }
+            XCTAssertNil(service.launches.current, name.rawValue)
+        }
+        service.launches.stopObserving()
+    }
+
+    /// Phase 1b (§3.6): an explicit choice beats the launch; a live launch of a non-browser passes over a stale browser pin.
+    @MainActor func testExplicitChoicesAndNonBrowserLaunchesInTheLinkLadder() async throws {
+        let effects = FakeLauncherEffects()
+        let host = routingHost(effects)
+        let service = host.service
+        var explicit: Set<String> = []
+        service.explicitTarget = { explicit.contains($0) }
+        service.launches.began(AppInstance(bundleId: "com.apple.Safari", pid: 4242))
+        var status = try await service.perform(.openURL("https://example.com/"), contextId: "ctx-terminal", confirmed: false)
+        XCTAssertEqual(status, "Opened example.com in Safari", "the launch wins without a choice")
+        explicit = ["ctx-terminal", "ctx-brave"]
+        status = try await service.perform(.openURL("https://example.com/"), contextId: "ctx-terminal", confirmed: false)
+        XCTAssertEqual(status, "Opened example.com", "the user chose Terminal's window: no browser in front")
+        status = try await service.perform(.openURL("https://example.com/"), contextId: "ctx-brave", confirmed: false)
+        XCTAssertEqual(status, "Opened example.com in Brave", "the user chose Brave")
+        // "öffne Notizen" then "öffne Google" before Notes came to the front: no browser is about to be in front.
+        explicit = []
+        service.launches.began(AppInstance(bundleId: "com.apple.Notes"))
+        status = try await service.perform(.openURL("https://example.com/"), contextId: "ctx-safari", confirmed: false)
+        XCTAssertEqual(status, "Opened example.com")
+        explicit = ["ctx-safari"]
+        status = try await service.perform(.openURL("https://example.com/"), contextId: "ctx-safari", confirmed: false)
+        XCTAssertEqual(status, "Opened example.com in Safari", "an explicit choice of the Safari window wins")
+    }
+
+    @MainActor func testTheSameTabRouteLoadsLeavesANoteOrDeclines() async throws {
+        let effects = FakeLauncherEffects()
+        let host = routingHost(effects)
+        let service = host.service
+        var outcome = SafariAddressRoute.Outcome.loaded
+        var seen: [ContinuityAnchor.Kind?] = [], notes: [String] = [], retry: (@MainActor () -> Void)?
+        service.sameTab = { _, browser, _, anchor in
+            seen.append(anchor?.kind)
+            XCTAssertEqual(browser.bundleId, "com.apple.Safari")
+            return outcome
+        }
+        service.onLinkNotLoaded = { name, again in notes.append(name); retry = again }
+        // The start page pi-os opened is the anchor the route sees, not the link's own.
+        service.anchors.opened(.app, bundleId: "com.apple.Safari", pid: 101, originTakeId: "take-1")
+        var result = try await host.open(LauncherOpenRequest(contextId: "ctx-safari", action: .openURL("https://www.google.com/")))
+        XCTAssertEqual(result.status, "Opened www.google.com in Safari")
+        XCTAssertEqual(seen, [.app])
+        XCTAssertTrue(effects.openedIn.isEmpty && effects.opened.isEmpty, "loaded in the start tab: nothing else opened")
+        XCTAssertEqual(service.anchors.current?.kind, .url)
+        // Safari took the address but showed no page: a note with "Open in a new tab", never a second copy on its own.
+        outcome = .unverified
+        result = try await host.open(LauncherOpenRequest(contextId: "ctx-safari", action: .openURL("https://www.google.com/")))
+        XCTAssertEqual(notes, ["Safari"])
+        XCTAssertTrue(effects.openedIn.isEmpty)
+        retry?()
+        await settle { effects.openedIn.count == 1 }
+        XCTAssertEqual(effects.openedIn, ["com.apple.Safari https://www.google.com/"], "only when the user asks")
+        // Declined (not eligible, or Safari refused at once): the ordinary open in that browser.
+        outcome = .declined
+        _ = try await service.perform(.openURL("https://www.wikipedia.org/"), contextId: "ctx-safari", confirmed: false)
+        await settle { effects.openedIn.count == 2 }
+        XCTAssertEqual(effects.openedIn.last, "com.apple.Safari https://www.wikipedia.org/")
+        XCTAssertTrue(effects.opened.isEmpty)
+        XCTAssertFalse(SafariAddressRoute.enabled([:]), "off by default")
+        XCTAssertFalse(SafariAddressRoute.enabled(["PI_OS_SAFARI_SAME_TAB": "true"]))
+        XCTAssertTrue(SafariAddressRoute.enabled(["PI_OS_SAFARI_SAME_TAB": "1"]))
     }
 }

@@ -318,5 +318,97 @@
       "truncated": false,
       "elapsedMs": 4.2
     }
+  },
+  "instantTarget": {
+    "wire": {
+      "app": "browser",
+      "anchor": {
+        "takeId": null,
+        "settling": null
+      },
+      "field": {
+        "kind": "search",
+        "empty": null,
+        "ready": true,
+        "ownFill": null
+      }
+    },
+    "normalized": {
+      "app": "browser",
+      "anchor": {},
+      "field": {
+        "kind": "search",
+        "ready": true
+      }
+    }
+  },
+  "instantRequestTarget": {
+    "wire": {
+      "text": "Albert Einstein",
+      "phase": "final",
+      "seq": 4,
+      "accept": [
+        "fill"
+      ],
+      "target": {
+        "app": "other",
+        "anchor": null,
+        "field": null
+      }
+    },
+    "normalized": {
+      "text": "Albert Einstein",
+      "phase": "final",
+      "seq": 4,
+      "accept": [
+        "fill"
+      ],
+      "target": {
+        "app": "other"
+      }
+    }
+  },
+  "voiceMetaFill": {
+    "wire": {
+      "source": "parakeet-v3",
+      "via": "field",
+      "check": null,
+      "fill": null
+    },
+    "normalized": {
+      "source": "parakeet-v3",
+      "via": "field"
+    }
+  },
+  "hostActionTypeIntoPinned": {
+    "wire": {
+      "type": "typeIntoPinned",
+      "text": "Albert Einstein",
+      "submit": null
+    },
+    "normalized": {
+      "type": "typeIntoPinned",
+      "text": "Albert Einstein"
+    }
+  },
+  "contextTarget": {
+    "wire": {
+      "scope": "general",
+      "pull": "allowed",
+      "source": "default",
+      "scopeHint": null,
+      "target": {
+        "field": null,
+        "anchored": true
+      }
+    },
+    "normalized": {
+      "scope": "general",
+      "pull": "allowed",
+      "source": "default",
+      "target": {
+        "anchored": true
+      }
+    }
   }
 }

@@ -1,0 +1,27 @@
+{
+  "text": "Albert Einstein",
+  "phase": "final",
+  "seq": 2,
+  "takeId": "take-52",
+  "contextId": "ctx-125",
+  "locale": "en-US",
+  "inputMode": "voice",
+  "accept": [
+    "suggest",
+    "check",
+    "confirm",
+    "fill"
+  ],
+  "target": {
+    "app": "browser",
+    "anchor": {
+      "takeId": "take-50",
+      "settling": true
+    },
+    "field": {
+      "kind": "address",
+      "empty": true,
+      "ready": true
+    }
+  }
+}

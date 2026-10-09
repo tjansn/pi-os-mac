@@ -93,7 +93,10 @@ public enum SystemValue: Codable, Equatable {
 /// Closed launcher vocabulary. There is no delete/trash/move/rename/write/power action.
 public enum HostAction: Codable, Equatable {
     case copyText(String)
-    case typeIntoPinned(String)
+    /// `submit` (continuity fills only, `act` intent `fill`): after the text, one Return as a SEPARATE gated
+    /// `pressKey enter` (LauncherPolicy plan), never a newline in the text, so the text is then single-line.
+    /// Encoded only when true; the ⌘↩ answer-card path and card bindings never set it.
+    case typeIntoPinned(String, submit: Bool = false)
     case openURL(String)
     case openApp(bundleId: String)
     case openFile(token: String)
@@ -119,7 +122,7 @@ public enum HostAction: Codable, Equatable {
         }
     }
 
-    private enum Keys: String, CodingKey { case type, text, url, bundleId, token, op, value, prompt }
+    private enum Keys: String, CodingKey { case type, text, url, bundleId, token, op, value, prompt, submit }
 
     public static let maxText = 4_000
     public static let maxPrompt = 500
@@ -158,7 +161,13 @@ public enum HostAction: Codable, Equatable {
         }
         switch type {
         case "copyText": self = .copyText(try string(.text, max: HostAction.maxText))
-        case "typeIntoPinned": self = .typeIntoPinned(try string(.text, max: HostAction.maxText))
+        case "typeIntoPinned":
+            let text = try string(.text, max: HostAction.maxText)
+            let submit = try c.decodeIfPresent(Bool.self, forKey: .submit) ?? false
+            if submit, AttachmentValidation.hasControl(text) {
+                throw DecodingError.dataCorruptedError(forKey: .text, in: c, debugDescription: "a submitted text is one line")
+            }
+            self = .typeIntoPinned(text, submit: submit)
         case "openURL":
             let url = try c.decode(String.self, forKey: .url)
             guard HostAction.isHTTPURL(url) else { throw DecodingError.dataCorruptedError(forKey: .url, in: c, debugDescription: "only http(s) URLs") }
@@ -182,7 +191,10 @@ public enum HostAction: Codable, Equatable {
         var c = encoder.container(keyedBy: Keys.self)
         try c.encode(typeName, forKey: .type)
         switch self {
-        case .copyText(let text), .typeIntoPinned(let text): try c.encode(text, forKey: .text)
+        case .copyText(let text): try c.encode(text, forKey: .text)
+        case .typeIntoPinned(let text, let submit):
+            try c.encode(text, forKey: .text)
+            if submit { try c.encode(true, forKey: .submit) }
         case .openURL(let url): try c.encode(url, forKey: .url)
         case .openApp(let bundleId): try c.encode(bundleId, forKey: .bundleId)
         case .openFile(let token), .revealFile(let token), .copyPath(let token): try c.encode(token, forKey: .token)
@@ -195,6 +207,10 @@ public enum HostAction: Codable, Equatable {
 
     /// Builds an action from a json-render binding ({action, params}).
     public static func fromBinding(action: String, params: [String: JSONValue]) throws -> HostAction {
+        // A card binding never submits (the catalog's typeIntoPinned params are `{text}` only, as in Node).
+        if action == "typeIntoPinned", params["submit"] != nil {
+            throw DomainError("invalid_card", "A card binding cannot submit.")
+        }
         var merged = params
         merged["type"] = .string(action)
         let data = try JSONEncoder().encode(merged)

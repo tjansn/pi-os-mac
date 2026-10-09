@@ -407,11 +407,288 @@ pi-os work ends with opening a folder or a program the result window can be auto
   the real desktop's Radfotos folder via Accessibility (read-only probe). Not verified live: a regular Finder
   window's list/icon/column views (only fake trees), the step-aside in a real agent run.
 
+## Pass 5 (2026-10-08): continuity
+
+Branch `feat/continuity`. Stage A (links open in the browser in front, and the wire contract) is merged into `main` as
+`e9ab5ca` and installed. Everything else below (the anchor, the launch race, typing into the focused field, Undo) is
+built and tested offline on `feat/continuity` and is **not installed**. The design note it implements (DESIGN5, cited by
+section in code comments) is kept outside the repository; Tom's answers of 2026-10-08 override its recommendations.
+Wire contract: [protocol.md](shared/protocol/protocol.md) ("Continuity" under `POST /instant`, `typeIntoPinned.submit`
+under Host actions, `context.target` under Context scope). Live QA plan:
+[host-macos/qa/continuity/README.md](host-macos/qa/continuity/README.md).
+
+### What Tom asked
+
+"When I open a program, like i say "open Safari" and then there is no other action, pi-os needs to take safari as the
+active context, and act in there. So that when my next command is "open google" the google page should open in that
+exact safari window that just opened. Same for any other program. - if there is an active input field in the for the
+user visible context, the voice input should directly fill in the input field. Example: I hold the shortcut and say
+"Open wikipedia" and wikipedia.org opens. then there is a search field and the cursor is directly in the search field.
+same for google. Then our application should know that and fill the next input directly in that input field. …
+whilst preserving things like when there is a wbsite open and i ask about it, we need to kick off an agent that helps
+answer the question."
+
+### His decisions (2026-10-08, binding)
+
+| # | Question | Tom's answer | What the code does |
+|---|---|---|---|
+| 1 | What gets typed into a focused field? | "Everything except commands", questions included | Commands, pi tasks, page questions, "frag pi …" and every policy case are never typed. Everything else is typed when an eligible field has the caret, empty or not, single-line or multiline |
+| 2 | When is Return pressed? | "Auto in search boxes" | One gated Return after a fill into a search box or the browser's address bar. Never anywhere else |
+| 3 | Where do links open? | "The browser in front" | The browser in front, or the one pi-os is launching; otherwise the default browser (Brave on Tom's Mac). Chromium closes a lone New Tab Page by itself (per its source, not checked live); Safari's empty start page is reused only behind a flag until live QA |
+| 4 | A bare "nein" right after a fill | "Undo the typing" | Within 5 s of the note, "nein"/"no" (or the note's Undo) removes exactly what pi-os typed. "tippe nein" types the word |
+| 5 | Password and code fields | Recommendation kept (not asked) | Typed only on an explicit request ("tippe …", or ↩ on the masked card) with the Settings opt-in. Never journaled, never sent to a remote classifier |
+
+Where the code cannot do what an answer says, it says so instead (open questions at the end): after the automatic
+Return in a search box, deleting the typed characters cannot undo the search that ran, so there is no Undo there.
+
+### How a take flows now
+
+```
+key-down ─► pin the window in front (unchanged) ─► continuity: anchored · racing a pi-os launch · none
+  │  field facts: today's focused-element summary + 4 quick reads (inside the existing 25 ms cap);
+  │  after the bar, off the main thread: the field's kind (≤ 24 ancestors; labels matched, then dropped)
+  │  caption under the transcript: "Speak to type into Safari · Search" (only where pi-os may type on its own)
+  └─ key-up / Return ─► a racing take waits ≤ 150 ms for the launching app (re-pin) ─► the app's own focused
+                        element is read again: the bound field
+       POST /instant final { …, accept + "fill", target { app, anchor?, field? } }
+       Node: policy ─► "frag pi …" ─► "nein, X" after pi-os's fill ─► "tippe …" ─► "such nach X" (browser)
+             ─► instant commands as today ─► page and window questions ─► pi tasks ─► everything else: fill
+       host: act fill ─► the bar steps aside ─► gated typing bound to that field ─► Return only in a search
+             box or the address bar ─► note "Typed into Safari · Search" with Undo · Ask pi (5 s)
+```
+
+### The decision order
+
+Step 0 runs on the host before `/instant`; the rest in Node (`instant/fill.ts`, `dispatcher.ts`). Node decides a fill
+only for a final that declares `accept: "fill"` and carries a `target` with an eligible field; without either, every
+decision is byte-identical to before.
+
+| Step | Rule |
+|---|---|
+| 0 Host | An answer to a shown decision; whole-utterance cancel words. Within 5 s of a fill's note: a bare "nein/no/undo/rückgängig" undoes it, a bare "frag pi/ask pi" undoes it and sends the typed words to pi |
+| 1 Policy | Deletion requests are refused as before. Deletion words never reach a field on their own. Deictic, compound and bare-edit takes keep today's path |
+| 2 Escapes | "frag pi …/ask pi …/hey pi …/Pi, …" goes to pi; nothing is typed. "tippe …/tipp …/type …/type in …/dictate …/diktiere …/gib … ein" types the remainder (explicit). Not "schreib/write": that is a pi task |
+| 3 Replace | "nein, X" / "No, I meant X" within 30 s of pi-os's own fill, while the field still holds exactly that fill: the host undoes it, then types X. Otherwise nothing is typed, and the correction is not aimed at an older act either |
+| 4 Search forms | In a browser: "such nach X", "suche X", "search for X" type X into a focused search box or the address bar with one Return. Without such a field, the anchored page's own search (Wikipedia, YouTube, …) or the web search opens in that browser. "google X" on the Google page pi-os just opened goes into its box |
+| 5 Commands | Instant commands as today: acts, answers (calculations, units, times), lists, refusals. An installed app's exact name said alone stays a command. A name said alone that only resembles an app ("Albert Einstein" → "Alfred?") is typed instead of "Did you mean …?" |
+| 6 Page questions | Deictic and window wording ("this page", "diese Seite", "hier"), the window band (scope ≥ 0.7, or ≥ 0.5 with a window reason), "what does it say", "was steht da", "worum geht es", and German questions that point with "das"/"dem" ("ist das wahr", "kann ich dem trauen"; "Wie groß ist das Universum" is still typed) go to pi |
+| 7 pi tasks | A task head in EN/DE (write/schreib, summarize/fasse zusammen, translate/übersetze, explain/erkläre, create/erstelle, remind/erinnere, plan, draft/entwirf, reply/antworte, open/öffne, …), a request addressed to pi ("can you …", "kannst du …"), a German verb-final command ("eine Mail an Anna schreiben"), device switches ("WLAN aus", "Timer 5 Minuten"), and the router's command intents are never typed: they keep today's path (pi, or "Did I hear that right?" when the recognizers doubt them) |
+| 8 Control words | Yes/no/ok/cancel/enter/los/Escape and similar whole utterances are never typed |
+| 9 Fill | Everything else is typed, **voice only** (a typed bar entry addresses pi). Recognizer doubt (the check gate's signals) turns it into the check card "↩ Type into Safari · ⌥↩ Ask pi"; a terminal always gets that card; a password or code field gets the masked card |
+
+Typed finals get steps 1–4 (so "tippe …", "nein, X" and the search forms work typed too), never step 9.
+
+### Field kinds and the Return rule
+
+The host classifies the focused control (`PiOSCore/FieldKind.swift`, first match wins) from roles, subroles,
+identifiers and labels. Labels are matched against closed EN/DE lists and dropped; a value is never read.
+
+| Kind | How it is recognized | Typed | Return |
+|---|---|---|---|
+| `credential` | The native credential rule, `AXSecureTextField`, an unreadable label (fail closed), WebKit's credentials autofill type | Only explicitly, with the opt-in | Never |
+| `rename` | Any Finder-owned editable field except its toolbar search (rename editors) | Never | Never |
+| `confirm` | "Type DELETE to confirm" / "zur Bestätigung … eingeben" labels, or a sheet or dialog titled with deletion words that holds a destructive button | Never ("This field confirms a deletion, so pi-os won't type into it.") | Never |
+| `sensitive` | Whole-word labels: verification/one-time/security code, OTP, 2FA, PIN, TAN, card number, CVV/CVC, IBAN, expiry (EN/DE); WebKit's credit-card autofill type | Only explicitly, with the opt-in; a spoken "tippe …" asks one Return first | Never |
+| `terminal` | Terminal apps and terminal markers | Only explicitly, or ↩ on the card | Never |
+| `address` | A browser's own address bar (a field in its toolbar with no web page above it, or Safari's `WEB_BROWSER_ADDRESS_AND_SEARCH_FIELD`) | Yes | **Once** |
+| `search` | Subrole `AXSearchField`, or a text field or combo box whose identifier has a search word or whose label reads as a search box's ("Search Wikipedia", "Google-Suche"; `#channel` and `@contact` names ignored). A text area only by its subrole, so chat composers never count | Yes | **Once** |
+| `text` | Any other single-line field | Yes | Never |
+| `multiline` | Text areas and content-editable text (documents, chats, notes) | Yes | Never |
+
+A field is **ready** when it is visible (at least half inside the window) and either native or in the tab's own loaded
+page, never inside a frame. It is not ready while a text field, text area or terminal holds a selection (typing would
+replace it), or when the focus moved during the hold from one eligible field to another. A field that is not ready gets
+today's path. The Return is decided three times: Node sets `submit` only for `search` and `address`, its server drops any
+other `submit`, and the host presses it only when its own bound field is a search box or address bar and the field
+visibly holds exactly what was typed (otherwise the note says "Return not pressed").
+
+### How it types
+
+- The bar steps aside, the window is focused, and the bound field must have focus again within 120 ms. Every event
+  checks that the focused element is still the bound one, on top of today's native gates (identity and fingerprint,
+  exact front window, credential and deletion checks, the input budget, uncertain-input poisoning, no held modifiers).
+- One line: line breaks, tabs and control characters become spaces; spoken punctuation ("Komma", "Fragezeichen",
+  "question mark") is converted; ASR's trailing period goes in search boxes, the address bar and short single-line
+  fragments. At most 500 characters.
+- Text typed after other text gets one separating space, unless the character before the caret is a space, a line
+  break, an opening bracket or a German low quote, or the text starts with closing punctuation (that one character is
+  read and classified in memory, never for a password or code field). The space counts toward Undo.
+- No clipboard, no `AXValue`, never ⌘Z. The Unicode string now rides on the key-down event only, for all native typing
+  (Electron's contentEditable doubled text with the key-up payload); `PI_OS_TYPE_KEYUP_PAYLOAD=1` restores it. Chunking
+  (`PI_OS_TYPE_CHUNK`) is off by default until live QA passes per engine.
+- Notes: "Typed into Safari · Search" (Undo · Ask pi), "Searched in Safari · Search" (Ask pi only), "The field lost
+  focus, so pi-os typed nothing" (Copy), "pi-os couldn't type there", "Typing was interrupted — check the field".
+  Uncertain input is never retried.
+
+### Undo, "tippe" and "frag pi"
+
+| You say or press | What happens |
+|---|---|
+| "nein", "no", "undo", "rückgängig" alone, or the note's **Undo**, within 5 s | The typed text is removed: the very same element must still hold exactly that fill (same length, caret where the fill left it), the typed range is selected and read back, then one gated Backspace deletes it. Anything unproven: "Couldn't undo safely — press ⌘Z" |
+| The same after a search box's automatic Return | Nothing is deleted (the search ran): "Already searched — go back with ⌘[" |
+| "frag pi" / "ask pi" alone, or the note's **Ask pi**, within 5 s | The fill is undone (after a search's Return nothing is deleted) and the same words go to pi. If the Undo cannot be proven, the note says so and the words still go to pi |
+| "nein, Marie Curie" within 30 s | The fill is replaced (and searched again in a search box). If the old fill cannot be removed safely: "Couldn't replace the text safely — nothing new was typed" |
+| "tippe nein", "type hello", "gib Albert Einstein ein" | Typed as said (explicit), also into terminals; never with Return outside search boxes and the address bar |
+| "frag pi wie hoch ist der Eiffelturm" | pi answers; nothing is typed |
+
+A fill offers no "Not this", teaches the dictionary nothing, and "No, I meant X" never aims at it. A password or code
+field's fill offers neither Undo nor Ask pi and keeps no words in memory.
+
+### Links open in the browser in front (stage A, installed)
+
+`NSWorkspace.open([url], withApplicationAt:)` with the app activated, after `LauncherPolicy.validateURL` as before; the
+same path for instant acts and the agent's `launcher.open`. The browser is chosen in this order:
+
+1. A browser pi-os launched at most 5 s ago, while no other app came to the front (a cold "öffne Safari" → "öffne
+   Google"). A pending launch of a non-browser sends links to the default browser. A take whose target was chosen
+   explicitly (Tab, ⇧ chord, tether, pointing) skips this step.
+2. The take's pinned app, if it is on the closed allowlist of 20 browsers (Safari, Safari Technology Preview, Chrome and
+   its channels, Brave and its channels, Edge and its channels, Chromium, Vivaldi, Opera, Firefox and its channels,
+   Arc). The list routes links only; it never blocks an app.
+3. Otherwise the default browser, as before.
+
+The bar says "Opened www.google.com in Safari". If that browser refuses, the default browser opens it with the note
+"Safari didn't open the link, so your default browser did." Where the page lands is the browser's choice: a new tab in
+Chromium's most recent window (a lone New Tab Page is closed), a new tab or window in Safari depending on its "Open pages
+in tabs" setting, possibly Little Arc in Arc. `logs/launcher-actions.jsonl` records which route a link took
+(`browser`: launching, pinned, default or fallback), never the page. Safari's own empty start page can be reused through
+its address field behind `PI_OS_SAFARI_SAME_TAB=1` (default off; it never opens a second copy on its own).
+
+### The anchor and the launch race
+
+- **The anchor** (host memory only, never persisted or logged): a successful pi-os open (instant or agent; an app, a
+  link, a file or a folder) records "pi-os just opened X". It settles when the front app, its first on-screen window and
+  its focused window agree (25 ms polls, up to 1.5 s, or 4 s for a cold launch); the first Accessibility message to the
+  new app is paid there, off the hotkey path. It ends when another app comes to the front, the app quits or its process
+  changes, its window is off screen at key-down, after 120 s, on "Not this" or "No, I meant X" for the opening take, on
+  sleep, screen lock or session resign, and when computer control goes off. The wire carries only the opening take's id
+  and whether it is still settling. The chip's tooltip adds "· opened by your last command".
+- **The race.** A hold that starts while pi-os is still launching another app (≤ 5 s) pins the app in front as always,
+  but types nothing there: no field is bound, and the chip says "Safari (opening…)". When the launching app comes to the
+  front with a window before the final, the take re-pins to it (fingerprint, Brave pin and visible items run again); at
+  the final it waits at most 150 ms, then proceeds where it is. An explicit choice always wins.
+- **The agent.** Page questions keep their window turn (Brave also gets the page digest). A general turn stays general;
+  its first `/invoke` adds one content-free sentence ("pi-os opened this app with the user's previous command, and a
+  search field has the keyboard focus there; this request was not typed into it."). No URL, title or label crosses the
+  wire. Follow-ups send none yet.
+
+### Safety and privacy
+
+- AGENTS.md holds: no deletion (deletion words are never typed on their own, `confirm` and rename fields are never typed,
+  a terminal line still passes the `rm` check, the Return keeps its destructive-button check), identity, focus and
+  ownership checks on every event, ordinary text editing preserved.
+- Credential input stays field-local: a password, username, code or payment field gets text only on an explicit request
+  with *Settings → General → Allow input in username and password fields* (its tooltip now names code, PIN and payment
+  fields). Secure Keyboard Entry is never consulted and never switched off.
+- A take spoken while a password or code field is focused may be the secret (critic C5). If no command or page question
+  takes it, it is never sent to pi on its own: the bar shows "Password field — pi didn't send this anywhere" (or "Code or
+  payment field — …") with "•••" in place of the words, "↩ Type it" only where typing is allowed (otherwise the footer says
+  why not), and "⌥↩ Ask pi anyway". This fails closed: every undecided outcome counts (a miss, doubt, a timeout, instant
+  commands off, an unknown reason, no answer from Node), only deictic and compound requests, the window band and
+  "frag pi …" go to pi. The words never show in the bar or a live preview, the take is never journaled, Node sends no
+  classifier hints and its take memo keeps no words. This holds in read-only mode too: without computer control the host
+  reports only password and code fields and never declares a fill.
+- Values are never read: only lengths (`AXNumberOfCharacters`, `AXSelectedTextRange`), and none for password or code
+  fields. Logs carry closed vocabulary only: the host's `[perf] fill kind=… outcome=… return=… verify=… ms=…`, Node's
+  `kind=fill via=field fill=<label> field=<kind>` and `voice-perf.log` `via=field`.
+- Fills need computer control. **Settings → Voice → Type into the focused field** (default on) is the kill switch: off,
+  pi-os never declares a fill and never types on its own.
+
+### Intentional behaviour changes
+
+| ID | Change |
+|---|---|
+| C1 | Links open in the browser in front or the one pi-os is launching, not always in the default browser |
+| C2 | "such nach X / search for X" in a browser is a web search, or a fill with one Return into the focused search box or address bar. Outside a browser a file search stays a command, and a search no command took fills a focused search field with one Return |
+| C3 | The check card can type: "↩ Type into TextEdit · ⌥↩ Ask pi" types the (possibly edited) card text, never with Return |
+| C4 | A bare "nein" right after a fill is Undo, not "Not this" |
+| C5 | A name said alone that only resembles an app is typed into a focused field instead of "Did you mean …?" |
+| C6 | Takes at password and code fields are never journaled |
+| C8 | A hold that starts during a pi-os launch can re-pin mid-take; the chip and VoiceOver announce the change |
+| C9 | At a password or code field, a miss becomes the local masked card instead of an agent turn |
+| — | The Unicode payload rides on key-down only for all native typing, including the agent's (`PI_OS_TYPE_KEYUP_PAYLOAD=1` restores it); the per-event duplicate inspect is gone (C14) |
+| — | Questions are typed into a focused field (Tom's answer 1, overriding the design's critic C1, which kept them for pi) |
+
+C7 (⌘↩ in the composer types into the field) was not built.
+
+### Developer settings
+
+| Variable | Effect |
+|---|---|
+| `PI_OS_SAFARI_SAME_TAB=1` | Safari's exact-tab route for a start page pi-os just opened (off by default; live QA Q1 decides) |
+| `PI_OS_TYPE_CHUNK=1` (or `2`…`20`) | Up to 20 (or N) UTF-16 units per Unicode event, surrogate-safe; off by default until Q5 passes per engine |
+| `PI_OS_TYPE_KEYUP_PAYLOAD=1` | Puts the Unicode string back on the key-up event too, for a receiver that needs it |
+| `PI_OS_TEST_SITES_PORT=<port>` | Harness only: "fixture search", "fixture page", … open the loopback QA pages; unset, the table is empty |
+| `PI_OS_PERF=1` | The `[perf] fill …` lines and the `[launcher] … browser=…` line of each link on stdout |
+
+### Measured (offline, no providers)
+
+All numbers are from the CI tests at the integration head (guarded `npm test`, 731/731). None is from Tom's voice or a
+live app.
+
+| Gate | Result |
+|---|---|
+| Continuity corpus: 188 EN/DE/mixed takes × 11 targets (no field, search, address, text, multiline, terminal, sensitive, credential, confirm, rename) | 319 fills, 41 offers, 82 secret misses, 24 web searches, 12 refusals, 1,245 decided as today; every class asserted per target |
+| Golden equivalence over 5,055 corpus texts | Without `fill` or without a `target`: every decision byte-identical. With a search field: 299 changed (296 fills, 0 offers, 0 web searches) |
+| Never typed: 40 deletion, 115 deictic and 312 window-band takes | 2,260 dispatches, 0 fills, 0 offers |
+| Dispatch with 6 hypotheses and a focused field (178 takes, 33 fills) | p50 0.67–0.73 ms, p95 2.15–2.73 ms (gate < 5 ms), max 7.2–8.2 ms over two runs |
+| Voice corpus gates (pass 3) | Unchanged: 93.9 % open-app acts, 0 false acts on 774 agent-bound phrasings, Phase B 81.7 % at once |
+
+Swift: `FieldKindTests`, `FieldFactsTests` (a read recorder proves no `AXValue` read), `ContinuityTests`,
+`LauncherServiceTests`, `BrowserFamilyTests`, `SafariAddressRouteTests` and `FillFlowTests` (typing order, 0 Returns
+outside search fields, Undo, replace, Ask pi, the masked card, read-only mode, the race) on fakes; the totals are in
+[host-macos/STATUS.md](host-macos/STATUS.md).
+
+The design's latency estimate for v1 typing, not measured: key-up → last character ≈ 120 ms + 27 ms per character
+("Albert Einstein" ≈ 510 ms), about 150 ms with chunking.
+
+### Not verified live
+
+Nothing here has run against a real browser or app yet. The coordinated plan
+([host-macos/qa/continuity/README.md](host-macos/qa/continuity/README.md), Q1–Q11, fixtures only, with Tom) checks:
+
+- whether Safari reuses its empty start tab for a link, and whether its `AXConfirm` navigates (decides
+  `PI_OS_SAFARI_SAME_TAB`); private windows, Arc's Little Arc, Safari's tab setting (Q1);
+- the launch race and its re-pin on a cold launch (Q2);
+- the field kinds WebKit and Chromium report for Wikipedia's and Google's boxes, and the Chromium web field being
+  readable at the final (Q3);
+- **bound-element identity** between the app's own and the system-wide focused element for web fields (Q3, pass or fail
+  for all of the fill: if it does not hold, every fill ends as "The field lost focus" with Copy);
+- the 120 ms focus settle after the bar steps aside, and the browser's focus-restore delay (Q7);
+- selection set and read-back for Undo, and the length check, in WebKit and Chromium (Q4);
+- chunking and the key-up payload per engine, including Electron (Q5, Q6);
+- dummy credentials, the opt-in, a deletion-confirm field, a terminal-like surface, Secure Keyboard Entry on (Q8);
+- page questions with a field focused (Q9); Spaces, full screen, a second display, Stage Manager (Q10);
+- Tom's voice in EN, DE and mixed, then Google and Wikipedia by hand (Q11).
+
+### Decided by Tom (2026-10-09)
+
+1. **Undo after a search:** no history-back. After the automatic Return there is no Undo; "nein" says "Already
+   searched — go back with ⌘[".
+2. **Editing the typing card:** current behaviour stays. With "↩ Type into …" on the check card, an edited text is typed
+   on ↩.
+3. **App names said alone:** fine as is. A German noun that is also an app ("Wetter", "Karten", "Fotos") said alone with
+   Google's box focused opens the app (an exact app name stays a command).
+4. **The agent sentence** keeps naming the focused field kind ("… has the keyboard focus there; this request was not typed
+   into it").
+
+Not built (later): spoken submit words ("los", "enter"), ⌘↩ typing from the composer, the ≤ 300 ms wait for a page
+still loading with a "Search Wikipedia for …? ↩" card, an `AXValue` fast path, `context.target` on follow-ups, the
+Safari and Chromium page digest.
+
+**Install state.** Installed 2026-10-08 as `main` `661cb8e`, signed with the stable Apple Development identity
+(designated requirement unchanged). Live smoke of the installed harness's `/instant` decisions with a simulated focused
+field (no typing): "Albert Einstein." → fill + Return (search); a question → fill + Return (search); "Worum geht es auf
+dieser Seite?" → deictic (pi); "Schreib eine Mail an Anna." → pi; "Öffne Google." → url; a calculation → answer;
+dictation into a multiline field → fill without Return; a password field → nothing typed; a terminal → one-Return card;
+"Tippe Hallo Welt." → fill without Return (2–55 ms each). Typing itself (Q3–Q8) is not verified live yet.
+
 ## Next steps
 
-Calibrate the voice thresholds (`SPOKEN` in `apps.ts`, `VOICE` in `voice.ts`, including the check gate on
-Parakeet's confidence) on a week of Tom's journal, then decide the Whisper accuracy mode; record which hypothesis
-decided a take in the journal; an `apps` result block so the agent's app choices open in one tap; fine-tune and
+Run the continuity live QA (Q1–Q11) with Tom on a signed build, then decide `PI_OS_SAFARI_SAME_TAB`, chunking per
+engine and the open questions of pass 5. Calibrate the voice thresholds (`SPOKEN` in `apps.ts`, `VOICE` in `voice.ts`,
+including the check gate on Parakeet's confidence) on a week of Tom's journal, then decide the Whisper accuracy mode;
+record which hypothesis decided a take in the journal; an `apps` result block so the agent's app choices open in one tap; fine-tune and
 calibrate Laya before letting it route; gated browser navigation (back/reload/same-tab) and `<select>`; a
 pi-durable background lane; persistent threads with a retention policy; dark mode / lock screen (need Apple Events
 or private APIs); Windows voice and cards.

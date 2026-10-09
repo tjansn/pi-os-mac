@@ -1,0 +1,18 @@
+{
+  "seq": 4,
+  "elapsedMs": 1,
+  "source": "grammar",
+  "decision": "act",
+  "intent": "fill",
+  "title": "Search for Albert Einstein",
+  "action": {
+    "type": "typeIntoPinned",
+    "text": "Albert Einstein",
+    "submit": true
+  },
+  "confirm": false,
+  "voice": {
+    "source": "parakeet-v3",
+    "via": "field"
+  }
+}

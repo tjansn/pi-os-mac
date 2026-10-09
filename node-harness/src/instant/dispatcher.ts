@@ -1,14 +1,14 @@
 import { homedir } from "node:os";
 import { rulesContextScorer, warmContextScope } from "../agent/routing/contextScope.js";
-import type { HostAction } from "../contracts/actions.js";
+import { isHttpUrl, type HostAction } from "../contracts/actions.js";
 import { parseInstantScope, type ContextScorer, type InstantScope } from "../contracts/context.js";
 import {
   foldPhrase, isRefusedPhrase, NO_DICTIONARY, parseSafeTarget, safeTargetToHostAction,
   type DictionaryEntryRef, type DictionaryLookup, type SafeTarget, type TakeMemo,
 } from "../contracts/dictionary.js";
 import {
-  accepts, RECOGNIZERS,
-  type ClassifierHints, type FallthroughReason, type InstantIntent, type InstantPhase, type InstantRequest, type InstantResponse,
+  accepts, RECOGNIZERS, SUBMIT_AUTO_KINDS,
+  type ClassifierHints, type FallthroughReason, type InstantFieldKind, type InstantIntent, type InstantPhase, type InstantRequest, type InstantResponse,
   type IntentClassifier, type VoiceHypothesis, type VoiceMeta, type VoiceVia,
 } from "../contracts/instant.js";
 import { parseFileCandidate, type FileCandidate, type FileSearchResult } from "../contracts/launcher.js";
@@ -24,11 +24,16 @@ import {
 } from "./engines.js";
 import { localZone as systemZone } from "./engines/timezones.js";
 import { copyNumber, displayLocale, formatNumber, localizeNumbers, truncate } from "./format.js";
-import { DEFAULT_WEB_SEARCH, DELETION_REFUSAL_MESSAGE, isKnownSpokenHost, openStrength, parseInstant, type OpenStrength } from "./grammar/index.js";
+import {
+  continuityOf, explicitRemainder, fieldTier, fillBody, fillOfferBody, hasPiPrefix, isCorrectionLike, isDictation, namesPageQuestion, searchQuery,
+  secretMissBody, secretTarget, shapeFillText, voiceDoubt, warmContinuity, CONFIRM_FIELD_MESSAGE, FILL_REPLACE_MS, type Continuity, type FillLabel,
+} from "./fill.js";
+import { DEFAULT_WEB_SEARCH, DELETION_REFUSAL_MESSAGE, expandTemplate, isKnownSpokenHost, openStrength, parseInstant, type OpenStrength } from "./grammar/index.js";
+import { siteSearchFor } from "./grammar/launch.js";
 import { displayName } from "./learned.js";
 import { isCommonWord as lexiconWord, warmLexicon } from "./lexicon.js";
 import { normalize, spokenCore, type Normalized } from "./normalize.js";
-import { attachTakeDetails, safeTargetOf, type TakeDetails, type TakeRecord } from "./takeMemo.js";
+import { attachTakeDetails, safeTargetOf, type ContinuityMemo, type TakeDetails, type TakeRecord } from "./takeMemo.js";
 import type { DateQuery, InstantBody, MatchContext, Parsed } from "./types.js";
 import {
   checkGate, consistentAlternative, correctionTarget, decisionSignature, didYouMeanTitle, isActionable, mentionsDeletion,
@@ -122,8 +127,12 @@ export interface InstantDispatcherDeps extends InstantDeps {
    * up per hypothesis recognizer (`any` for typed text). Default: none.
    */
   dictionary?: DictionaryLookup;
-  /** The take memo: "No, I meant X" finds the act it corrects. Only the host's /instant dispatcher has one. */
-  takeMemo?: Pick<TakeMemo, "latestActed">;
+  /**
+   * The take memo: "No, I meant X" finds the act it corrects. Only the host's /instant dispatcher has one. With
+   * continuity (`accept: "fill"`), "nein, X" right after pi-os's own fill finds that fill (`latestFill`) and an
+   * anchored site search finds what the anchoring take opened (`get`); a memo without them has neither.
+   */
+  takeMemo?: Pick<TakeMemo, "latestActed"> & Partial<ContinuityMemo>;
   /** Common-word check of the spoken matcher's dictionary-word guard (default: lexicon.ts). */
   isCommonWord?: (word: string) => boolean;
   /**
@@ -475,7 +484,11 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
   }
 
   function refusal(): Body {
-    return { decision: "refuse", code: "file_deletion_blocked", message: DELETION_REFUSAL_MESSAGE, card: refuseCard(DELETION_REFUSAL_MESSAGE) };
+    return refuseBody(DELETION_REFUSAL_MESSAGE);
+  }
+
+  function refuseBody(message: string): Body {
+    return { decision: "refuse", code: "file_deletion_blocked", message, card: refuseCard(message) };
   }
 
   /**
@@ -882,7 +895,8 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
   async function hintsFor(reason: FallthroughReason, text: string, request: InstantRequest, phase: InstantPhase, signal: AbortSignal): Promise<ClassifierHints | undefined> {
     const heuristic: ClassifierHints | undefined = reason === "deictic" ? { source: "heuristic", latencyMs: 0, needsScreen: 0.9 } : undefined;
     const classifier = deps.classifier;
-    if (!classifier || !text || phase === "typing" || reason === "timeout" || reason === "disabled") return heuristic;
+    // A credential or sensitive field is focused: the words may be the secret, so no classifier sees them (DESIGN5 P3, C5).
+    if (!classifier || !text || phase === "typing" || reason === "timeout" || reason === "disabled" || secretTarget(request)) return heuristic;
     // Partials (and takes the user then cancels) never leave the machine: remote classifiers see finals only.
     if (phase !== "final" && classifier.local === false) return heuristic;
     const late = deps.onLateHints;
@@ -918,6 +932,8 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
      * policy): the targets a Spotlight did-you-mean may try first (design C step 4; voiceFinal runs it).
      */
     spotlight?: SpotlightTarget[];
+    /** A continuity decision (closed perf label; the field kind goes with it). */
+    fill?: FillLabel;
   }
 
   /** The decision with its `voice` meta (act, list and fallthrough carry one; answers and refusals cannot). */
@@ -1045,14 +1061,15 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
    * secondary tier, "Did you mean …?", the check gate, else a fallthrough with the near miss.
    */
   async function arbitrate(request: InstantRequest, take: VoiceTake, signal: AbortSignal, dictionary: DictionaryLookup,
-    matcher: () => Promise<AppMatcher | null>, visible: VisibleSnapshot): Promise<Settled> {
+    matcher: () => Promise<AppMatcher | null>, visible: VisibleSnapshot, corrections = true): Promise<Settled> {
     const hypotheses = take.hypotheses;
     const sentHypothesis = hypotheses[take.sent]!;
     const options = (index: number, firstTier: boolean): LaneOptions => ({
       sent: index === take.sent, firstTier, learned: true, host: index === take.sent, dictionary, matcher, visible,
     });
 
-    const correction = await correct(request, take, signal, dictionary, matcher, visible);
+    // Right after pi-os's own fill, "nein, X" is about that fill (continuity), never about an older act.
+    const correction = corrections ? await correct(request, take, signal, dictionary, matcher, visible) : null;
     if (correction) return correction;
 
     const first: LaneOutcome[] = [];
@@ -1168,6 +1185,211 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
     return out.slice(0, 3);
   }
 
+  // ------------------------------------------------------------------ continuity: the focused field (fill.ts)
+
+  /** A continuity decision and its perf label; a fill carries `via: "field"`. */
+  interface ContinuityDecision { body: Body; fill: FillLabel; via?: VoiceVia }
+
+  interface ContinuityStep {
+    decided?: ContinuityDecision;
+    /** Nothing is typed implicitly in this take (an escape to pi, a refusal, "nein, X" after a fill it cannot replace). */
+    noFill?: boolean;
+    /** pi-os's own fill is the latest take (≤ 30 s): a correction is about it, never about an older act. */
+    afterFill?: boolean;
+    /** "frag pi …/ask pi …": the words go to pi, with no "Did I hear that right?" unless the recognizers doubt them. */
+    toPi?: boolean;
+  }
+
+  function parseText(text: string, request: InstantRequest, voice: boolean, locale?: string): Parsed | null {
+    const n = normalize(text, locale ?? request.locale);
+    return parseInstant(n, { now: now(), locale: displayLocale(locale ?? request.locale, n.lang), webSearchTemplate: webSearchTemplate() }, voice ? { voice: true } : {});
+  }
+
+  function fillDecision(body: Body, fill: FillLabel): ContinuityDecision {
+    return { body, fill, ...(body.decision === "act" ? { via: "field" as const } : {}) };
+  }
+
+  /** Return after a fill only in search boxes and the address bar (TOM-ANSWERS 2). */
+  function submits(kind: InstantFieldKind): boolean {
+    return (SUBMIT_AUTO_KINDS as readonly string[]).includes(kind);
+  }
+
+  /**
+   * Nothing the grammar knows, a name said alone, or a weak open form that found nothing (an indefinite object, a
+   * show/get/focus verb: fill.ts's task heads and the router still keep "start a timer" or "show me …" for pi). A
+   * parse that missed is still a command: a currency, a strong open, a file search, a time somewhere unknown.
+   */
+  function noCommand(parsed: Parsed | null): boolean {
+    return parsed === null || (parsed.kind === "open" && openStrength(parsed) !== "strong");
+  }
+
+  /** The first tier's parses (the sent one reused). */
+  function firstTierParses(take: VoiceTake, request: InstantRequest, sentParse: Parsed | null, voice: boolean): (Parsed | null)[] {
+    return take.firstTier.map((index) => {
+      const hypothesis = take.hypotheses[index]!;
+      return index === take.sent ? sentParse : parseText(hypothesis.text, request, voice, hypothesis.locale);
+    });
+  }
+
+  function anyDeletion(take: VoiceTake, request: InstantRequest): boolean {
+    return take.hypotheses.some((hypothesis) => mentionsDeletion(normalize(hypothesis.text, hypothesis.locale ?? request.locale)));
+  }
+
+  /**
+   * fill.ts steps 1–2, before the commands (voice and typed finals): policy first (a refused take stays
+   * arbitration's and the grammar's), the escape to pi, "nein, X" right after pi-os's own fill, the explicit
+   * "tippe …/type …" and the search forms. Synchronous: the take memo only, no host call.
+   */
+  function continuityFirst(request: InstantRequest, take: VoiceTake, cont: Continuity, parsed: Parsed | null, voice: boolean): ContinuityStep {
+    const sent = take.hypotheses[take.sent]!;
+    const source = voice && !take.legacy ? sent.source : undefined;
+    if (hasPiPrefix(sent.text)) return { noFill: true, toPi: true };
+    if (firstTierParses(take, request, parsed, voice).some((p) => p?.kind === "refuse")) return { noFill: true };
+    const deletion = anyDeletion(take, request);
+    const field = cont.field;
+
+    // "nein, X" right after pi-os's own fill (≤ 30 s, nothing in between): replace it while the field still holds
+    // exactly that fill (the host undoes it, then types X). Otherwise the correction is not typed, and not aimed at
+    // an older act either.
+    let recent: TakeRecord | undefined;
+    try {
+      recent = deps.takeMemo?.latestFill?.(FILL_REPLACE_MS, request.takeId);
+    } catch {
+      recent = undefined;
+    }
+    const correction = recent ? correctionTarget(sent.text) : null;
+    if (recent && correction) {
+      if (field?.ownFill && field.ready && fieldTier(field.kind) === "implicit" && !deletion) {
+        const target = correction.target;
+        const text = noCommand(parseText(target, request, voice, sent.locale)) && isDictation(target) ? shapeFillText(target, field.kind) : null;
+        if (text) return { decided: fillDecision(fillBody(text, field.kind, { submit: submits(field.kind), source, replaces: recent.takeId }), "replace") };
+      }
+      return { noFill: true, afterFill: true };
+    }
+
+    // "tippe …/type …/diktiere …/gib … ein": the remainder as said (Tier E). Deletion words in it never type on their
+    // own (one Return first, never submitted); a remainder that is itself a deletion request is refused. A code field
+    // waits for one Return after a spoken take; a typed one was confirmed by the composer's own Return (typed finals
+    // never declare `confirm`, so the code would otherwise fall through to pi).
+    const remainder = field ? explicitRemainder(sent.text) : null;
+    if (field && remainder !== null) {
+      if (field.kind === "confirm") return { decided: { body: refuseBody(CONFIRM_FIELD_MESSAGE), fill: "explicit" } };
+      if (fieldTier(field.kind) === "never" || !field.ready) return { noFill: true };
+      const said = parseText(remainder, request, voice, sent.locale);
+      if (said?.kind === "refuse") return { decided: { body: refusal(), fill: "explicit" } };
+      const text = shapeFillText(remainder, field.kind);
+      if (!text) return { noFill: true };
+      const held = deletion || said?.kind === "delete_target";
+      const confirm = held || (voice && field.kind === "sensitive");
+      if (confirm && !accepts(request, "confirm")) return { noFill: true };
+      return { decided: fillDecision(fillBody(text, field.kind, { submit: !held && submits(field.kind), confirm, source }), held ? "held" : "explicit") };
+    }
+
+    // "such nach X / search for X" with a browser target (DESIGN5 §4.6): into a focused search box or the address bar
+    // with one Return; without one, the web search (the host opens it in that browser). Deixis and compounds stay the
+    // agent's. Outside a browser the commands decide first (a file search stays one); continuityAfter takes a miss.
+    const query = searchQuery(sent.text);
+    if (query && cont.app === "browser" && parsed?.kind !== "fallthrough") {
+      if (field && (field.kind === "search" || field.kind === "address") && field.ready && !deletion) {
+        const text = shapeFillText(query, field.kind);
+        if (text) return { decided: fillDecision(fillBody(text, field.kind, { submit: true, source }), "search") };
+      }
+      if (cont.app === "browser") {
+        // The anchored page's own search when it is a known search site (Wikipedia, YouTube, …), else the default web search.
+        const words = shapeFillText(query, "search");
+        const site = words ? anchoredSiteSearch(cont, words, sent, request) : null;
+        const url = site?.url ?? (words ? expandTemplate(webSearchTemplate(), words) : "");
+        if (words && isHttpUrl(url)) {
+          return {
+            decided: {
+              body: {
+                decision: "act", intent: "web", title: `Search ${site?.engine ?? "the web"} for ${quoted(words)}`, action: { type: "openURL", url }, confirm: false,
+                ...(source ? { voice: { source } } : {}),
+              },
+              fill: "web",
+            },
+          };
+        }
+      }
+    }
+
+    // "google X" while the anchored page is that very search site (Node's memo knows what the anchoring take
+    // opened; no URL crosses the wire): into its search box, one Return. Elsewhere the site's URL opens as today.
+    if (parsed?.kind === "web" && field?.kind === "search" && field.ready && !deletion) {
+      const acted = anchoredPage(cont);
+      if (acted && sameSite(acted, parsed.url)) {
+        const text = shapeFillText(parsed.query, field.kind);
+        if (text) return { decided: fillDecision(fillBody(text, field.kind, { submit: true, source }), "search") };
+      }
+    }
+    return {};
+  }
+
+  /** The http(s) page the anchoring take opened (Node's own take memo), or undefined. */
+  function anchoredPage(cont: Continuity): string | undefined {
+    if (!cont.anchorTakeId) return undefined;
+    try {
+      const acted = deps.takeMemo?.get?.(cont.anchorTakeId)?.acted;
+      return acted?.kind === "openURL" ? acted.url : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  function anchoredSiteSearch(cont: Continuity, query: string, sent: VoiceHypothesis, request: InstantRequest): { url: string; engine: string } | null {
+    const page = anchoredPage(cont);
+    return page ? siteSearchFor(page, query, normalize(sent.text, sent.locale ?? request.locale).lang) : null;
+  }
+
+  /**
+   * fill.ts step 6, voice finals only, after the commands: a miss (or the "Did you mean …?" of a name said alone)
+   * that is no command, no pi task and no page question goes into the focused field. A credential or sensitive
+   * field never receives it: the take ends without a check card or hints, and the host shows its masked card.
+   */
+  async function continuityAfter(request: InstantRequest, take: VoiceTake, cont: Continuity, body: Body, parsed: Parsed | null,
+    matcher: () => Promise<AppMatcher | null>, signal: AbortSignal): Promise<ContinuityDecision | null> {
+    const field = cont.field;
+    if (!field) return null;
+    const sent = take.hypotheses[take.sent]!;
+    const source = take.legacy ? undefined : sent.source;
+    const parses = firstTierParses(take, request, parsed, true);
+    const miss = body.decision === "fallthrough" && (body.reason === "no_match" || body.reason === "low_confidence");
+    const bareOffer = body.decision === "list" && body.voice?.didYouMean === true && !body.voice.correctsTakeId && parses.every(noCommand);
+    if (!miss && !bareOffer) return null;
+    const tier = fieldTier(field.kind);
+    if (tier === "optIn") return namesPageQuestion(sent.text) ? null : { body: secretMissBody(source), fill: "secret" };
+    if (tier === "never" || !field.ready || !parses.every(noCommand) || anyDeletion(take, request)) return null;
+    // An installed app's exact name said alone ("Pages, please", "Notizen", "1Password") is a command (DESIGN5 A4): today's
+    // "Did you mean …?" or check card stays. A name that only resembles an app ("Albert Einstein" → "Alfred?") is the user's words.
+    // The app index within the decision budget: arbitrate has usually loaded it; a cold one never holds the final
+    // for its refresh (seconds), the take then decides as if no app index were known.
+    const wait = deadline(signal, budgets.defaultMs);
+    let found: AppMatcher | null | typeof TIMEOUT | typeof FAILED;
+    try {
+      found = await race(matcher(), wait.signal);
+    } finally {
+      wait.dispose();
+    }
+    const apps = found === TIMEOUT || found === FAILED ? null : found;
+    if (bareOffer && !apps) return null;
+    const nowMs = now().getTime();
+    const named = (p: Parsed | null, text: string): boolean => {
+      const said = p?.kind === "open" ? p.target : spokenCore(normalize(text, request.locale).lower);
+      return said.length > 0 && apps?.resolveSpoken(said, "bare", { nowMs }).exact !== undefined;
+    };
+    if (take.firstTier.some((index, i) => named(parses[i]!, take.hypotheses[index]!.text))) return null;
+    // "such nach X" into a search field outside a browser, once no command took it: X with one Return.
+    const query = field.kind === "search" ? searchQuery(sent.text) : null;
+    if (!query && (isCorrectionLike(sent.text) || !isDictation(sent.text))) return null;
+    const text = shapeFillText(query ?? sent.text, field.kind);
+    if (!text) return null;
+    // A terminal gets the one-Return card, never text on its own; recognizer doubt gets the card too.
+    if (tier === "explicit" || voiceDoubt(sent, take.firstTier.map((index) => take.hypotheses[index]!))) {
+      return accepts(request, "check") ? { body: fillOfferBody(source), fill: "offer" } : null;
+    }
+    return fillDecision(fillBody(text, field.kind, { submit: submits(field.kind), source }), query ? "search" : "implicit");
+  }
+
   interface VoiceDecision extends Settled {
     /** Content-free grammar label of the sent hypothesis (perf). */
     parsed: string;
@@ -1186,6 +1408,11 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
     const locale = sentHypothesis.locale ?? request.locale;
     const n = normalize(sentHypothesis.text, locale);
     const parsed = parseInstant(n, { now: now(), locale: displayLocale(locale, n.lang), webSearchTemplate: webSearchTemplate() }, { voice: true });
+    const label = { parsed: parsed?.kind ?? "none", text: n.text };
+    // Continuity (accept "fill" + target): escapes, "nein, X" after a fill and search forms before the commands.
+    const cont = continuityOf(request);
+    const early = cont ? continuityFirst(request, take, cont, parsed, true) : undefined;
+    if (early?.decided) return { ...early.decided, details: { recognizer: sentHypothesis.source }, ...label };
     const visible = await visibleFor(request, () => needsVisible(parsed) || take.firstTier.some((index) => {
       const hypothesis = take.hypotheses[index]!;
       if (index !== take.sent && needsVisible(parseVoice(hypothesis, request))) return true;
@@ -1194,10 +1421,9 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
     const budget = deadline(signal, parsed && parsed.kind !== "fallthrough" ? budgetFor(parsed, "final") : budgets.defaultMs);
     let apps: Promise<AppMatcher | null> | undefined;
     const matcher = () => (apps ??= deps.apps ? deps.apps.get(budget.signal) : Promise.resolve(null));
-    const label = { parsed: parsed?.kind ?? "none", text: n.text };
     let result: Settled | typeof TIMEOUT | typeof FAILED;
     try {
-      result = await race(arbitrate(request, take, budget.signal, dictionary, matcher, visible), budget.signal);
+      result = await race(arbitrate(request, take, budget.signal, dictionary, matcher, visible, !early?.afterFill), budget.signal);
     } finally {
       budget.dispose();
     }
@@ -1209,6 +1435,20 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
           const meta = voiceMeta({ heard: found.target.target.heard, ...(take.legacy ? {} : { source: found.target.source }), didYouMean: true });
           return { body: withVoice(found.body, meta), details: { ...settled.details, offered: [] }, ...label };
         }
+      }
+      // Everything that is not a command goes into the focused field (voice only). A credential or sensitive field's
+      // take that typed nothing ("nein, X" after a fill there, a form the field cannot take) still never reaches pi
+      // with its words or a check card that echoes them (DESIGN5 C5); only "frag pi …" asks pi.
+      const secretField = cont?.field !== undefined && fieldTier(cont.field.kind) === "optIn";
+      const typed = cont && (!early?.noFill || (secretField && !early.toPi))
+        ? await continuityAfter(request, take, cont, settled.body, parsed, matcher, signal) : null;
+      if (typed) return { ...typed, details: { recognizer: sentHypothesis.source }, ...label };
+      // "frag pi …" addresses pi: the router not placing the words is no reason to ask "Did I hear that right?".
+      const body = settled.body;
+      if (early?.toPi && body.decision === "fallthrough" && body.voice?.check && !voiceDoubt(sentHypothesis, take.firstTier.map((index) => take.hypotheses[index]!))) {
+        const { voice: meta, ...rest } = body;
+        const { check: _check, ...voice } = meta;
+        return { ...settled, body: { ...rest, reason: "no_match", ...(Object.keys(voice).length ? { voice } : {}) }, fill: "pi", ...label };
       }
       return { ...settled, ...label };
     }
@@ -1248,6 +1488,11 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
     } finally {
       wait.dispose();
     }
+  }
+
+  /** Content-free perf fields of a continuity decision: its label and the field kind (never text). */
+  function fillFields(request: InstantRequest, fill: FillLabel | undefined): PerfFields {
+    return fill ? { fill, field: request.target?.field?.kind ?? "none" } : {};
   }
 
   /** Counts a learned rule that decided a final. Never fails the decision. */
@@ -1305,7 +1550,7 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
       if (voice && phase === "final") {
         const decided = await voiceFinal(request, signal, dictionary);
         intentLabel = decided.parsed;
-        voiceFields = { hyps: request.hypotheses?.length ?? 0, ...(decided.via ? { via: decided.via } : {}) };
+        voiceFields = { hyps: request.hypotheses?.length ?? 0, ...(decided.via ? { via: decided.via } : {}), ...fillFields(request, decided.fill) };
         details = decided.details;
         noteUse(dictionary, decided.learned);
         const body = decided.body;
@@ -1322,8 +1567,16 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
       const visible = await visibleFor(request, () => needsVisible(parsed)
         || (phase === "final" && deps.takeMemo !== undefined && correctionTarget(request.text) !== null), signal);
       if (phase === "final") {
+        // Continuity on a typed final: the escapes, "nein, X" after a fill and the search forms (never an implicit fill:
+        // typing in the bar addresses pi).
+        const cont = continuityOf(request);
+        const early = cont ? continuityFirst(request, voiceTake({ text: request.text }), cont, parsed, false) : undefined;
+        if (early?.decided) {
+          voiceFields = fillFields(request, early.decided.fill);
+          return finish(early.decided.body);
+        }
         // Typed finals (steps 1, 2 and 6 of DESIGN4 §6.3 with recognizer `any`), after "No, I meant X".
-        const typed = await typedFinal(request, n, parsed, signal, dictionary, visible);
+        const typed = await typedFinal(request, n, parsed, signal, dictionary, visible, !early?.afterFill);
         if (typed) {
           details = typed.details;
           voiceFields = typed.via ? { via: typed.via } : {};
@@ -1378,13 +1631,13 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
    * name scoped to `any` (DESIGN4 §6.3: typed input uses steps 1–3 and 6). Null: today's grammar decides.
    */
   async function typedFinal(request: InstantRequest, n: Normalized, parsed: Parsed | null, signal: AbortSignal, dictionary: DictionaryLookup,
-    visible: VisibleSnapshot): Promise<Settled | null> {
+    visible: VisibleSnapshot, corrections = true): Promise<Settled | null> {
     const budget = deadline(signal, budgets.defaultMs);
     let apps: Promise<AppMatcher | null> | undefined;
     const matcher = () => (apps ??= deps.apps ? deps.apps.get(budget.signal) : Promise.resolve(null));
     const work = async (): Promise<Settled | null> => {
       const take = voiceTake({ text: request.text });
-      if (deps.takeMemo && correctionTarget(request.text)) {
+      if (corrections && deps.takeMemo && correctionTarget(request.text)) {
         const corrected = await correct(request, take, budget.signal, dictionary, matcher, visible);
         if (corrected) return corrected;
       }
@@ -1407,6 +1660,8 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
     warm: async () => {
       // The 48.8k-word common-word set, off the first spoken final (a few ms, a few MB).
       warmLexicon();
+      // Continuity's closed phrase lists, off the first take with a focused field.
+      warmContinuity();
       await engines.warm();
     },
     engines,
@@ -1419,6 +1674,17 @@ function hostOf(url: string): string {
   } catch {
     return "";
   }
+}
+
+/** The registrable part of a URL's host, roughly: its last two labels ("de.wikipedia.org" → "wikipedia.org"). */
+function siteOf(url: string): string {
+  return hostOf(url).toLowerCase().replace(/\.$/, "").split(".").slice(-2).join(".");
+}
+
+/** Two URLs on the same site ("https://www.google.com/" and its search page; Wikipedia's home and a language edition). */
+function sameSite(a: string, b: string): boolean {
+  const site = siteOf(a);
+  return site.includes(".") && site === siteOf(b);
 }
 
 function systemTitle(target: Extract<SafeTarget, { kind: "system" }>): string {

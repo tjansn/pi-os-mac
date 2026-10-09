@@ -38,14 +38,14 @@ import { bindingToHostAction, type CardSpec } from "../src/contracts/cards.js";
 import { NO_CONTEXT_SCORER } from "../src/contracts/context.js";
 import { NO_DICTIONARY, type DictionaryLearnRequest, type DictionaryLookup } from "../src/contracts/dictionary.js";
 import {
-  INSTANT_ACCEPTS, INSTANT_LIMITS, isRecognizerId, LOCALE_PATTERN,
+  INSTANT_LIMITS, isRecognizerId, LOCALE_PATTERN,
   type InstantRequest, type InstantResponse, type VoiceHypothesis, type VoiceHypothesisRole,
 } from "../src/contracts/instant.js";
 import type { AppRecord, FileSearchRequest } from "../src/contracts/launcher.js";
 import { AppIndexCache } from "../src/instant/apps.js";
 import { DictionaryStore, nonCountingLookup } from "../src/instant/dictionary.js";
 import { createInstantDispatcher, type InstantDispatcher } from "../src/instant/dispatcher.js";
-import { createLearnLane, learnFromGesture } from "../src/instant/learned.js";
+import { createLearnLane, learnFromGesture, REPLAY_ACCEPTS } from "../src/instant/learned.js";
 import { isCommonWord } from "../src/instant/lexicon.js";
 import { DE_EN_COLLISIONS, deWordsToDigits, enWordsToDigits } from "../src/instant/numberWords.js";
 import { InMemoryTakeMemo, takeDetailsOf, takeRecordFor } from "../src/instant/takeMemo.js";
@@ -367,7 +367,7 @@ export function createEvalLane(options: EvalLaneOptions = {}): EvalLane {
       let finals = 0;
       for (const final of attempt.finals) {
         request = {
-          text: final.text, phase: "final", seq: ++seq, locale: attempt.locale, inputMode: "voice", accept: [...INSTANT_ACCEPTS],
+          text: final.text, phase: "final", seq: ++seq, locale: attempt.locale, inputMode: "voice", accept: [...REPLAY_ACCEPTS],
           ...(final.hypotheses ? { hypotheses: final.hypotheses } : {}), ...(takeId ? { takeId } : {}),
         };
         response = await dispatcher.dispatch(request);

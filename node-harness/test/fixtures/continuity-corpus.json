@@ -1,0 +1,1166 @@
+{
+ "version": 1,
+ "about": "Continuity corpus (DESIGN5 §5.4 with Tom's binding answers of 2026-10-08): synthetic EN/DE/mixed takes, each with a class that fixes what an eligible focused field receives. dictation, explicit, explicit-held and search are must-fill (into the kinds that allow it); every other class is must-not-fill. Text fixtures only: no user content.",
+ "classes": {
+  "dictation": "must fill: plain phrases, questions and sentences. search, address, text and multiline get the text (Return only in search boxes and the address bar); a terminal gets the one-Return offer; credential and sensitive fields get nothing (no check card, no hints); confirm and rename keep today's decision",
+  "command": "must not fill: an instant command decides exactly as without a target (one that misses is never typed)",
+  "page": "must not fill: page and window questions stay with pi",
+  "task": "must not fill: pi tasks with a task head or addressed to pi, UI commands",
+  "deletion": "must not fill: deletion requests stay refused, deletion words never reach a field on their own",
+  "control": "must not fill: the bar's own answers, cancel and submit words",
+  "correction": "must not fill: corrections addressed to pi-os",
+  "pi": "must not fill: the escape to pi",
+  "explicit": "must fill: the remainder of tippe/type/diktiere/gib … ein into every kind but confirm (refused) and rename (today's decision)",
+  "explicit-held": "must fill after one Return: deletion words in an explicit remainder, never submitted",
+  "explicit-refused": "must not fill: a remainder that is itself a deletion request is refused",
+  "search": "must fill: the query of a bare search form into a search box or a browser's address bar with one Return; a browser without one opens the web search"
+ },
+ "items": [
+  {
+   "id": "DIC001",
+   "class": "dictation",
+   "lang": "de",
+   "text": "Albert Einstein"
+  },
+  {
+   "id": "DIC002",
+   "class": "dictation",
+   "lang": "de",
+   "text": "Albert Einstein."
+  },
+  {
+   "id": "DIC003",
+   "class": "dictation",
+   "lang": "de",
+   "text": "Marie Curie"
+  },
+  {
+   "id": "DIC004",
+   "class": "dictation",
+   "lang": "de",
+   "text": "Rechnung Telekom"
+  },
+  {
+   "id": "DIC005",
+   "class": "dictation",
+   "lang": "de",
+   "text": "Wie hoch ist der Eiffelturm?"
+  },
+  {
+   "id": "DIC006",
+   "class": "dictation",
+   "lang": "de",
+   "text": "Wetter Berlin morgen"
+  },
+  {
+   "id": "DIC007",
+   "class": "dictation",
+   "lang": "de",
+   "text": "Liebe Grüße"
+  },
+  {
+   "id": "DIC008",
+   "class": "dictation",
+   "lang": "de",
+   "text": "Ich komme heute etwas später nach Hause, weil der Zug Verspätung hat."
+  },
+  {
+   "id": "DIC009",
+   "class": "dictation",
+   "lang": "de",
+   "text": "Bis morgen, Anna"
+  },
+  {
+   "id": "DIC010",
+   "class": "dictation",
+   "lang": "de",
+   "text": "Danke für die schnelle Antwort!"
+  },
+  {
+   "id": "DIC011",
+   "class": "dictation",
+   "lang": "de",
+   "text": "Pizza in der Nähe"
+  },
+  {
+   "id": "DIC012",
+   "class": "dictation",
+   "lang": "de",
+   "text": "Rezept für Pfannkuchen"
+  },
+  {
+   "id": "DIC013",
+   "class": "dictation",
+   "lang": "de",
+   "text": "Wer war Konrad Adenauer?"
+  },
+  {
+   "id": "DIC014",
+   "class": "dictation",
+   "lang": "de",
+   "text": "Was kostet ein Flug nach Rom?"
+  },
+  {
+   "id": "DIC015",
+   "class": "dictation",
+   "lang": "de",
+   "text": "Relativitätstheorie"
+  },
+  {
+   "id": "DIC016",
+   "class": "dictation",
+   "lang": "de",
+   "text": "Öffnungszeiten Rathaus Köln"
+  },
+  {
+   "id": "DIC017",
+   "class": "dictation",
+   "lang": "de",
+   "text": "Hallo Komma wie geht's Fragezeichen"
+  },
+  {
+   "id": "DIC018",
+   "class": "dictation",
+   "lang": "de",
+   "text": "Wann fährt der nächste Zug nach Hamburg?"
+  },
+  {
+   "id": "DIC019",
+   "class": "dictation",
+   "lang": "en",
+   "text": "Albert Einstein"
+  },
+  {
+   "id": "DIC020",
+   "class": "dictation",
+   "lang": "en",
+   "text": "best pizza near me"
+  },
+  {
+   "id": "DIC021",
+   "class": "dictation",
+   "lang": "en",
+   "text": "how tall is the Eiffel Tower"
+  },
+  {
+   "id": "DIC022",
+   "class": "dictation",
+   "lang": "en",
+   "text": "No Country for Old Men"
+  },
+  {
+   "id": "DIC023",
+   "class": "dictation",
+   "lang": "en",
+   "text": "weather in Berlin tomorrow"
+  },
+  {
+   "id": "DIC024",
+   "class": "dictation",
+   "lang": "en",
+   "text": "Who wrote Hamlet?"
+  },
+  {
+   "id": "DIC025",
+   "class": "dictation",
+   "lang": "en",
+   "text": "cheap flights to Rome"
+  },
+  {
+   "id": "DIC026",
+   "class": "dictation",
+   "lang": "en",
+   "text": "See you tomorrow, Anna."
+  },
+  {
+   "id": "DIC027",
+   "class": "dictation",
+   "lang": "en",
+   "text": "Thanks for the quick reply!"
+  },
+  {
+   "id": "DIC028",
+   "class": "dictation",
+   "lang": "en",
+   "text": "chocolate chip cookie recipe"
+  },
+  {
+   "id": "DIC029",
+   "class": "dictation",
+   "lang": "en",
+   "text": "what's the capital of France"
+  },
+  {
+   "id": "DIC030",
+   "class": "dictation",
+   "lang": "en",
+   "text": "Taylor Swift tour dates"
+  },
+  {
+   "id": "DIC031",
+   "class": "dictation",
+   "lang": "en",
+   "text": "Running a bit late, be there in ten minutes."
+  },
+  {
+   "id": "DIC032",
+   "class": "dictation",
+   "lang": "mix",
+   "text": "Albert Einstein Relativitätstheorie"
+  },
+  {
+   "id": "DIC033",
+   "class": "dictation",
+   "lang": "mix",
+   "text": "iPhone 17 Preis"
+  },
+  {
+   "id": "DIC034",
+   "class": "dictation",
+   "lang": "mix",
+   "text": "Meeting notes für Montag"
+  },
+  {
+   "id": "DIC035",
+   "class": "dictation",
+   "lang": "en",
+   "text": "Monitor"
+  },
+  {
+   "id": "DIC036",
+   "class": "dictation",
+   "lang": "en",
+   "text": "Call of Duty"
+  },
+  {
+   "id": "DIC037",
+   "class": "dictation",
+   "lang": "en",
+   "text": "Hide and Seek"
+  },
+  {
+   "id": "DIC038",
+   "class": "dictation",
+   "lang": "en",
+   "text": "Take On Me"
+  },
+  {
+   "id": "DIC039",
+   "class": "dictation",
+   "lang": "en",
+   "text": "How are you?"
+  },
+  {
+   "id": "DIC040",
+   "class": "dictation",
+   "lang": "de",
+   "text": "Wie groß ist das Universum?"
+  },
+  {
+   "id": "DIC041",
+   "class": "dictation",
+   "lang": "de",
+   "text": "Wann beginnt das Oktoberfest?"
+  },
+  {
+   "id": "CMD001",
+   "class": "command",
+   "lang": "de",
+   "text": "Öffne Safari."
+  },
+  {
+   "id": "CMD002",
+   "class": "command",
+   "lang": "en",
+   "text": "open Safari"
+  },
+  {
+   "id": "CMD003",
+   "class": "command",
+   "lang": "en",
+   "text": "open Google"
+  },
+  {
+   "id": "CMD004",
+   "class": "command",
+   "lang": "de",
+   "text": "öffne Wikipedia"
+  },
+  {
+   "id": "CMD005",
+   "class": "command",
+   "lang": "en",
+   "text": "open wikipedia"
+  },
+  {
+   "id": "CMD006",
+   "class": "command",
+   "lang": "en",
+   "text": "what is 12 times 7"
+  },
+  {
+   "id": "CMD007",
+   "class": "command",
+   "lang": "de",
+   "text": "Wie spät ist es in Tokio?"
+  },
+  {
+   "id": "CMD008",
+   "class": "command",
+   "lang": "en",
+   "text": "convert 5 km to miles"
+  },
+  {
+   "id": "CMD009",
+   "class": "command",
+   "lang": "de",
+   "text": "lauter"
+  },
+  {
+   "id": "CMD010",
+   "class": "command",
+   "lang": "en",
+   "text": "mute"
+  },
+  {
+   "id": "CMD011",
+   "class": "command",
+   "lang": "en",
+   "text": "github.com"
+  },
+  {
+   "id": "CMD012",
+   "class": "command",
+   "lang": "de",
+   "text": "spiegel punkt de"
+  },
+  {
+   "id": "CMD013",
+   "class": "command",
+   "lang": "en",
+   "text": "google Albert Einstein"
+  },
+  {
+   "id": "CMD014",
+   "class": "command",
+   "lang": "en",
+   "text": "search the web for cats"
+  },
+  {
+   "id": "CMD015",
+   "class": "command",
+   "lang": "de",
+   "text": "100 Dollar in Euro"
+  },
+  {
+   "id": "CMD016",
+   "class": "command",
+   "lang": "en",
+   "text": "find my invoice pdf"
+  },
+  {
+   "id": "CMD017",
+   "class": "command",
+   "lang": "de",
+   "text": "öffne Foobarbaz"
+  },
+  {
+   "id": "CMD018",
+   "class": "command",
+   "lang": "en",
+   "text": "open the pod bay doors"
+  },
+  {
+   "id": "CMD019",
+   "class": "command",
+   "lang": "de",
+   "text": "Starte Notizen"
+  },
+  {
+   "id": "CMD020",
+   "class": "command",
+   "lang": "en",
+   "text": "Pages, please."
+  },
+  {
+   "id": "CMD021",
+   "class": "command",
+   "lang": "de",
+   "text": "Notizen"
+  },
+  {
+   "id": "CMD022",
+   "class": "command",
+   "lang": "de",
+   "text": "Wetter"
+  },
+  {
+   "id": "PAG001",
+   "class": "page",
+   "lang": "en",
+   "text": "what is this page about"
+  },
+  {
+   "id": "PAG002",
+   "class": "page",
+   "lang": "de",
+   "text": "Worum geht es auf dieser Seite?"
+  },
+  {
+   "id": "PAG003",
+   "class": "page",
+   "lang": "de",
+   "text": "Was steht da?"
+  },
+  {
+   "id": "PAG004",
+   "class": "page",
+   "lang": "en",
+   "text": "What does it say?"
+  },
+  {
+   "id": "PAG005",
+   "class": "page",
+   "lang": "en",
+   "text": "summarize this page"
+  },
+  {
+   "id": "PAG006",
+   "class": "page",
+   "lang": "de",
+   "text": "Fasse die Seite zusammen."
+  },
+  {
+   "id": "PAG007",
+   "class": "page",
+   "lang": "de",
+   "text": "Was ist das hier?"
+  },
+  {
+   "id": "PAG008",
+   "class": "page",
+   "lang": "en",
+   "text": "who wrote this article"
+  },
+  {
+   "id": "PAG009",
+   "class": "page",
+   "lang": "de",
+   "text": "Erkläre mir das."
+  },
+  {
+   "id": "PAG010",
+   "class": "page",
+   "lang": "en",
+   "text": "translate this"
+  },
+  {
+   "id": "PAG011",
+   "class": "page",
+   "lang": "en",
+   "text": "is this correct?"
+  },
+  {
+   "id": "PAG012",
+   "class": "page",
+   "lang": "en",
+   "text": "what am I looking at"
+  },
+  {
+   "id": "PAG013",
+   "class": "page",
+   "lang": "de",
+   "text": "Lies mir das vor."
+  },
+  {
+   "id": "PAG014",
+   "class": "page",
+   "lang": "de",
+   "text": "Worum geht's?"
+  },
+  {
+   "id": "PAG015",
+   "class": "page",
+   "lang": "de",
+   "text": "hier"
+  },
+  {
+   "id": "PAG016",
+   "class": "page",
+   "lang": "en",
+   "text": "what's on my screen"
+  },
+  {
+   "id": "PAG017",
+   "class": "page",
+   "lang": "de",
+   "text": "Was bedeutet das?"
+  },
+  {
+   "id": "PAG018",
+   "class": "page",
+   "lang": "en",
+   "text": "read it to me"
+  },
+  {
+   "id": "PAG019",
+   "class": "page",
+   "lang": "de",
+   "text": "Ist das wahr?"
+  },
+  {
+   "id": "PAG020",
+   "class": "page",
+   "lang": "de",
+   "text": "Ist das seriös?"
+  },
+  {
+   "id": "PAG021",
+   "class": "page",
+   "lang": "de",
+   "text": "Ist das ein Betrug?"
+  },
+  {
+   "id": "PAG022",
+   "class": "page",
+   "lang": "de",
+   "text": "Sollte ich das kaufen?"
+  },
+  {
+   "id": "PAG023",
+   "class": "page",
+   "lang": "de",
+   "text": "Kann ich dem trauen?"
+  },
+  {
+   "id": "PAG024",
+   "class": "page",
+   "lang": "de",
+   "text": "Macht das Sinn?"
+  },
+  {
+   "id": "PAG025",
+   "class": "page",
+   "lang": "de",
+   "text": "Gibt es das auch in Blau?"
+  },
+  {
+   "id": "TSK001",
+   "class": "task",
+   "lang": "de",
+   "text": "Schreib eine Mail an Anna."
+  },
+  {
+   "id": "TSK002",
+   "class": "task",
+   "lang": "en",
+   "text": "Write an email to Tom."
+  },
+  {
+   "id": "TSK003",
+   "class": "task",
+   "lang": "de",
+   "text": "Erstelle eine Präsentation."
+  },
+  {
+   "id": "TSK004",
+   "class": "task",
+   "lang": "en",
+   "text": "Remind me to call mom."
+  },
+  {
+   "id": "TSK005",
+   "class": "task",
+   "lang": "de",
+   "text": "Erinnere mich morgen an den Zahnarzt."
+  },
+  {
+   "id": "TSK006",
+   "class": "task",
+   "lang": "en",
+   "text": "Plan my trip to Rome."
+  },
+  {
+   "id": "TSK007",
+   "class": "task",
+   "lang": "de",
+   "text": "Übersetze Guten Morgen ins Englische."
+  },
+  {
+   "id": "TSK008",
+   "class": "task",
+   "lang": "en",
+   "text": "Explain quantum physics."
+  },
+  {
+   "id": "TSK009",
+   "class": "task",
+   "lang": "de",
+   "text": "Erkläre mir Quantenphysik."
+  },
+  {
+   "id": "TSK010",
+   "class": "task",
+   "lang": "de",
+   "text": "Neue Notiz Milch kaufen."
+  },
+  {
+   "id": "TSK011",
+   "class": "task",
+   "lang": "en",
+   "text": "Tell me a joke."
+  },
+  {
+   "id": "TSK012",
+   "class": "task",
+   "lang": "de",
+   "text": "Kannst du mir sagen, wie spät es ist?"
+  },
+  {
+   "id": "TSK013",
+   "class": "task",
+   "lang": "en",
+   "text": "Can you help me with my taxes?"
+  },
+  {
+   "id": "TSK014",
+   "class": "task",
+   "lang": "en",
+   "text": "Make a list of groceries."
+  },
+  {
+   "id": "TSK015",
+   "class": "task",
+   "lang": "en",
+   "text": "Draft a reply to Anna."
+  },
+  {
+   "id": "TSK016",
+   "class": "task",
+   "lang": "de",
+   "text": "Antworte Anna, dass ich komme."
+  },
+  {
+   "id": "TSK017",
+   "class": "task",
+   "lang": "de",
+   "text": "Fasse zusammen."
+  },
+  {
+   "id": "TSK018",
+   "class": "task",
+   "lang": "en",
+   "text": "Summarize."
+  },
+  {
+   "id": "TSK019",
+   "class": "task",
+   "lang": "en",
+   "text": "Click the blue button."
+  },
+  {
+   "id": "TSK020",
+   "class": "task",
+   "lang": "en",
+   "text": "Scroll down."
+  },
+  {
+   "id": "TSK021",
+   "class": "task",
+   "lang": "en",
+   "text": "Make it bold."
+  },
+  {
+   "id": "TSK022",
+   "class": "task",
+   "lang": "en",
+   "text": "Send."
+  },
+  {
+   "id": "TSK023",
+   "class": "task",
+   "lang": "en",
+   "text": "Play some jazz."
+  },
+  {
+   "id": "TSK024",
+   "class": "task",
+   "lang": "de",
+   "text": "Tippe auf den Button."
+  },
+  {
+   "id": "TSK025",
+   "class": "task",
+   "lang": "en",
+   "text": "type 2 diabetes symptoms"
+  },
+  {
+   "id": "TSK026",
+   "class": "task",
+   "lang": "de",
+   "text": "Tippe das."
+  },
+  {
+   "id": "TSK027",
+   "class": "task",
+   "lang": "de",
+   "text": "Hilf mir bei der Steuer."
+  },
+  {
+   "id": "TSK028",
+   "class": "task",
+   "lang": "de",
+   "text": "Vergleiche die Tarife."
+  },
+  {
+   "id": "TSK029",
+   "class": "task",
+   "lang": "en",
+   "text": "Compare iPhone and Pixel."
+  },
+  {
+   "id": "TSK030",
+   "class": "task",
+   "lang": "de",
+   "text": "Gib mir ein Rezept für Pfannkuchen."
+  },
+  {
+   "id": "TSK031",
+   "class": "task",
+   "lang": "de",
+   "text": "Eine Mail an Anna schreiben."
+  },
+  {
+   "id": "TSK032",
+   "class": "task",
+   "lang": "en",
+   "text": "Show me photos from last week."
+  },
+  {
+   "id": "TSK033",
+   "class": "task",
+   "lang": "de",
+   "text": "Such meine Rechnung."
+  },
+  {
+   "id": "TSK034",
+   "class": "task",
+   "lang": "en",
+   "text": "Quit Spotify."
+  },
+  {
+   "id": "TSK035",
+   "class": "task",
+   "lang": "de",
+   "text": "Beende Spotify."
+  },
+  {
+   "id": "TSK036",
+   "class": "task",
+   "lang": "de",
+   "text": "Nächster Song."
+  },
+  {
+   "id": "TSK037",
+   "class": "task",
+   "lang": "en",
+   "text": "Take a screenshot."
+  },
+  {
+   "id": "TSK038",
+   "class": "task",
+   "lang": "en",
+   "text": "Call Anna."
+  },
+  {
+   "id": "TSK039",
+   "class": "task",
+   "lang": "en",
+   "text": "Lock the screen."
+  },
+  {
+   "id": "TSK040",
+   "class": "task",
+   "lang": "mix",
+   "text": "Mach Numbers open."
+  },
+  {
+   "id": "TSK041",
+   "class": "task",
+   "lang": "en",
+   "text": "Spotify pause."
+  },
+  {
+   "id": "DEL001",
+   "class": "deletion",
+   "lang": "en",
+   "text": "delete the last sentence"
+  },
+  {
+   "id": "DEL002",
+   "class": "deletion",
+   "lang": "de",
+   "text": "Lösche den letzten Satz."
+  },
+  {
+   "id": "DEL003",
+   "class": "deletion",
+   "lang": "en",
+   "text": "remove the second paragraph"
+  },
+  {
+   "id": "DEL004",
+   "class": "deletion",
+   "lang": "en",
+   "text": "empty the trash"
+  },
+  {
+   "id": "DEL005",
+   "class": "deletion",
+   "lang": "de",
+   "text": "Papierkorb leeren"
+  },
+  {
+   "id": "DEL006",
+   "class": "deletion",
+   "lang": "en",
+   "text": "rm -rf ~"
+  },
+  {
+   "id": "DEL007",
+   "class": "deletion",
+   "lang": "en",
+   "text": "delete all my photos"
+  },
+  {
+   "id": "DEL008",
+   "class": "deletion",
+   "lang": "de",
+   "text": "Lösche Radfotos."
+  },
+  {
+   "id": "DEL009",
+   "class": "deletion",
+   "lang": "en",
+   "text": "how do I empty the trash"
+  },
+  {
+   "id": "DEL010",
+   "class": "deletion",
+   "lang": "en",
+   "text": "throw it away"
+  },
+  {
+   "id": "DEL011",
+   "class": "deletion",
+   "lang": "de",
+   "text": "Entferne das Wort."
+  },
+  {
+   "id": "DEL012",
+   "class": "deletion",
+   "lang": "de",
+   "text": "Wirf die alten Dateien weg."
+  },
+  {
+   "id": "DEL013",
+   "class": "deletion",
+   "lang": "en",
+   "text": "uninstall Slack"
+  },
+  {
+   "id": "CTL001",
+   "class": "control",
+   "lang": "de",
+   "text": "Nein."
+  },
+  {
+   "id": "CTL002",
+   "class": "control",
+   "lang": "en",
+   "text": "No."
+  },
+  {
+   "id": "CTL003",
+   "class": "control",
+   "lang": "de",
+   "text": "Ja."
+  },
+  {
+   "id": "CTL004",
+   "class": "control",
+   "lang": "en",
+   "text": "Yes."
+  },
+  {
+   "id": "CTL005",
+   "class": "control",
+   "lang": "en",
+   "text": "Okay."
+  },
+  {
+   "id": "CTL006",
+   "class": "control",
+   "lang": "en",
+   "text": "Never mind."
+  },
+  {
+   "id": "CTL007",
+   "class": "control",
+   "lang": "de",
+   "text": "Vergiss es."
+  },
+  {
+   "id": "CTL008",
+   "class": "control",
+   "lang": "de",
+   "text": "Abbrechen."
+  },
+  {
+   "id": "CTL009",
+   "class": "control",
+   "lang": "en",
+   "text": "Cancel."
+  },
+  {
+   "id": "CTL010",
+   "class": "control",
+   "lang": "en",
+   "text": "Undo."
+  },
+  {
+   "id": "CTL011",
+   "class": "control",
+   "lang": "de",
+   "text": "Rückgängig."
+  },
+  {
+   "id": "CTL012",
+   "class": "control",
+   "lang": "en",
+   "text": "Enter."
+  },
+  {
+   "id": "CTL013",
+   "class": "control",
+   "lang": "de",
+   "text": "Los."
+  },
+  {
+   "id": "CTL014",
+   "class": "control",
+   "lang": "de",
+   "text": "Senden."
+  },
+  {
+   "id": "CTL015",
+   "class": "control",
+   "lang": "de",
+   "text": "Danke."
+  },
+  {
+   "id": "CTL016",
+   "class": "control",
+   "lang": "en",
+   "text": "Hmm."
+  },
+  {
+   "id": "CTL017",
+   "class": "control",
+   "lang": "de",
+   "text": "Äh."
+  },
+  {
+   "id": "CTL018",
+   "class": "control",
+   "lang": "de",
+   "text": "Warte."
+  },
+  {
+   "id": "COR001",
+   "class": "correction",
+   "lang": "de",
+   "text": "Nein, Marie Curie."
+  },
+  {
+   "id": "COR002",
+   "class": "correction",
+   "lang": "en",
+   "text": "No, I meant Marie Curie."
+  },
+  {
+   "id": "COR003",
+   "class": "correction",
+   "lang": "de",
+   "text": "Nein, ich meinte Notizen."
+  },
+  {
+   "id": "PI001",
+   "class": "pi",
+   "lang": "de",
+   "text": "Frag Pi, wie hoch der Eiffelturm ist."
+  },
+  {
+   "id": "PI002",
+   "class": "pi",
+   "lang": "en",
+   "text": "Ask pi what the capital of France is."
+  },
+  {
+   "id": "PI003",
+   "class": "pi",
+   "lang": "de",
+   "text": "Hey Pi, wie geht's?"
+  },
+  {
+   "id": "PI004",
+   "class": "pi",
+   "lang": "de",
+   "text": "Pi, was ist die Hauptstadt von Australien?"
+  },
+  {
+   "id": "PI005",
+   "class": "pi",
+   "lang": "en",
+   "text": "Hey pi, who wrote Hamlet?"
+  },
+  {
+   "id": "EXP001",
+   "class": "explicit",
+   "lang": "de",
+   "text": "Tippe Hallo Welt.",
+   "remainder": "Hallo Welt."
+  },
+  {
+   "id": "EXP002",
+   "class": "explicit",
+   "lang": "en",
+   "text": "Type hello world.",
+   "remainder": "hello world."
+  },
+  {
+   "id": "EXP003",
+   "class": "explicit",
+   "lang": "de",
+   "text": "Tipp Albert Einstein",
+   "remainder": "Albert Einstein"
+  },
+  {
+   "id": "EXP004",
+   "class": "explicit",
+   "lang": "de",
+   "text": "Diktiere Liebe Grüße, Anna.",
+   "remainder": "Liebe Grüße, Anna."
+  },
+  {
+   "id": "EXP005",
+   "class": "explicit",
+   "lang": "de",
+   "text": "Gib Albert Einstein ein.",
+   "remainder": "Albert Einstein"
+  },
+  {
+   "id": "EXP006",
+   "class": "explicit",
+   "lang": "en",
+   "text": "Type open google",
+   "remainder": "open google"
+  },
+  {
+   "id": "EXP007",
+   "class": "explicit",
+   "lang": "de",
+   "text": "Tippe nein.",
+   "remainder": "nein."
+  },
+  {
+   "id": "EXP008",
+   "class": "explicit",
+   "lang": "en",
+   "text": "Dictate see you at five.",
+   "remainder": "see you at five."
+  },
+  {
+   "id": "EXP009",
+   "class": "explicit",
+   "lang": "de",
+   "text": "Tippe: Das ist ein Test.",
+   "remainder": "Das ist ein Test."
+  },
+  {
+   "id": "EXP010",
+   "class": "explicit",
+   "lang": "en",
+   "text": "Type wie hoch ist der Eiffelturm",
+   "remainder": "wie hoch ist der Eiffelturm"
+  },
+  {
+   "id": "EXH001",
+   "class": "explicit-held",
+   "lang": "de",
+   "text": "Tippe lösche den Absatz.",
+   "remainder": "lösche den Absatz."
+  },
+  {
+   "id": "EXH002",
+   "class": "explicit-held",
+   "lang": "en",
+   "text": "Type remove the comma",
+   "remainder": "remove the comma"
+  },
+  {
+   "id": "EXR001",
+   "class": "explicit-refused",
+   "lang": "en",
+   "text": "type rm -rf ~"
+  },
+  {
+   "id": "EXR002",
+   "class": "explicit-refused",
+   "lang": "de",
+   "text": "Tippe Papierkorb leeren"
+  },
+  {
+   "id": "SRC001",
+   "class": "search",
+   "lang": "de",
+   "text": "Such nach Katzen.",
+   "query": "Katzen."
+  },
+  {
+   "id": "SRC002",
+   "class": "search",
+   "lang": "en",
+   "text": "Search for cats.",
+   "query": "cats."
+  },
+  {
+   "id": "SRC003",
+   "class": "search",
+   "lang": "de",
+   "text": "Suche Rezept Lasagne",
+   "query": "Rezept Lasagne"
+  },
+  {
+   "id": "SRC004",
+   "class": "search",
+   "lang": "en",
+   "text": "Search for Albert Einstein",
+   "query": "Albert Einstein"
+  },
+  {
+   "id": "SRC005",
+   "class": "search",
+   "lang": "de",
+   "text": "Such mal nach Hotels in Rom.",
+   "query": "Hotels in Rom."
+  },
+  {
+   "id": "SRC006",
+   "class": "search",
+   "lang": "en",
+   "text": "look for cheap flights",
+   "query": "cheap flights"
+  }
+ ]
+}

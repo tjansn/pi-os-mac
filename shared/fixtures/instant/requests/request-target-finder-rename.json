@@ -1,0 +1,24 @@
+{
+  "text": "Radfotos 2026",
+  "phase": "final",
+  "seq": 2,
+  "takeId": "take-56",
+  "contextId": "ctx-128",
+  "locale": "de-DE",
+  "inputMode": "voice",
+  "accept": [
+    "suggest",
+    "check",
+    "confirm",
+    "fill"
+  ],
+  "target": {
+    "app": "finder",
+    "anchor": {},
+    "field": {
+      "kind": "rename",
+      "empty": false,
+      "ready": true
+    }
+  }
+}

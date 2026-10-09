@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pi-os fixture · Dummy sign-in</title>
+<link rel="stylesheet" href="/fixture.css">
+<script src="/fixture.js" defer></script>
+</head>
+<body data-page="login">
+<main>
+<h1>Dummy sign-in (fixture)</h1>
+<p class="note">Loopback fixture for pi-os credential-field checks. Use only the dummy credential named in the QA README. The form cannot submit and nothing is sent anywhere; the page shows only whether a field is filled.</p>
+<form>
+<label for="username">Username</label>
+<input id="username" name="username" autocomplete="username" autocapitalize="off" spellcheck="false" autofocus data-field="username" data-kind="credential">
+<output data-echo="username"></output>
+<label for="password">Password</label>
+<input id="password" name="password" type="password" autocomplete="current-password" data-field="password" data-kind="credential">
+<output data-echo="password"></output>
+<button type="submit">Sign in (dummy)</button>
+</form>
+<output data-echo-page></output>
+</main>
+</body>
+</html>

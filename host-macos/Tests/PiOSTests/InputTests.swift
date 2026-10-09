@@ -1,3 +1,4 @@
+import ApplicationServices
 import XCTest
 @testable import PiOSCore
 @testable import PiOSMac
@@ -13,8 +14,16 @@ private final class FakeInputDriver: DesktopInputDriver {
     var events: [NativeInputEvent] = []
     var focused = 0
     var onPost: (() -> Void)?
+    /// A bound driver's wait for its control (critic C3): how often it ran, and whether anything was posted before it.
+    var settleError: DomainError?
+    var settled = 0
+    var postedBeforeSettle = false
     func inspect(_ target: WindowContext) throws -> Rect { if let inspectError { throw inspectError }; return frame }
     func focus(_ target: WindowContext) async throws { if let focusError { throw focusError }; focused += 1 }
+    func settleFocus(_ target: WindowContext) async throws {
+        settled += 1; postedBeforeSettle = postedBeforeSettle || !events.isEmpty
+        if let settleError { throw settleError }
+    }
     func validateFocusAndSecurity(_ target: WindowContext, action: InputAction, arguments: InputArguments) throws { if let securityError { throw securityError } }
     func validatePoint(_ point: Point, target: WindowContext) throws {
         if covered { throw DomainError("focus_failed", "Covered") }
@@ -177,7 +186,7 @@ final class InputTests: XCTestCase {
             case .unicode(let units, true):
                 delivered += String(decoding: units, as: UTF16.self)
                 guard case .unicode(let release, false) = driver.events[index + 1] else { return XCTFail() }
-                XCTAssertEqual(units, release)
+                XCTAssertEqual(release, [], "the payload rides on key-down only (DESIGN5 §5.6: a key-up payload doubled Electron text)")
             case .key(36, true, _):
                 delivered += "\n"
                 guard case .key(36, false, _) = driver.events[index + 1] else { return XCTFail() }
@@ -199,6 +208,94 @@ final class InputTests: XCTestCase {
             XCTFail("Oversized paced call was accepted")
         } catch { XCTAssertEqual((error as? DomainError)?.code, "invalid_arguments") }
         XCTAssertTrue(tooLong.events.isEmpty); XCTAssertEqual(tooLong.focused, 0)
+    }
+    func testKeyUpPayloadOnlyWhenAskedAndChunkedTypingKeepsEveryCharacter() async throws {
+        let text = String(repeating: "a", count: 19) + "😀 Grüße, Straße\n日本語👨‍👩‍👧‍👦 " + String(repeating: "b", count: 30)
+        let legacy = FakeInputDriver()
+        _ = try await DesktopInputController(driver: legacy, typeInterval: 0, chunk: nil, keyUpPayload: true).execute(.typeText,
+            args: .init(contextId: "x", text: "äb"), target: target, transform: transform(), lease: lease())
+        guard case .unicode(let down, true) = legacy.events[0], case .unicode(let up, false) = legacy.events[1] else { return XCTFail() }
+        XCTAssertEqual(down, up, "PI_OS_TYPE_KEYUP_PAYLOAD=1 restores today's payload on key-up")
+        for chunk in [nil, 2, 20] as [Int?] {
+            let driver = FakeInputDriver()
+            let result = try await DesktopInputController(driver: driver, typeInterval: 0, chunk: chunk, keyUpPayload: false).execute(.typeText,
+                args: .init(contextId: "x", text: text), target: target, transform: transform(), lease: lease())
+            var delivered = "", returns = 0
+            for (index, event) in driver.events.enumerated() where index % 2 == 0 {
+                switch event {
+                case .unicode(let units, true):
+                    XCTAssertLessThanOrEqual(units.count, chunk ?? 2, "\(String(describing: chunk))")
+                    XCTAssertFalse((0xD800...0xDBFF).contains(units.last!), "never a split surrogate pair")
+                    XCTAssertFalse((0xDC00...0xDFFF).contains(units.first!))
+                    delivered += String(decoding: units, as: UTF16.self)
+                case .key(36, true, _): delivered += "\n"; returns += 1
+                default: XCTFail("Unexpected event")
+                }
+            }
+            XCTAssertEqual(delivered, text, "\(String(describing: chunk))")
+            XCTAssertEqual(returns, 1, "a line break stays its own stroke")
+            XCTAssertEqual(result.characters, text.utf16.count)
+            if chunk == 20 { XCTAssertLessThan(driver.events.count, 20, "a few events instead of one per character (critic C14)") }
+        }
+        XCTAssertEqual(TextInput.chunkLimit([:]), nil)
+        XCTAssertEqual(TextInput.chunkLimit(["PI_OS_TYPE_CHUNK": "1"]), 20)
+        XCTAssertEqual(TextInput.chunkLimit(["PI_OS_TYPE_CHUNK": "on"]), 20)
+        XCTAssertEqual(TextInput.chunkLimit(["PI_OS_TYPE_CHUNK": "8"]), 8)
+        XCTAssertNil(TextInput.chunkLimit(["PI_OS_TYPE_CHUNK": "21"]))
+        XCTAssertNil(TextInput.chunkLimit(["PI_OS_TYPE_CHUNK": "0"]))
+        XCTAssertFalse(TextInput.keyUpPayload([:]))
+        XCTAssertTrue(TextInput.keyUpPayload(["PI_OS_TYPE_KEYUP_PAYLOAD": "1"]))
+    }
+    func testABoundActionWaitsForItsFieldFirstAndPostsNothingWhenItMoved() async throws {
+        for action in [InputAction.typeText, .pressKey, .focus] {
+            let driver = FakeInputDriver()
+            let args: InputArguments = action == .pressKey ? .init(contextId: "x", key: "enter") : .init(contextId: "x", text: action == .typeText ? "Albert" : nil)
+            _ = try await DesktopInputController(driver: driver, typeInterval: 0).execute(action, args: args, target: target, transform: transform(), lease: lease())
+            XCTAssertEqual(driver.settled, 1, "\(action)"); XCTAssertFalse(driver.postedBeforeSettle, "\(action): settles before any event")
+            let moved = FakeInputDriver(); moved.settleError = InputBinding.focusMoved
+            do {
+                _ = try await DesktopInputController(driver: moved, typeInterval: 0).execute(action, args: args, target: target, transform: transform(), lease: lease())
+                XCTFail("\(action)")
+            } catch { XCTAssertEqual((error as? DomainError)?.code, "focus_moved", "\(action)") }
+            XCTAssertTrue(moved.events.isEmpty, "\(action): refused, nothing posted")
+        }
+        // Clicks and scrolls are never bound (they check their destination instead).
+        let click = FakeInputDriver()
+        _ = try await DesktopInputController(driver: click).execute(.click, args: .init(contextId: "x", x: 20, y: 20), target: target, transform: transform(), lease: lease())
+        XCTAssertEqual(click.settled, 0)
+        // Focus moving away mid-typing: the per-event check stops it, and the outcome is uncertain (never retried).
+        let typing = FakeInputDriver()
+        typing.onPost = { if typing.events.count == 2 { typing.securityError = InputBinding.focusMoved } }
+        do {
+            _ = try await DesktopInputController(driver: typing, typeInterval: 0).execute(.typeText, args: .init(contextId: "x", text: "Albert Einstein"),
+                target: target, transform: transform(), lease: lease()); XCTFail()
+        } catch { XCTAssertEqual((error as? DomainError)?.code, "input_failed") }
+        XCTAssertEqual(typing.events.count, 2, "the pair in flight is balanced, nothing after it")
+    }
+    func testABindingMatchesOnlyItsOwnControl() {
+        let element = AXUIElementCreateApplication(4242)
+        let node = BrowserFixtureNode([kAXRoleAttribute: kAXTextFieldRole])
+        let field = BoundField(element: element, node: node, pid: 4242, windowId: 9, field: InstantTarget.Field(kind: .search, empty: true, ready: true),
+                               role: kAXTextFieldRole, frame: Rect(x: 0, y: 0, width: 100, height: 20), domIdentity: nil)
+        let binding = InputBinding(field)
+        XCTAssertTrue(binding.matches(element))
+        XCTAssertFalse(binding.matches(AXUIElementCreateApplication(4243)), "another process's element is never the bound field")
+        XCTAssertEqual(binding.settle, 0.12, "≤ 120 ms for focus to come back (critic C3)")
+        XCTAssertEqual(binding.poll, 0.01)
+    }
+    func testAFillsTextIsOneLineThatNeverPressesReturn() {
+        XCTAssertEqual(TextInput.singleLine("  Albert\r\nEinstein\t "), "Albert Einstein")
+        XCTAssertEqual(TextInput.singleLine("Grüße\u{2028}aus\u{2029}Köln\u{0007}!"), "Grüße aus Köln !")
+        XCTAssertEqual(TextInput.singleLine("a\u{200B}b"), "a b", "format characters go")
+        XCTAssertEqual(TextInput.singleLine("👨‍👩‍👧‍👦 Familie"), "👨‍👩‍👧‍👦 Familie", "joiner sequences stay whole")
+        XCTAssertEqual(TextInput.singleLine("Albert Einstein.", trailingPeriod: false), "Albert Einstein", "ASR's period goes for search boxes")
+        XCTAssertEqual(TextInput.singleLine("Albert Einstein.", trailingPeriod: true), "Albert Einstein.")
+        XCTAssertEqual(TextInput.singleLine("Made in U.S.A.", trailingPeriod: false), "Made in U.S.A.", "an initialism keeps its own")
+        XCTAssertEqual(TextInput.singleLine("Warte...", trailingPeriod: false), "Warte...", "never an ellipsis")
+        XCTAssertEqual(TextInput.singleLine("\n\n"), "")
+        for text in ["a\nb", "a\rb", "a\r\nb", "a\u{2028}b", "a\u{85}b", "x\n"] {
+            XCTAssertFalse(TextInput.strokes(TextInput.singleLine(text)).contains(.enter), "no keycode 36 from a fill: \(text.debugDescription)")
+        }
     }
     func testUnicodeChunkBoundariesAndBudget() throws {
         let text = String(repeating: "a", count: 19) + "😀日本語👨‍👩‍👧‍👦" + String(repeating: "b", count: 30)

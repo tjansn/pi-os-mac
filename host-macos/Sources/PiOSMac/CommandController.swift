@@ -119,6 +119,25 @@ public struct AgentRequest: Equatable {
     func perform(_ action: HostAction, contextId: String?, confirmed: Bool) async throws -> String
     /// After an instant action's confirmation: hide and release the take (warm TTL, no hard stop).
     func finishInstant()
+
+    // Continuity (DESIGN5 §3, §5.1). Application implements these; the defaults below keep other hosts compiling.
+    /// `InstantRequest.target` for the take's final, content-free. Call it right before every final `/instant` request,
+    /// never for follow-ups. It may re-pin a take racing a pi-os launch (≤ 150 ms), so read the take's contextId again
+    /// after it returns.
+    func instantTarget(contextId: String) async -> InstantTarget?
+    /// The field the last `instantTarget` bound for this context; keep a copy for Undo (it is dropped at the next key-down).
+    func boundField(contextId: String) -> BoundField?
+    /// The background classification of the take's focused control, for the caption, before the final.
+    func fieldPreview(contextId: String) async -> InstantTarget.Field?
+    /// "Not this" or "No, I meant X" on the act that opened something: drops its anchor and its pending launch.
+    func continuityRejected(takeId: String)
+}
+
+public extension CommandHost {
+    func instantTarget(contextId: String) async -> InstantTarget? { nil }
+    func boundField(contextId: String) -> BoundField? { nil }
+    func fieldPreview(contextId: String) async -> InstantTarget.Field? { nil }
+    func continuityRejected(takeId: String) {}
 }
 
 public enum ListeningState: Equatable { case off, listening, finishing }
@@ -223,6 +242,9 @@ public struct VoiceDecisionPresentation: Equatable {
         case choices
         /// "Did I hear that right?" (`fallthrough` `low_confidence` + `voice.check`).
         case check
+        /// A take spoken while a credential or code field is focused that no command took (DESIGN5 C5): the heard text is
+        /// masked, nothing was sent anywhere; ↩ types it (only with the credential opt-in), ⌥↩ asks pi anyway.
+        case secret
     }
     public var kind: Kind
     public var title: String
@@ -240,7 +262,8 @@ public struct VoiceDecisionPresentation: Equatable {
 
 /// A short non-activating note after the bar went away: "Not this", the learned footer with Undo, "Remember …?".
 public struct VoiceToast: Equatable {
-    public enum Kind: String, Equatable, Sendable { case notThis, learned, ask, undone }
+    /// `typed`: a continuity fill's note (Undo · Ask pi); `notTyped`: a fill or its Undo was refused (Copy, or none).
+    public enum Kind: String, Equatable, Sendable { case notThis, learned, ask, undone, typed, notTyped }
     public var kind: Kind
     public var text: String
     /// Button titles in order; the handler gets the index.
@@ -447,6 +470,13 @@ public enum SpokenPick: Equatable {
     /// A voice take's last final is in (its `.complete` stage, or the take ended without one), after key-up and off the
     /// hotkey path: the app retries a speech model load the local-AI benchmark's lock deferred.
     public var voiceTakeFinished: (() -> Void)?
+    /// Continuity fills (DESIGN5 §5): the gated typing into the bound field, its record and Undo. nil (tests, echo mode):
+    /// the host never declares `accept: "fill"` and never types on its own.
+    var fills: FillSession?
+    /// Settings → Voice → "Type into the focused field" (the kill switch, default on).
+    public var fillSwitch: () -> Bool = { FillSettings.enabled() }
+    /// Settings → General's credential-field opt-in (AGENTS.md): credential and code fields take explicit input only with it.
+    public var credentialInput: () -> Bool = { CredentialFields.allowed }
     public private(set) var gesture: TalkGesture
     public private(set) var listening = false
     /// A released take (or a Return) is resolving: the hotkey treats the surface as working.
@@ -459,6 +489,7 @@ public enum SpokenPick: Equatable {
         switch decision {
         case .choices(let choices)?: choices.presentation.kind
         case .check?: .check
+        case .secret?: .secret
         case .confirm?, nil: nil
         }
     }
@@ -493,7 +524,9 @@ public enum SpokenPick: Equatable {
     private var pendingStartError: DomainError?
     private var transcript = VoiceTranscript()
     private var preview: (text: String, response: InstantResponse)?
-    private var pendingConfirmation: (text: String, action: HostAction)?
+    /// `fill`: the act is a continuity fill held for one Return (a code field, deletion words): it types through FillSession
+    /// into `field`, the control its final bound (a later take's context has no binding of its own).
+    private var pendingConfirmation: (text: String, action: HostAction, fill: Bool, field: BoundField?)?
     /// The ⇧ chord or the menu started this take: its context chip opens on (an explicit choice).
     private var includeNextTake = false
     /// The ⇧ chord turned the chip on over an open composer; its release edge is not a gesture.
@@ -533,22 +566,40 @@ public enum SpokenPick: Equatable {
         let take: VoiceTake
         let presentation: VoiceDecisionPresentation
         let rows: [ChoiceRow]
+        /// Spoken at a credential or code field: the heard words never return to the composer.
+        var masked = false
     }
     struct Check {
         let take: VoiceTake
         let heard: String
         let alternatives: [String]
+        /// `voice.fill: "offer"`: ↩ (or a chip) types the card's text into the bound field, never with Return.
+        var offersFill = false
+    }
+    /// The masked card of a credential or code field (DESIGN5 C5): the heard words stay in memory, never on screen.
+    struct Secret {
+        let take: VoiceTake
+        let kind: InstantFieldKind
+        /// ↩ types the words: only with the credential opt-in, the fill switch, computer control and a bound field.
+        let canType: Bool
+        /// Why ↩ cannot type (the card's footer and ↩'s note say so); nil when it can.
+        var blocked: FillCopy.SecretBlock?
     }
     struct Confirm {
         let take: VoiceTake
         let text: String
         let action: HostAction
         let title: String
+        /// A held fill's bound control: a "ja" or ↩ in the next take types into it (that take's context binds nothing).
+        var field: BoundField?
+        /// Spoken at a credential or code field: the composer shows "•••", never the heard words.
+        var masked = false
     }
     enum Decision {
         case choices(Choices)
         case check(Check)
         case confirm(Confirm)
+        case secret(Secret)
     }
     /// A sound-alike, learned or other-engine act that "Not this" can still reject.
     struct RecentAct {
@@ -568,6 +619,19 @@ public enum SpokenPick: Equatable {
     private var journalChain: Task<Void, Never>?
     /// The agent request of this take was spoken: suggestion chips on its card go through /instant first.
     private var voiceAgentTake: String?
+
+    // Continuity (DESIGN5 §3, §5). Content-free facts and host memory only; nothing here is logged.
+    /// The take's target at its last final (`InstantRequest.target`).
+    private var takeTarget: (takeId: String, target: InstantTarget)?
+    /// The kind of the take's focused control as last known (the caption's preview, then each final's target): a
+    /// credential or code field keeps the take out of the journal and away from the agent (DESIGN5 §5.8, C5).
+    private var takeFieldKind: (takeId: String, kind: InstantFieldKind)?
+    /// After a fill the take stays current while its note is up (its context is Undo's and Ask pi's), then ends.
+    private var fillDwell: CommandTimer?
+    private var captionTask: Task<Void, Never>?
+    /// The last fill's take and its agent input, for "Ask pi" (the words themselves are the fill record's). Never for a
+    /// credential or code field's fill, and dropped when the fill's note ends.
+    private(set) var fillAsk: (takeId: String, input: AgentInput)?
 
     // Content-free timing of the current voice take.
     private struct TakeTiming {
@@ -665,8 +729,12 @@ public enum SpokenPick: Equatable {
     }
     /// Tab or a click on the chip.
     public func toggleContext() { take?.context?.toggle() }
-    /// A tether re-pinned the take: instant requests and actions name the new context from now on.
-    public func retarget(contextId: String) { take?.contextId = contextId }
+    /// A tether re-pinned the take: instant requests and actions name the new context from now on. While listening, the
+    /// caption names the new target's field (a take re-pinned to the app pi-os was launching, DESIGN5 §3.5).
+    public func retarget(contextId: String) {
+        take?.contextId = contextId
+        if listening { surface?.setFillCaption(nil); showFillCaption() }
+    }
 
     /// Escape, close, cancel or panel hide: end the take and drop any audio.
     public func interrupt() {
@@ -695,7 +763,10 @@ public enum SpokenPick: Equatable {
                 // still answer it. A check state is re-said instead.
                 var carried: Decision?
                 if carryDecision, let current = decision {
-                    if case .check = current {} else { carried = current }
+                    switch current {
+                    case .check, .secret: break
+                    case .choices, .confirm: carried = current
+                    }
                 }
                 carryDecision = false
                 writeTiming(otherwise: "cancelled")
@@ -731,6 +802,7 @@ public enum SpokenPick: Equatable {
                 listening = true
                 surface?.setListening(.listening)
                 if !transcript.isEmpty { surface?.setVoiceTranscript(finalized: transcript.finalizedText, volatile: transcript.volatile) }
+                showFillCaption()
             case .finalize: finalize()
             case .stopMicDiscard:
                 voice.abandon(); listening = false; transcript = VoiceTranscript(); takeTiming = nil
@@ -761,17 +833,17 @@ public enum SpokenPick: Equatable {
         switch carried {
         case .choices(let choices): surface?.presentVoiceDecision(choices.presentation, onChip: nil)
         case .confirm(let confirm): showPreview(.hint(VoiceCopy.confirmHint(confirm.title)))
-        case .check: break
+        case .check, .secret: break
         }
     }
     /// The carried decision's words in the composer (and a confirm's pending action), after a tap.
     private func restoreDecisionWords() {
         switch decision {
-        case .choices(let choices)?: surface?.setComposerText(choices.take.utterance)
+        case .choices(let choices)?: surface?.setComposerText(choices.masked ? FillCopy.secretMask : choices.take.utterance)
         case .confirm(let confirm)?:
-            surface?.setComposerText(confirm.text)
-            pendingConfirmation = (confirm.text, confirm.action)
-        case .check?, nil: break
+            surface?.setComposerText(confirm.masked ? FillCopy.secretMask : confirm.text)
+            pendingConfirmation = (confirm.text, confirm.action, confirm.take.response?.isFill == true, confirm.field)
+        case .check?, .secret?, nil: break
         }
     }
 
@@ -781,7 +853,12 @@ public enum SpokenPick: Equatable {
         guard take != nil, voice.isActive else { return }
         transcript = next
         guard listening else { return }
-        surface?.setVoiceTranscript(finalized: next.finalizedText, volatile: next.volatile)
+        // A take at a credential or code field: the words may be the secret, so the bar never shows them (DESIGN5 C5).
+        if let take, secretKind(take.takeId) != nil {
+            surface?.setVoiceTranscript(finalized: FillCopy.secretMask, volatile: "")
+        } else {
+            surface?.setVoiceTranscript(finalized: next.finalizedText, volatile: next.volatile)
+        }
         // The on-device scorer runs off the main thread on every change (latest wins).
         let trimmed = next.text.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty { take?.context?.textChanged(trimmed) }
@@ -799,8 +876,9 @@ public enum SpokenPick: Equatable {
             guard text.utf16.count <= Self.maximumInstantText, seen.insert(text).inserted else { continue }
             texts.append((text, hypothesis.locale))
         }
-        // A shown decision stays: the next take answers it, previews would only cover it.
-        guard listening, decision == nil else { return }
+        // A shown decision stays: the next take answers it, previews would only cover it. A take at a credential or code
+        // field previews nothing: a preview of its words would show them (DESIGN5 C5).
+        guard listening, decision == nil, take.flatMap({ secretKind($0.takeId) }) == nil else { return }
         previewTimer?.cancel(); previewTimer = nil
         guard !texts.isEmpty else { cancelPreview(); return }
         previewTimer = scheduler.after(timing.previewDebounce) { [weak self] in self?.sendPartials(texts) }
@@ -861,7 +939,7 @@ public enum SpokenPick: Equatable {
                 let spoken = VoiceTake(takeId: takeId, utterance: final.composerText ?? "", final: final, durationMs: duration, at: Date(),
                                        complete: primary ? complete : nil)
                 if primary {
-                    surface?.setComposerText(spoken.utterance)
+                    surface?.setComposerText(composerWords(spoken))
                     if answerByVoice(spoken) { settled = true; continue }
                     settled = await resolve(spoken.utterance, input: voiceInput(spoken, response: nil), mode: .voice(spoken), early: true)
                     if !settled { sentPrimary = spoken }
@@ -869,8 +947,8 @@ public enum SpokenPick: Equatable {
                 }
                 settled = true
                 // Nothing usable was heard: say so, never a silent return (DESIGN4 §4.1).
-                guard !final.isEmpty, !spoken.utterance.isEmpty else { heardNothing(spoken); continue }
-                surface?.setComposerText(spoken.utterance)
+                guard !final.isEmpty, !spoken.utterance.isEmpty else { await heardNothing(spoken); continue }
+                surface?.setComposerText(composerWords(spoken))
                 if answerByVoice(spoken) { continue }
                 await resolve(spoken.utterance, input: voiceInput(spoken, response: nil), mode: .voice(spoken))
             }
@@ -905,18 +983,39 @@ public enum SpokenPick: Equatable {
         case .list, .handOff: false
         }
     }
-    private func heardNothing(_ spoken: VoiceTake) {
+    private func heardNothing(_ spoken: VoiceTake) async {
         finalizing = false
         voiceRetry = true
         surface?.setComposerText("")
         surface?.showHeardNothing(VoiceCopy.heardNothing)
-        journalAppend(spoken, response: nil, outcome: .empty)
         noteDecision("empty", response: nil)
         writeTiming(otherwise: "empty")
+        // The audio of a take spoken at a credential or code field is never kept, even when nothing was recognized.
+        if takeFieldKind?.takeId != spoken.takeId, let take, take.takeId == spoken.takeId,
+           let field = await host?.fieldPreview(contextId: take.contextId) {
+            noteFieldKind(field.kind, takeId: spoken.takeId)
+        }
+        journalAppend(spoken, response: nil, outcome: .empty)
     }
     /// The take answers a shown decision or the last act: a spoken pick, yes, no, or "no" right after a
     /// sound-alike act. True when it was handled here (nothing goes to /instant).
     private func answerByVoice(_ spoken: VoiceTake) -> Bool {
+        // DESIGN5 H0: right after a fill, a bare "nein/no/undo" undoes the typing and a bare "frag pi/ask pi" sends the
+        // typed words to pi instead (a fill is newer than any act: a later act or answer forgets it).
+        if decision == nil, recentFillIsFresh {
+            if FillWords.isUndo(spoken.utterance) {
+                finalizing = false
+                noteDecision("undo", response: nil); writeTiming(otherwise: "undo")
+                undoFill()
+                return true
+            }
+            if FillWords.isAskPi(spoken.utterance), fills?.record.map({ !FillSession.secret($0.kind) }) == true {
+                finalizing = false
+                noteDecision("agent", response: nil); writeTiming(otherwise: "agent")
+                askPiAfterFill()
+                return true
+            }
+        }
         if decision == nil, recentActIsFresh, SpokenPick.isNo(spoken.utterance) {
             finalizing = false
             noteDecision("reject", response: nil); writeTiming(otherwise: "reject")
@@ -944,7 +1043,7 @@ public enum SpokenPick: Equatable {
             case .no: resetTake(); host?.finishInstant()
             }
             return true
-        case .check:
+        case .check, .secret:
             return false
         }
     }
@@ -969,8 +1068,10 @@ public enum SpokenPick: Equatable {
             pendingConfirmation = nil
             if case .confirm? = decision { decision = nil }
         }
-        // Typing over a choice list is a new request; the check state keeps its question while its text is fixed.
+        // Typing over a choice list is a new request; the check state keeps its question while its text is fixed. Typing over
+        // the masked card is a new request too (the heard words are dropped with it).
         if case .choices? = decision { decision = nil; surface?.presentVoiceDecision(nil, onChip: nil) }
+        if case .secret? = decision { decision = nil; voiceRetry = false; surface?.presentVoiceDecision(nil, onChip: nil) }
         guard take != nil, !listening, !finalizing else { return }
         if case .check? = decision { return }
         schedulePreview(text, phase: .typing, inputMode: "text")
@@ -998,12 +1099,29 @@ public enum SpokenPick: Equatable {
             composerSubmitted(text, intent: .plain)
         case .plain:
             if case .check(let check)? = decision { resolveCheck(trimmed, check); return }
+            if case .secret(let secret)? = decision { resolveSecret(secret); return }
             if case .choices? = decision, surface?.performPreview(.primary) == true { return }
+            // A masked confirm (a code field's held fill) shows "•••", not the words its pending action matches.
+            if case .confirm(let confirm)? = decision, confirm.masked, trimmed == FillCopy.secretMask, pendingConfirmation != nil {
+                pendingConfirmation = nil
+                confirmVoice(confirm); return
+            }
             if let pending = pendingConfirmation, pending.text == trimmed {
                 pendingConfirmation = nil
                 if case .confirm(let confirm)? = decision { confirmVoice(confirm); return }
+                if pending.fill, case .typeIntoPinned(let text, let submit) = pending.action {
+                    finalTask = Task { [weak self] in
+                        await self?.fillAct(text: text, submit: submit, corrects: nil, input: self?.typedInput, field: pending.field)
+                    }
+                    return
+                }
                 Task { await self.perform(pending.action, confirmed: true, origin: .instantAct) }
                 return
+            }
+            // DESIGN5 H0, typed: a bare "nein/no/undo" right after a fill undoes it, a bare "frag pi/ask pi" asks pi.
+            if decision == nil, recentFillIsFresh, FillWords.isUndo(trimmed) { undoFill(); return }
+            if decision == nil, recentFillIsFresh, FillWords.isAskPi(trimmed), fills?.record.map({ !FillSession.secret($0.kind) }) == true {
+                askPiAfterFill(); return
             }
             // A typed bare "no" right after a sound-alike act is "Not this" too.
             if decision == nil, recentActIsFresh, SpokenPick.isNo(trimmed) { notThis(); return }
@@ -1160,6 +1278,13 @@ public enum SpokenPick: Equatable {
             handOff(trimmed, input: input, mode: mode, response: nil); return true
         }
         let started = clock()
+        // Continuity (DESIGN5 §8.1): the pinned target's content-free facts at this final (nil from a host without them:
+        // today's request byte for byte). A take racing a pi-os launch may be re-pinned meanwhile (≤ 150 ms), so its context
+        // is read again afterwards.
+        let target = await continuityTarget(take)
+        guard self.take?.takeId == take.takeId, mine == seq else { return false }
+        let contextId = self.take?.contextId ?? take.contextId
+        let fill = declaresFill(target, contextId: contextId)
         do { try await preparation.readyForInstant() } catch {
             guard self.take?.takeId == take.takeId, mine == seq, !early else { return false }
             handOff(trimmed, input: input, mode: mode, response: nil); return true
@@ -1167,18 +1292,18 @@ public enum SpokenPick: Equatable {
         let request: InstantRequest
         switch mode {
         case .typed:
-            request = InstantRequest(text: trimmed, phase: .final, seq: mine, takeId: take.takeId, contextId: take.contextId,
-                                     locale: input.locale, inputMode: input.mode)
+            request = InstantRequest(text: trimmed, phase: .final, seq: mine, takeId: take.takeId, contextId: contextId,
+                                     locale: input.locale, inputMode: input.mode, accept: fill ? [.fill] : nil, target: target)
         case .voice(let spoken):
-            let full = InstantRequest(text: trimmed, phase: .final, seq: mine, takeId: take.takeId, contextId: take.contextId,
+            let full = InstantRequest(text: trimmed, phase: .final, seq: mine, takeId: take.takeId, contextId: contextId,
                                       locale: input.locale, inputMode: "voice", hypotheses: spoken.final.wireHypotheses,
-                                      accept: Self.voiceAccepts)
-            request = full.fitted() ?? InstantRequest(text: trimmed, phase: .final, seq: mine, takeId: take.takeId, contextId: take.contextId,
-                                                       locale: input.locale, inputMode: "voice")
+                                      accept: Self.voiceAccepts + (fill ? [.fill] : []), target: target)
+            request = full.fitted() ?? InstantRequest(text: trimmed, phase: .final, seq: mine, takeId: take.takeId, contextId: contextId,
+                                                       locale: input.locale, inputMode: "voice", target: target)
             if takeTiming?.takeId == take.takeId { takeTiming?.finals += 1 }
         case .checkResend(let check, _):
-            request = InstantRequest(text: trimmed, phase: .final, seq: mine, takeId: check.take.takeId, contextId: take.contextId,
-                                     locale: input.locale, inputMode: "text")
+            request = InstantRequest(text: trimmed, phase: .final, seq: mine, takeId: check.take.takeId, contextId: contextId,
+                                     locale: input.locale, inputMode: "text", accept: fill ? [.fill] : nil, target: target)
         }
         let response = try? await harness.instant(request)
         guard self.take?.takeId == take.takeId, mine == seq else { return false }
@@ -1195,6 +1320,9 @@ public enum SpokenPick: Equatable {
             settled = true
             dismissDecision()
         }
+        // Anything but a fill is newer than pi-os's last fill: a bare "nein" no longer undoes it (a fill's own "nein, X"
+        // replace still finds it).
+        if !response.isFill { forgetFill() }
         // The final scope unless the user chose: the chip shows it before the request is sent.
         take.context?.apply(response, text: trimmed)
         var spoken: VoiceTake?
@@ -1205,8 +1333,13 @@ public enum SpokenPick: Equatable {
             journalAppend(voiceTake, response: response)
         }
         switch response.decision {
-        case .handOff:
-            if let spoken, response.isCheck { presentCheck(spoken); return true }
+        case .handOff(let reason, _):
+            // A credential or code field (DESIGN5 C5): a take no command or page question took is most likely the secret, so
+            // it is masked and never sent on its own, not even in a check card.
+            if let spoken, let kind = secretKind(spoken.takeId), Self.secretMiss(reason: reason, scope: response.scope, text: trimmed) {
+                presentSecret(spoken, kind: kind); return true
+            }
+            if let spoken, response.isCheck { presentCheck(spoken, offersFill: response.offersFill); return true }
             handOff(trimmed, input: spoken.map { voiceInput($0, response: response) } ?? input, mode: mode, response: response)
         case .act(_, let title, let action, let confirm, _):
             if case .askAgent(let prompt) = action {
@@ -1216,13 +1349,22 @@ public enum SpokenPick: Equatable {
             if confirm {
                 // Never performed implicitly: the next Return on the same text (or a spoken "yes") confirms it.
                 writeTiming(otherwise: "act")
-                pendingConfirmation = (trimmed, action)
+                let held = response.isFill ? host?.boundField(contextId: contextId) : nil
+                pendingConfirmation = (trimmed, action, response.isFill, held)
                 if let spoken {
-                    decision = .confirm(Confirm(take: spoken, text: trimmed, action: action, title: title))
+                    let masked = secretKind(spoken.takeId) != nil
+                    decision = .confirm(Confirm(take: spoken, text: trimmed, action: action, title: title, field: held, masked: masked))
+                    if masked { surface?.setComposerText(FillCopy.secretMask) }
                     showPreview(.hint(VoiceCopy.confirmHint(title)))
                 } else {
                     showPreview(InstantPreview.confirm(title))
                 }
+                return true
+            }
+            if response.isFill, case .typeIntoPinned(let text, let submit) = action {
+                if case .checkResend(let check, let edited) = mode { journalUpdate(check.take.takeId, .confirmed, corrected: edited ? trimmed : nil) }
+                await fillAct(text: text, submit: submit, corrects: response.voice?.correctsTakeId,
+                              input: spoken.map { voiceInput($0, response: response) } ?? input)
                 return true
             }
             await act(action, title: title, response: response, mode: mode, spoken: spoken, utterance: trimmed)
@@ -1255,6 +1397,12 @@ public enum SpokenPick: Equatable {
     /// The agent turn of a final (fallthrough, an askAgent act, a notice-only answer, an instant failure).
     private func handOff(_ text: String, prompt: String? = nil, input: AgentInput, mode: Mode, response: InstantResponse?) {
         guard let take else { return }
+        // No decision came back (Node down, too long): a take spoken at a credential or code field still never leaves.
+        if response == nil, case .voice(let spoken) = mode, let kind = secretKind(spoken.takeId), !FillWords.addressesPi(text) {
+            noteDecision("secret", response: nil)
+            presentSecret(spoken, kind: kind)
+            return
+        }
         switch mode {
         case .typed: break
         case .voice(let spoken):
@@ -1328,6 +1476,8 @@ public enum SpokenPick: Equatable {
                             after: (@MainActor (DictionaryWriteResponse?) -> Void)? = nil) {
         if recentAct?.take.takeId == takeId { recentAct = nil; surface?.dismissVoiceToast() }
         journalUpdate(takeId, .undone)
+        // What that take opened is no longer "what you just opened" (DESIGN5 §3.4): its anchor and pending launch go.
+        host?.continuityRejected(takeId: takeId)
         guard learns else { after?(nil); return }
         learn(.noIMeant(takeId: takeId, correctedText: utterance), commits: true, after: after)
     }
@@ -1358,6 +1508,7 @@ public enum SpokenPick: Equatable {
         recentAct = nil
         surface?.dismissVoiceToast()
         journalUpdate(act.take.takeId, .undone)
+        host?.continuityRejected(takeId: act.take.takeId)
         learn(.reject(takeId: act.take.takeId, entryId: act.entryId), commits: false, present: false)
         if take == nil {
             // The bar went away after the act: open a take for what follows.
@@ -1385,11 +1536,13 @@ public enum SpokenPick: Equatable {
     private func showChoices(_ spoken: VoiceTake, card: CardSpec, kind: VoiceDecisionPresentation.Kind, title: String?, heard: String?) -> Bool {
         let rows = card.choiceRows.map { ChoiceRow(action: $0.action, title: $0.title) }
         guard !rows.isEmpty else { return false }
+        let masked = secretKind(spoken.takeId) != nil
         let presentation = VoiceDecisionPresentation(
-            kind: kind, title: title ?? VoiceCopy.didYouMean(rows.map(\.title)), subtitle: VoiceCopy.heard(heard ?? spoken.utterance),
+            kind: kind, title: title ?? VoiceCopy.didYouMean(rows.map(\.title)),
+            subtitle: masked ? FillCopy.secretSubtitle : VoiceCopy.heard(heard ?? spoken.utterance),
             card: card.choiceCard(numbered: rows.count > 1), footer: VoiceCopy.choicesFooter(rows: rows.count))
         preview = nil; pendingConfirmation = nil; shownPreview = nil
-        decision = .choices(Choices(take: spoken, presentation: presentation, rows: rows))
+        decision = .choices(Choices(take: spoken, presentation: presentation, rows: rows, masked: masked))
         surface?.presentVoiceDecision(presentation, onChip: nil)
         return true
     }
@@ -1424,6 +1577,13 @@ public enum SpokenPick: Equatable {
     /// Return (or a spoken "yes") on "Open Numbers? ↩": performs, then learns the confirm.
     private func confirmVoice(_ confirm: Confirm) {
         decision = nil; pendingConfirmation = nil
+        if confirm.take.response?.isFill == true, case .typeIntoPinned(let text, let submit) = confirm.action {
+            showPreview(nil)
+            let input = voiceInput(confirm.take, response: confirm.take.response)
+            let field = confirm.field
+            finalTask = Task { [weak self] in await self?.fillAct(text: text, submit: submit, corrects: nil, input: input, field: field) }
+            return
+        }
         var acting: String?
         if Self.opens(confirm.action) { acting = VoiceCopy.acting(confirm.title); surface?.presentActing(acting!) }
         var bundleId: String?
@@ -1469,10 +1629,16 @@ public enum SpokenPick: Equatable {
             journalUpdate(confirm.take.takeId, .agent)
             submit(AgentRequest(prompt: text, question: text, takeId: confirm.take.takeId,
                                 input: voiceInput(confirm.take, response: confirm.take.response)))
+        case .secret(let secret):
+            // "⌥↩ Ask pi anyway": the user's explicit choice; the heard words (not the mask) go to pi. Never journaled.
+            voiceRetry = false
+            let words = secret.take.utterance
+            submit(AgentRequest(prompt: words, question: FillCopy.secretMask, takeId: secret.take.takeId,
+                                input: voiceInput(secret.take, response: secret.take.response)))
         }
     }
     /// "Did I hear that right?": the heard text stays selected in the composer, the other hypotheses are chips.
-    private func presentCheck(_ spoken: VoiceTake) {
+    private func presentCheck(_ spoken: VoiceTake, offersFill: Bool = false) {
         let heard = DictionaryPhrase.fold(spoken.utterance)
         var seen: Set<String> = [heard], alternatives: [String] = []
         let hypotheses = spoken.final.wireHypotheses
@@ -1485,11 +1651,15 @@ public enum SpokenPick: Equatable {
             alternatives.append(hypothesis.text)
         }
         writeTiming(otherwise: "check")
-        decision = .check(Check(take: spoken, heard: spoken.utterance, alternatives: alternatives))
+        // `voice.fill: "offer"` (a terminal, or recognizer doubt at a field): ↩ types into it, never with Return. Only while
+        // the host can still type there; otherwise the card is today's.
+        let offer = offersFill && fillReady
+        decision = .check(Check(take: spoken, heard: spoken.utterance, alternatives: alternatives, offersFill: offer))
         voiceRetry = true
         let presentation = VoiceDecisionPresentation(kind: .check, title: VoiceCopy.checkTitle,
                                                      subtitle: alternatives.isEmpty ? VoiceCopy.checkEdit : VoiceCopy.checkPick,
-                                                     alternatives: alternatives, footer: VoiceCopy.checkFooter)
+                                                     alternatives: alternatives,
+                                                     footer: offer ? FillCopy.offerFooter(app: appName(take)) : VoiceCopy.checkFooter)
         surface?.presentVoiceDecision(presentation) { [weak self] index in self?.chooseAlternative(index) }
         surface?.selectComposerText()
     }
@@ -1505,6 +1675,14 @@ public enum SpokenPick: Equatable {
         surface?.presentVoiceDecision(nil, onChip: nil)
         let edited = DictionaryPhrase.fold(text) != DictionaryPhrase.fold(check.heard)
         let input = edited ? typedInput : voiceInput(check.take, response: check.take.response)
+        if check.offersFill {
+            // ↩ types the card's (possibly edited) text into the bound field as one line; never a Return, nothing learned.
+            journalUpdate(check.take.takeId, .confirmed, corrected: edited ? text : nil)
+            let kind = take.flatMap { host?.boundField(contextId: $0.contextId)?.kind }
+            let line = TextInput.singleLine(text, trailingPeriod: !(kind == .search || kind == .address))
+            finalTask = Task { [weak self] in await self?.fillAct(text: line, submit: false, corrects: nil, input: input) }
+            return
+        }
         finalTask = Task { [weak self] in await self?.resolve(text, input: input, mode: .checkResend(check, edited: edited)) }
     }
     /// The check state's text acted: an edit asks once to be remembered (DESIGN4 §6.6 #4).
@@ -1513,6 +1691,256 @@ public enum SpokenPick: Equatable {
         learn(.edit(takeId: check.take.takeId, correctedText: text), commits: true) { [weak self] _ in
             self?.journalUpdate(check.take.takeId, .confirmed, corrected: text)
         }
+    }
+
+    // MARK: Continuity: the focused field (DESIGN5 §3.7, §5.5–§5.11, H0; critic C2/C3/C5/C8/C10)
+
+    /// The take's `InstantRequest.target` for a final: the host's facts (it may re-pin a racing take meanwhile), plus
+    /// `ownFill` when the bound control still holds exactly pi-os's last fill (Node's "nein, X" replaces only then).
+    private func continuityTarget(_ take: CommandTake) async -> InstantTarget? {
+        guard let host, var target = await host.instantTarget(contextId: take.contextId), self.take?.takeId == take.takeId else { return nil }
+        if let field = target.field {
+            noteFieldKind(field.kind, takeId: take.takeId)
+            if let fills, let current = self.take, let bound = host.boundField(contextId: current.contextId),
+               await fills.holdsLastFill(bound, at: clock()) {
+                target.field?.ownFill = true
+            }
+        }
+        guard self.take?.takeId == take.takeId else { return nil }
+        takeTarget = (take.takeId, target)
+        return target
+    }
+    /// The host can type for the user right now: a fill session, the Settings switch on and computer control ready.
+    private var fillReady: Bool { fills != nil && fillSwitch() && host?.canTypeIntoPinned == true }
+    /// `accept: "fill"` (protocol.md Continuity): only with a target, while the host can type, and for a credential or
+    /// code field only with the Settings credential opt-in (TOM-ANSWERS 5). Without it Node decides as today. A field the
+    /// host reported without binding it (a take racing a pi-os launch reports only a password or code field of the app it
+    /// is still pinned to, never to type into: DESIGN5 §5.3) declares no fill either.
+    private func declaresFill(_ target: InstantTarget?, contextId: String) -> Bool {
+        guard let target, fillReady else { return false }
+        if let kind = target.field?.kind {
+            guard host?.boundField(contextId: contextId) != nil else { return false }
+            if kind.fill == .optIn, !credentialInput() { return false }
+        }
+        return true
+    }
+    /// The composer's words for a spoken take: "•••" at a credential or code field (DESIGN5 C5: never on screen).
+    private func composerWords(_ spoken: VoiceTake) -> String { secretKind(spoken.takeId) != nil ? FillCopy.secretMask : spoken.utterance }
+    private func noteFieldKind(_ kind: InstantFieldKind, takeId: String) { takeFieldKind = (takeId, kind) }
+    /// The take's focused control is a credential or code field (its words may be the secret).
+    private func secretKind(_ takeId: String) -> InstantFieldKind? {
+        guard let known = takeFieldKind, known.takeId == takeId, FillSession.secret(known.kind) else { return nil }
+        return known.kind
+    }
+    /// A fallthrough that no command, pi task or page question took, not addressed to pi ("frag pi …") and not about the
+    /// window (scope band ≥ 0.7). Fails closed: every reason but Node's page-question and policy fallthroughs (`deictic`,
+    /// `compound`) — its miss (`no_match`), its doubt (`low_confidence`), a decision that ran out of time (`timeout`),
+    /// instant commands switched off (`disabled`), and any reason this host does not know.
+    static func secretMiss(reason: String, scope: InstantScope?, text: String) -> Bool {
+        !["deictic", "compound"].contains(reason) && !FillWords.addressesPi(text) && (scope?.window ?? 0) < ScopeThresholds.windowBand
+    }
+    /// The app named in the caption, the note and the check card ("Safari"); never logged or sent.
+    private func appName(_ take: CommandTake?) -> String {
+        ContextChipCopy.shortName(take?.context?.appName ?? take?.contextualStrings.first ?? "the app")
+    }
+    /// `context.target` for the agent (DESIGN5 §6.2, critic C13): an ordinary field kind and the provenance only.
+    static func contextTarget(_ target: InstantTarget) -> ContextTarget? {
+        let kind = target.field.map(\.kind).flatMap { [.search, .address, .text, .multiline].contains($0) ? $0 : nil }
+        let anchored: Bool? = target.anchor != nil ? true : nil
+        return kind == nil && anchored == nil ? nil : ContextTarget(field: kind, anchored: anchored)
+    }
+    private var recentFillIsFresh: Bool {
+        guard let record = fills?.record else { return false }
+        return clock() - record.at <= timing.rejectWindow
+    }
+    private func forgetFill() { fills?.forget(); fillAsk = nil }
+
+    /// "Speak to type into Safari · Search" while the hotkey is held (DESIGN5 §3.7): only for a field Node may fill on
+    /// its own (implicit, ready) while the host can type. The preview also keeps a credential or code field's take out of
+    /// the journal, whatever the switch says.
+    private func showFillCaption() {
+        captionTask?.cancel(); captionTask = nil
+        guard let take, let host else { return }
+        let takeId = take.takeId, contextId = take.contextId
+        captionTask = Task { [weak self] in
+            guard let field = await host.fieldPreview(contextId: contextId), !Task.isCancelled,
+                  let self, self.take?.takeId == takeId, self.take?.contextId == contextId else { return }
+            self.noteFieldKind(field.kind, takeId: takeId)
+            // Words already heard at a credential or code field leave the bar at once (DESIGN5 C5).
+            if FillSession.secret(field.kind), self.listening, !self.transcript.isEmpty {
+                self.surface?.setVoiceTranscript(finalized: FillCopy.secretMask, volatile: "")
+            }
+            guard self.fillReady, self.listening, field.kind.fill == .implicit, field.ready else { return }
+            self.surface?.setFillCaption(FillCaption(text: FillCopy.caption(app: self.appName(self.take), kind: field.kind), help: FillCopy.captionHelp))
+        }
+    }
+
+    /// A fill (DESIGN5 §5.6): the bar steps aside, the text goes into the bound field through the gated native path (the
+    /// field must have focus again and keeps it for every event), then one separate gated Return only where the field
+    /// takes one. "nein, X" (`corrects`) first undoes the fill it replaces, and types nothing when that cannot be proven.
+    /// The note offers Undo and Ask pi for 5 s; the take stays current until then (its context is theirs).
+    private func fillAct(text: String, submit: Bool, corrects: String?, input: AgentInput?, field held: BoundField? = nil) async {
+        guard let take else { return }
+        let takeId = take.takeId
+        finalizing = true
+        defer { if self.take?.takeId == takeId { finalizing = false } }
+        // A held fill confirmed in a later take types into the control its own final bound; that take bound nothing.
+        let bound = held ?? host?.boundField(contextId: take.contextId)
+        // A credential or code field's words never go to the clipboard or to pi from a note (they may be the secret).
+        let secret = secretKind(takeId) != nil || bound.map { FillSession.secret($0.kind) } == true
+        let copy = secret ? nil : text
+        guard let fills, fillReady, let field = bound,
+              field.kind.fill != .never, field.kind.fill != .optIn || credentialInput() else {
+            writeTiming(otherwise: "act")
+            finishFill(FillCopy.notTyped, copy: copy)
+            return
+        }
+        supersedeRecentAct(); fillDwell?.cancel(); fillDwell = nil
+        writeTiming(otherwise: "act", hidden: true)
+        surface?.hideForInput()
+        if let corrects {
+            var replaced = false
+            if fills.record?.takeId == corrects {
+                replaced = await fills.undo(contextId: take.contextId, at: clock(), within: FillSession.replaceWindow) == .undone
+            }
+            guard self.take?.takeId == takeId else { return }
+            guard replaced else { fills.forget(); finishFill(FillCopy.replaceRefused, copy: copy); return }
+            journalUpdate(corrects, .undone)
+        }
+        let outcome = await fills.fill(text, submit: submit, contextId: take.contextId, takeId: takeId, field: field, at: clock())
+        // A new take began meanwhile (it discarded this context, so nothing more was typed): it owns the bar now.
+        guard self.take?.takeId == takeId else { return }
+        switch outcome {
+        case .typed(let returnKey):
+            // Undo, "nein" and Ask pi get the note's full 5 s: their window starts now, not before the typing.
+            fills.typingEnded(at: clock())
+            fillAsk = secret ? nil : input.map { (takeId, $0) }
+            // A credential or code fill offers neither: it is never undone blindly, and its words never go to pi from here.
+            // A fill a Return submitted offers no Undo: deleting the characters cannot undo the search that ran.
+            let actions = secret ? [] : returnKey == .pressed ? [FillCopy.askPi] : [FillCopy.undo, FillCopy.askPi]
+            let note = VoiceToast(kind: .typed, text: FillCopy.typed(app: appName(take), kind: field.kind, returnKey: returnKey),
+                                  actions: actions, dwell: timing.rejectWindow)
+            surface?.presentVoiceToast(note) { [weak self] index in
+                guard actions.indices.contains(index) else { return }
+                if actions[index] == FillCopy.undo { self?.undoFill() } else { self?.askPiAfterFill() }
+            }
+            fillDwell = scheduler.after(timing.rejectWindow) { [weak self] in
+                // The note is gone: its Ask pi words go with it (Undo and "nein, X" keep only lengths).
+                self?.fillAsk = nil
+                guard let self, self.take?.takeId == takeId else { return }
+                self.resetTake(); self.host?.finishInstant()
+            }
+        case .refused(let code):
+            finishFill(code == InputBinding.focusMoved.code ? FillCopy.focusMoved : FillCopy.notTyped, copy: copy)
+        case .uncertain:
+            finishFill(FillCopy.uncertain, copy: copy)
+        }
+    }
+    /// A fill that typed nothing (or may have been cut off): the take ends and a note offers the words on the clipboard
+    /// (`copy` nil: a credential or code field's words, never offered).
+    private func finishFill(_ message: String, copy text: String?) {
+        resetTake(); host?.finishInstant()
+        surface?.presentVoiceToast(VoiceToast(kind: .notTyped, text: message, actions: text == nil ? [] : [FillCopy.copy], dwell: timing.undoToast)) { [weak self] _ in
+            guard let text else { return }
+            Task { @MainActor [weak self] in _ = try? await self?.host?.perform(.copyText(text), contextId: nil, confirmed: false) }
+        }
+    }
+    /// Undo the last fill (the note's Undo, or a bare "nein/no/undo" within 5 s): in the current take's context (the fill's
+    /// own while its note is up; a new take's after a new hold, critic C10), with the bar out of the way. Only exactly what
+    /// pi-os typed is removed; anything unproven is refused with a note (pi-os never sends ⌘Z).
+    private func undoFill() {
+        surface?.dismissVoiceToast()
+        guard let fills, let record = fills.record, let take else {
+            surface?.presentVoiceToast(VoiceToast(kind: .notTyped, text: FillCopy.undoRefused, dwell: timing.undoToast)) { _ in }
+            return
+        }
+        if record.returnKey == .pressed {
+            // A Return submitted it (a search ran, the page may have moved on): deleting characters cannot undo that and
+            // ⌘Z would not either, so nothing is sent and the note says how to go back.
+            forgetFill(); fillDwell?.cancel(); fillDwell = nil
+            resetTake(); host?.finishInstant()
+            surface?.presentVoiceToast(VoiceToast(kind: .notTyped, text: FillCopy.alreadySubmitted, dwell: timing.undoToast)) { _ in }
+            return
+        }
+        let takeId = take.takeId
+        fillDwell?.cancel(); fillDwell = nil; fillAsk = nil
+        finalizing = true
+        surface?.hideForInput()
+        Task { [weak self] in
+            guard let self else { return }
+            let outcome = await fills.undo(contextId: take.contextId, at: self.clock(), within: self.timing.rejectWindow)
+            if outcome == .undone { self.journalUpdate(record.takeId, .undone) }
+            if self.take?.takeId == takeId { self.resetTake(); self.host?.finishInstant() }
+            let note = switch outcome {
+            case .undone: VoiceToast(kind: .undone, text: VoiceCopy.undone, dwell: 1.4)
+            case .refused: VoiceToast(kind: .notTyped, text: FillCopy.undoRefused, dwell: self.timing.undoToast)
+            case .uncertain: VoiceToast(kind: .notTyped, text: FillCopy.undoUncertain, dwell: self.timing.undoToast)
+            }
+            self.surface?.presentVoiceToast(note) { _ in }
+        }
+    }
+    /// "Ask pi" (the note, or a bare "frag pi/ask pi" within 5 s): the typing is undone, then the same words go to pi in
+    /// the current take, as ⌥↩ does on the check card.
+    private func askPiAfterFill() {
+        guard let fills, let record = fills.record, !FillSession.secret(record.kind), let take else { return }
+        surface?.dismissVoiceToast()
+        let words = record.text
+        let input = fillAsk?.takeId == record.takeId ? fillAsk?.input : nil
+        let takeId = take.takeId
+        fillDwell?.cancel(); fillDwell = nil
+        if record.returnKey == .pressed {
+            // The search already ran: nothing to delete, the same words go to pi.
+            journalUpdate(record.takeId, .agent)
+            submit(AgentRequest(prompt: words, question: words, takeId: takeId, input: input ?? typedInput))
+            return
+        }
+        finalizing = true
+        surface?.hideForInput()
+        Task { [weak self] in
+            guard let self else { return }
+            let outcome = await fills.undo(contextId: take.contextId, at: self.clock(), within: self.timing.rejectWindow)
+            if outcome == .undone { self.journalUpdate(record.takeId, .undone) }
+            guard self.take?.takeId == takeId else { return }
+            if outcome != .undone {
+                self.surface?.presentVoiceToast(VoiceToast(kind: .notTyped, text: outcome == .refused ? FillCopy.undoRefused : FillCopy.undoUncertain,
+                                                           dwell: self.timing.undoToast)) { _ in }
+            }
+            self.journalUpdate(record.takeId, .agent)
+            self.submit(AgentRequest(prompt: words, question: words, takeId: takeId, input: input ?? self.typedInput))
+        }
+    }
+    /// The masked card (DESIGN5 C5): the heard words stay in memory, the composer shows "•••", nothing is sent.
+    private func presentSecret(_ spoken: VoiceTake, kind: InstantFieldKind) {
+        writeTiming(otherwise: "secret")
+        let blocked = secretBlock()
+        decision = .secret(Secret(take: spoken, kind: kind, canType: blocked == nil, blocked: blocked))
+        voiceRetry = true
+        surface?.setComposerText(FillCopy.secretMask)
+        surface?.presentVoiceDecision(VoiceDecisionPresentation(kind: .secret, title: FillCopy.secretTitle(kind), subtitle: FillCopy.secretSubtitle,
+                                                                footer: FillCopy.secretFooter(canType: blocked == nil, blocked: blocked)), onChip: nil)
+    }
+    /// Why ↩ on the masked card cannot type here, or nil when it can: the fill switch, computer control, the credential
+    /// opt-in, and a control the take's final bound.
+    private func secretBlock() -> FillCopy.SecretBlock? {
+        guard fills != nil, fillSwitch() else { return .fillSwitch }
+        guard host?.canTypeIntoPinned == true else { return .control }
+        guard credentialInput() else { return .optIn }
+        guard let take, host?.boundField(contextId: take.contextId) != nil else { return .notHere }
+        return nil
+    }
+    /// ↩ on the masked card: an explicit fill of the heard words (never a Return), only where the card offered it;
+    /// otherwise a note says what typing there needs (the card stays).
+    private func resolveSecret(_ secret: Secret) {
+        guard secret.canType else {
+            surface?.presentVoiceToast(VoiceToast(kind: .notTyped, text: FillCopy.secretBlocked(secret.blocked ?? .notHere),
+                                                  dwell: timing.undoToast)) { _ in }
+            return
+        }
+        decision = nil; voiceRetry = false
+        surface?.presentVoiceDecision(nil, onChip: nil)
+        let line = TextInput.singleLine(secret.take.utterance, trailingPeriod: false)
+        let input = voiceInput(secret.take, response: secret.take.response)
+        finalTask = Task { [weak self] in await self?.fillAct(text: line, submit: false, corrects: nil, input: input) }
     }
 
     // MARK: Learning (POST /dictionary/learn) and the journal
@@ -1577,6 +2005,8 @@ public enum SpokenPick: Equatable {
     /// take's audio (later updates of the take queue behind it).
     private func journalAppend(_ spoken: VoiceTake, response: InstantResponse?, outcome: VoiceTakeOutcome? = nil) {
         guard let journal else { return }
+        // DESIGN5 §5.8: a take spoken at a credential or code field is never kept (no audio, no text).
+        guard VoiceJournal.keeps(field: takeFieldKind?.takeId == spoken.takeId ? takeFieldKind?.kind : nil) else { return }
         let record = VoiceJournalPolicy.record(takeId: spoken.takeId, at: spoken.at, final: spoken.final, response: response, outcome: outcome)
         let audio = spoken.final.audio
         guard let complete = spoken.complete else {
@@ -1793,9 +2223,16 @@ public enum SpokenPick: Equatable {
     private func submit(_ request: AgentRequest) {
         cancelPreview()
         finalizing = false; quickAnswer = nil; decision = nil; voiceRetry = false
+        // An agent turn is newer than pi-os's last fill, and a fill's note no longer ends the take.
+        forgetFill(); fillDwell?.cancel(); fillDwell = nil
         var request = request
         // What the chip shows at Return is what is sent. Follow-ups carry their own (thread) context.
         if request.kind == .fresh, request.context == nil { request.context = take?.context?.wire }
+        // DESIGN5 §6.2: the continued target as content-free facts (an ordinary field kind, whether pi-os's open put the app
+        // in front); never a credential or code field. Only for the take's own turn and only from a host that sent a target.
+        if request.kind == .fresh, request.context != nil, let target = takeTarget, target.takeId == take?.takeId {
+            request.context?.target = Self.contextTarget(target.target)
+        }
         if request.kind == .fresh { voiceAgentTake = request.input?.mode == "voice" ? request.takeId : nil }
         host?.submitToAgent(request)
     }
@@ -1808,6 +2245,8 @@ public enum SpokenPick: Equatable {
         take = nil; preview = nil; pendingConfirmation = nil; quickAnswer = nil; pendingStartError = nil
         listening = false; finalizing = false; transcript = VoiceTranscript()
         decision = nil; voiceRetry = false; voiceAgentTake = nil; takeTiming = nil
+        fillDwell?.cancel(); fillDwell = nil; captionTask?.cancel(); captionTask = nil
+        takeTarget = nil
     }
 }
 
@@ -1843,6 +2282,12 @@ public enum SpokenPick: Equatable {
     /// gets the button index. Replaces a note already shown.
     func presentVoiceToast(_ toast: VoiceToast, onAction: @escaping @MainActor (Int) -> Void)
     func dismissVoiceToast()
+    /// The bar steps aside before a continuity fill or its Undo types into the user's field (DESIGN5 §5.6): the pinned
+    /// window gets its keys back. The take itself is not ended.
+    func hideForInput()
+    /// "Speak to type into Safari · Search" under the transcript while the hotkey is held (DESIGN5 §3.7); nil removes it.
+    /// Shown only while listening.
+    func setFillCaption(_ caption: FillCaption?)
 }
 
 extension CardSpec {

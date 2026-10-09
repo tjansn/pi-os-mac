@@ -1,0 +1,24 @@
+{
+  "text": "Albert Einstein",
+  "phase": "final",
+  "seq": 4,
+  "takeId": "take-51",
+  "inputMode": "voice",
+  "accept": [
+    "suggest",
+    "check",
+    "confirm",
+    "fill"
+  ],
+  "target": {
+    "app": "browser",
+    "anchor": {
+      "takeId": "take 50/xxxxxxxx"
+    },
+    "field": {
+      "kind": "search",
+      "empty": true,
+      "ready": true
+    }
+  }
+}

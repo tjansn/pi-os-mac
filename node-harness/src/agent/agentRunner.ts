@@ -17,7 +17,7 @@ import { LiveAgentSession, type SessionObserver } from "./liveSession.js";
 export { LiveAgentSession } from "./liveSession.js";
 import { loadScreenshotImage } from "./screenshotImage.js";
 import { createSessionSettings, loadAgentResources, PI_OS_SYSTEM_PROMPT, registerResourceProviders } from "./resources.js";
-import type { ContextPull, ContextRecord, ContextScope, ContextSource, ContextWire } from "../contracts/context.js";
+import type { ContextPull, ContextRecord, ContextScope, ContextSource, ContextTarget, ContextWire } from "../contracts/context.js";
 import {
   attachmentStats, parseAttachments, renderAttachmentsForPrompt, type Attachment, type ImageAttachment,
 } from "../contracts/attachments.js";
@@ -730,12 +730,34 @@ export function releasePulledWindow(live: LiveAgentSession): boolean {
 }
 
 /** The app named in a general prompt: the pinned target only (never the title, path or URL). */
-function activeAppLines(snapshot: DesktopContextSnapshot, pull: ContextPull): string[] {
+function activeAppLines(snapshot: DesktopContextSnapshot, pull: ContextPull, target?: ContextTarget): string[] {
   const app = snapshot.targetWindow?.processName;
   if (!app) return [];
+  const continued = continuedTargetLine(target);
   return [pull === "allowed"
     ? `Active app: ${JSON.stringify(app)} (its window is not included). Call use_active_window only if the request refers to something shown there.`
-    : `Active app: ${JSON.stringify(app)} (its window is not included; the user chose not to share it).`, ""];
+    : `Active app: ${JSON.stringify(app)} (its window is not included; the user chose not to share it).`, ...(continued ? [continued] : []), ""];
+}
+
+/** The ordinary field kinds the continued-target sentence may name (never a password, code, confirmation or rename field). */
+const CONTINUED_FIELDS: Readonly<Partial<Record<NonNullable<ContextTarget["field"]>, string>>> = {
+  search: "a search field", address: "the browser's address bar", text: "a text field", multiline: "a text area",
+};
+
+/**
+ * One content-free sentence about the continued target (DESIGN5 §6.2, macOS `context.target`): that pi-os's own
+ * previous command opened the app ("act in there"), and which ordinary kind of field has the focus, with the note
+ * that this request was not typed into it (pi-os types dictation there itself; the agent must not take that as
+ * an invitation). Never a name, title, URL, label or value; credential, code, confirmation and rename fields are
+ * not mentioned. Undefined when there is nothing to say.
+ */
+export function continuedTargetLine(target: ContextTarget | undefined): string | undefined {
+  const field = target?.field ? CONTINUED_FIELDS[target.field] : undefined;
+  const opened = target?.anchored === true;
+  if (opened && field) return `pi-os opened this app with the user's previous command, and ${field} has the keyboard focus there; this request was not typed into it.`;
+  if (opened) return "pi-os opened this app with the user's previous command.";
+  if (field) return `${field[0]!.toUpperCase()}${field.slice(1)} has the keyboard focus there; this request was not typed into it.`;
+  return undefined;
 }
 
 /**
@@ -1291,7 +1313,7 @@ export async function promptFirst(live: LiveAgentSession, options: AgentRunOptio
     ...(!isolated && process.platform === "darwin" ? ["## Trusted pi compatibility", TRUST_WARNING,
       "Desktop tool refusals must not be bypassed through another input path.", ""] : []),
     ...spokenInputNote(options.input, options.voice),
-    ...(general && thread ? activeAppLines(snapshot, thread.pull) : []),
+    ...(general && thread ? activeAppLines(snapshot, thread.pull, options.context?.target) : []),
     "## Request",
     prompt,
   ].join("\n");

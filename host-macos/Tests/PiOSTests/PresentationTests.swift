@@ -106,6 +106,59 @@ final class PresentationTests: XCTestCase {
         XCTAssertTrue(panel.contains("app.lineBreakMode = .byTruncatingMiddle"))
         XCTAssertTrue(panel.contains("ContextChipCopy.popoverIncludeHint"))
     }
+    /// DESIGN5 §3.7 copy: the app and an ordinary field are named, a credential or code field never is.
+    func testFillCopyNamesTheFieldButNeverASecretOne() {
+        XCTAssertEqual(FillCopy.caption(app: "Safari", kind: .search), "Speak to type into Safari · Search")
+        XCTAssertEqual(FillCopy.caption(app: "Brave", kind: .address), "Speak to type into Brave · Address bar")
+        XCTAssertEqual(FillCopy.typed(app: "Safari", kind: .search, returnKey: .none), "Typed into Safari · Search")
+        XCTAssertEqual(FillCopy.typed(app: "Safari", kind: .search, returnKey: .pressed), "Searched in Safari · Search")
+        XCTAssertEqual(FillCopy.typed(app: "TextEdit", kind: .multiline, returnKey: .notPressed), "Typed into TextEdit · Text area · Return not pressed")
+        for kind in [InstantFieldKind.credential, .sensitive, .terminal] {
+            XCTAssertNil(FillCopy.fieldLabel(kind), "\(kind)")
+            XCTAssertEqual(FillCopy.typed(app: "Safari", kind: kind, returnKey: .none), "Typed into Safari")
+        }
+        XCTAssertEqual(FillCopy.offerFooter(app: "Terminal"), "↩ Type into Terminal  ·  ⌥↩ Ask pi")
+        XCTAssertEqual(FillCopy.secretTitle(.credential), "Password field — pi didn’t send this anywhere")
+        XCTAssertEqual(FillCopy.secretTitle(.sensitive), "Code or payment field — pi didn’t send this anywhere",
+                       "a sensitive field is also a card number, CVC, IBAN or expiry date (review)")
+        XCTAssertFalse(FillCopy.secretFooter(canType: false).contains("Type it"), "↩ Type it only with the credential opt-in")
+        // Review: the card says why ↩ does not type.
+        XCTAssertEqual(FillCopy.secretFooter(canType: false, blocked: .optIn),
+                       "⌥↩ Ask pi anyway  ·  To type here, allow password and code fields in Settings → General")
+        XCTAssertEqual(FillCopy.secretFooter(canType: false, blocked: .control), "⌥↩ Ask pi anyway  ·  Typing here needs computer control")
+        XCTAssertEqual(FillCopy.secretBlocked(.fillSwitch), "To type here, turn on “Type into the focused field” in Settings → Voice")
+        XCTAssertEqual(FillCopy.secretFooter(canType: true, blocked: nil), "↩ Type it  ·  ⌥↩ Ask pi anyway")
+        XCTAssertEqual(FillCopy.alreadySubmitted, "Already searched — go back with ⌘[")
+    }
+    /// DESIGN5 H0 and §5.11: whole utterances only, EN and DE; "tippe nein" and "nein, X" are not a bare no.
+    func testTheHostsOwnWordsAfterAFill() {
+        for text in ["nein", "Nein.", "no", "nope", "undo", "Rückgängig", "äh, nein danke", "mach das rückgängig"] {
+            XCTAssertTrue(FillWords.isUndo(text), text)
+        }
+        for text in ["tippe nein", "nein, Marie Curie", "No Country for Old Men", "nein ich meinte Marie Curie", "Albert Einstein"] {
+            XCTAssertFalse(FillWords.isUndo(text), text)
+        }
+        for text in ["frag pi", "Frag Pi.", "ask pi", "ask pie"] { XCTAssertTrue(FillWords.isAskPi(text), text) }
+        for text in ["frag pi wie spät ist es", "pie", "ask"] { XCTAssertFalse(FillWords.isAskPi(text), text) }
+        for text in ["frag pi wie spät ist es", "Frag doch Pi, was das heißt", "ask pi what time it is", "Hey Pi, öffne Notizen",
+                     "Pi, how tall is the Eiffel tower", "Okay, ask pi about this"] {
+            XCTAssertTrue(FillWords.addressesPi(text), text)
+        }
+        for text in ["Pizza bestellen", "pie recipe", "Pi mal Daumen", "Pippi Langstrumpf", "hunter2"] {
+            XCTAssertFalse(FillWords.addressesPi(text), text)
+        }
+    }
+    func testTheFillSwitchIsOnByDefault() {
+        let suite = "dev.pi-os.fill-switch-test." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        XCTAssertTrue(FillSettings.enabled(defaults), "D1: on by default")
+        FillSettings.setEnabled(false, defaults: defaults)
+        XCTAssertFalse(FillSettings.enabled(defaults))
+        XCTAssertTrue(FillSettings.note.contains("read-only"), "the switch says it needs computer control (§14 item 12)")
+        XCTAssertTrue(FillSettings.note.contains("Settings → General") && FillSettings.note.contains("tippe"),
+                      "and how password, code and payment fields get text (review)")
+    }
     func testActionableFailureCopyWithoutChangingDomainCodes() {
         let permission = FailurePresentation(DomainError("permission_denied", "technical detail"))
         XCTAssertTrue(permission.offersPermissions)

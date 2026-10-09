@@ -309,6 +309,13 @@ public actor DesktopService {
     }
 
     public func act(_ action: InputAction, arguments: InputArguments) async throws -> InputResult {
+        try await act(action, arguments: arguments, binding: nil)
+    }
+    /// `binding` (a continuity fill, its Return and its Undo; DESIGN5 §5.1, critic C2/C3): every keyboard event goes only
+    /// to that control. After the window is focused the driver waits up to 120 ms for the control to have focus again,
+    /// and every event re-checks it on top of all of today's gates; nothing is posted when it moved. The agent's tool
+    /// routes and the ⌘↩ answer path have none.
+    func act(_ action: InputAction, arguments: InputArguments, binding: InputBinding?) async throws -> InputResult {
         do { try await gate.acquire() } catch { throw DomainError("busy", "Input cancelled while waiting") }
         let started = Date()
         var hidden = false
@@ -337,7 +344,7 @@ public actor DesktopService {
             let enabled = controlEnabled
             let state = current
             let job = Task.detached(priority: .userInitiated) {
-                let controller = DesktopInputController(driver: NativeDesktopDriver(fingerprint: fingerprint), enabled: enabled)
+                let controller = DesktopInputController(driver: NativeDesktopDriver(fingerprint: fingerprint, binding: binding), enabled: enabled)
                 return try await controller.execute(action, args: arguments, target: target, transform: state.transform,
                                                     coordinatesFresh: state.coordinatesFresh, lease: state.lease)
             }

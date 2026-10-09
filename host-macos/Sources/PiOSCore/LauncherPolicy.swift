@@ -290,7 +290,9 @@ public enum LauncherPlan: Equatable {
     case revealFile(token: String)
     case copyPath(token: String)
     case copyText(String)
-    case typeIntoPinned(String)
+    /// The text, then (`submit`) one separate gated Return when `LauncherPolicy.pressesReturn` allows it for the host's
+    /// own bound field (protocol.md "Host actions"). `submit` is only ever true for a continuity fill's one-line text.
+    case typeIntoPinned(String, submit: Bool)
     case system(SystemCommand)
     case askAgent(String)
 
@@ -430,7 +432,14 @@ public enum LauncherPolicy {
         }
         switch action {
         case .copyText(let value): return .copyText(try text(value, max: HostAction.maxText))
-        case .typeIntoPinned(let value): return .typeIntoPinned(try text(value, max: HostAction.maxText))
+        case .typeIntoPinned(let value, let submit):
+            let typed = try text(value, max: HostAction.maxText)
+            // The decoders already refuse `submit` outside a fill or with a control or line-separator character; a host
+            // that builds the action itself gets the same rule here, so a Return can only follow one line of text.
+            if submit && AttachmentValidation.hasControl(typed) {
+                throw DomainError("invalid_arguments", "Text that is submitted must be one line.")
+            }
+            return .typeIntoPinned(typed, submit: submit)
         case .openURL(let value): return .openURL(try validateURL(value))
         case .openApp(let bundleId):
             guard isBundleID(bundleId) else { throw DomainError("invalid_arguments", "Invalid application identifier.") }
@@ -455,6 +464,17 @@ public enum LauncherPolicy {
         if type == "openURL", let url = fields["url"]?.stringValue { _ = try validateURL(url) }
         do { return try JSONDecoder().decode(HostAction.self, from: JSONEncoder().encode(raw)) }
         catch { throw DomainError("invalid_arguments", "The \(type) action is malformed.") }
+    }
+
+    /// The Return after a continuity fill (DESIGN5 §5.7, TOM-ANSWERS 2, protocol.md): pressed only when the act asked for
+    /// it (`submit`, which only an `act` with intent `fill` can carry) **and** the host's own bound field allows it
+    /// (`InstantFieldKind.submitAllowed`): on its own only into a search box or the address bar; an explicit submit
+    /// request also into a single-line text field; never into documents, chats, terminals, credential, sensitive,
+    /// confirmation or rename fields. Node's word alone is never enough: no bound field, no Return. Cards and the ⌘↩
+    /// answer path never set `submit`.
+    public static func pressesReturn(submit: Bool, boundKind: InstantFieldKind?, explicit: Bool = false) -> Bool {
+        guard submit, let boundKind else { return false }
+        return boundKind.submitAllowed(explicit: explicit)
     }
 
     /// No v1 effect is intrinsically confirm-gated. Node's per-response `confirm` flag (for example a

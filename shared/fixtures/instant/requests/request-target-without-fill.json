@@ -1,0 +1,23 @@
+{
+  "text": "Liebe Grüße",
+  "phase": "final",
+  "seq": 3,
+  "takeId": "take-57",
+  "contextId": "ctx-129",
+  "locale": "de-DE",
+  "inputMode": "voice",
+  "accept": [
+    "suggest",
+    "check",
+    "confirm"
+  ],
+  "target": {
+    "app": "other",
+    "anchor": {},
+    "field": {
+      "kind": "multiline",
+      "empty": false,
+      "ready": true
+    }
+  }
+}

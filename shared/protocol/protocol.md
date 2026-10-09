@@ -406,6 +406,11 @@ model sees refs (`f1`, `f2`, …) and names, cards carry tokens, and nothing log
 with `policy_blocked` in read-only invocations and for every other action type (copyText,
 system, anything delete/trash/move-like); an unknown or foreign token is `token_expired`.
 Host messages can name apps or files, so Node logs launcher outcomes by code only.
+An `openURL` (this route's or an instant act's) opens in a browser the host chooses, with no wire change (macOS
+continuity, host only): an allowlisted browser pi-os launched at most 5 s ago with no other app activated since
+(skipped when the take chose its target explicitly), else the `contextId`'s pinned app when it is an allowlisted
+browser, else the default handler as before. The status then reads "Opened <host> in <Browser>", or "Opened <host> in
+your default browser (<Browser> didn't open it)" when that browser refused and the default handler opened it.
 
 #### Visible items (`launcher.visibleItems`, macOS)
 
@@ -462,7 +467,7 @@ the native host validates against its own `LauncherPolicy` before acting.
 ```ts
 type HostAction =
   | { type: "copyText"; text: string }                    // ≤ 4000 chars
-  | { type: "typeIntoPinned"; text: string }              // instant lane only; through InputPolicy (input.typeText)
+  | { type: "typeIntoPinned"; text: string; submit?: true } // instant lane only; through InputPolicy (input.typeText)
   | { type: "openURL"; url: string }                      // http/https only
   | { type: "openApp"; bundleId: string }                 // from the host app index
   | { type: "openFile" | "revealFile" | "copyPath"; token: string } // host-minted tokens only
@@ -470,6 +475,22 @@ type HostAction =
   | { type: "askAgent"; prompt: string };                 // ≤ 500 chars; seeds a fresh /invoke
 type SystemOp = "appearance.set" | "appearance.toggle" | "volume.set" | "volume.step" | "volume.mute" | "display.sleep";
 ```
+
+`typeIntoPinned.submit` (continuity fills only: `act` intent `fill`, see `POST /instant`): a literal `true`
+(`false` and `null` read as absent; anything else rejects the action, as does `submit` with a text that
+has a control or line-separator character, because each CR/LF would be a Return of its own). The plan
+rule: the host types the single-line text through `input.typeText` with every native gate, then presses
+Return **once as a separate gated `input.pressKey` `Enter`** (identity, exact front window, the bound field
+still focused, and the destructive-control check on Enter), never as part of the text; when that check
+refuses, the text stays typed and nothing is pressed. The macOS host decides the Return from its own bound field,
+never from Node's word alone (`LauncherPolicy.pressesReturn`: a search box or the address bar), and presses it only
+when the field's lengths show it holds exactly the typed text (unreadable lengths do not block it; otherwise the
+note says Return was not pressed). The ⌘↩ answer-card path and card bindings never set `submit`
+(the card catalog's `typeIntoPinned` binding is `{text}` only; Swift's `HostAction.fromBinding` rejects a
+binding that names `submit`), and only an `act` with intent `fill` may carry it. An `act` with intent `fill`
+types one line whether or not it submits: no control or line-separator character (a CR/LF would be a Return
+of its own, a Tab would move focus). Swift's `InstantResponse` decoder rejects anything else; TS
+`fillActConsistent`.
 
 There is no delete, trash, move, rename, write, power, lock or logout action. `volume.set`
 takes a 0…1 fraction, `volume.step` a signed fraction within ±1, `volume.mute` a boolean,
@@ -505,7 +526,12 @@ answers through `/invoke`).
 interface InstantRequest { text: string /* ≤ 500 */; phase: "typing" | "partial" | "final"; seq: number /* integer ≥ 0 */;
   takeId?: string; contextId?: string; locale?: string /* BCP 47 */; inputMode?: "text" | "voice"; silenceMs?: number;
   hypotheses?: VoiceHypothesis[] /* 1..6; voice final only, ignored otherwise */;
-  accept?: ("suggest" | "check" | "confirm")[] /* ≤ 8 words ^[a-z][A-Za-z]{0,31}$; unknown words ignored */ }
+  accept?: ("suggest" | "check" | "confirm" | "fill")[] /* ≤ 8 words ^[a-z][A-Za-z]{0,31}$; unknown words ignored */;
+  target?: InstantTarget /* macOS, content-free; used on finals only (see Continuity) */ }
+interface InstantTarget { app: "browser" | "finder" | "terminal" | "other";
+  anchor?: { takeId?: string /* TAKE_ID; absent for agent opens */; settling?: true };
+  field?: { kind: "search" | "address" | "text" | "multiline" | "terminal" | "sensitive" | "credential" | "confirm" | "rename";
+    empty?: boolean /* never for credential */; ready: boolean; ownFill?: true } }
 interface VoiceHypothesis { text: string /* 1..200, single line */; source: string /* recognizer id, ≤ 32 */;
   role: "primary" | "peer" | "secondary"; confidence?: number /* 0..1 */; minConfidence?: number /* 0..1 */; locale?: string /* BCP 47 */ }
 type InstantResponse = { seq: number; elapsedMs: number; source: "grammar" | "classifier"; scope?: InstantScope } & (
@@ -517,9 +543,11 @@ type InstantResponse = { seq: number; elapsedMs: number; source: "grammar" | "cl
       hints?: ClassifierHints; voice?: VoiceMeta });
 interface InstantScope { window: number /* 0..1 */; reasons: string[] /* ≤ 8 codes, ^[a-z][a-z0-9-]{0,31}$ */ }
 interface VoiceMeta { heard?: string /* ≤ 80, the open target as heard */; source?: string /* recognizer id */;
-  via?: "exact" | "alias" | "learned" | "sound" | "peer" | "secondary" | "url" | "visible" /* open set */;
+  via?: "exact" | "alias" | "learned" | "sound" | "peer" | "secondary" | "url" | "visible" | "field" /* open set */;
   didYouMean?: boolean /* list */; check?: boolean /* fallthrough low_confidence */;
-  learnedEntryId?: string /* dictionary entry that decided */; correctsTakeId?: string /* "No, I meant X" */ }
+  learnedEntryId?: string /* dictionary entry that decided */; correctsTakeId?: string /* "No, I meant X" */;
+  fill?: "offer" /* with check only; open set */ }
+// InstantIntent adds "fill": an act { action: { type: "typeIntoPinned"; text; submit?: true } } (see Continuity).
 ```
 
 Voice additions (DESIGN4 §4.5, §5.3, §8). Every field is optional and additive: a request without
@@ -621,6 +649,108 @@ voice finals and `accept` for the gated kinds, and sends `voice` on voice decisi
   memo keeps the heard target and recognizer of the hypothesis the host sent as `text`, the near miss
   (heard target, top-3 candidates with short names and scores, ≤ 3 other hypotheses) and, as offered
   targets, only the rows a list shows.
+
+- **Continuity** (DESIGN5 §8 with Tom's binding answers of 2026-10-08; contracts `InstantTarget`,
+  `parseInstantTarget`, `FILL_*`/`SUBMIT_*`, `fillSubmitAllowed` and `fillActConsistent` in
+  `contracts/instant.ts`; Swift `InstantTarget`, `InstantFieldKind`, `ContextTarget` in `InstantContracts.swift`;
+  fixtures `instant/requests/request-target-*.json`, `instant/act-fill.json`, `instant/act-fill-submit.json`,
+  `instant/fallthrough-check-fill-offer.json`, invalid ones in `instant/requests/invalid/target-*`,
+  `instant/invalid/voice-fill-not-string.json` and `instant/invalid-action/`). Status: the macOS host sends
+  `target` on every final of a take with a pinned window and declares `fill` as below; Node decides fills.
+  - `target` is the take's pinned target at the final, as content-free facts: never a bundle id, app name,
+    title, URL, label, field value or length. `app` is the host's class of the pinned app (an allowlisted
+    browser, Finder, a terminal, anything else). `anchor`: pi-os's own open put that app in front and nothing
+    else was activated since (host memory, ≤ 120 s); `takeId` names the instant take that opened it (Node looks
+    its own take memo up, so no URL crosses the wire), absent for agent opens; `settling: true` while it is
+    still launching. `field`: the bound focused control (no `field` = nothing the host can type into); `empty`
+    = no characters and no selection; `ready` = visible and loaded (no web area, or a loaded top-level one,
+    never a nested frame); `ownFill: true` = it still holds exactly pi-os's last fill. Strict on both sides
+    (`400`, values never echoed): closed vocabularies, `ready` required, `takeId` matches
+    `^[A-Za-z0-9_-]{1,128}$`, and a `credential` field never carries `empty` at all (a length would reveal a
+    password's; the Swift encoder never emits it). Unknown keys are dropped at every level, null is absent,
+    and `false` on the literal-`true` flags (`settling`, `ownFill`) reads as absent. Parsed on every phase,
+    used on finals only. The host never drops `target` to fit the 4 KB body (hypotheses go first).
+  - `accept: "fill"`: the host types into the bound field. Node answers a fill only when the request declares
+    it **and** carries an eligible `target.field`; without `"fill"` its decisions are exactly today's, whatever
+    `target` says. The host declares it only while Settings' fill switch is on and computer control is ready
+    (for a `credential` or `sensitive` field only with the Settings credential opt-in). While it cannot type
+    there (computer control off, a CDP-pinned Brave, a take still pinned to the previous app while pi-os
+    launches another) it reports only a `credential` or `sensitive` field and never declares `"fill"` for it,
+    so the secret-field rules below hold in read-only mode and during a launch too. A `text`, `multiline` or
+    `terminal` field holding a selection is reported not `ready` (typing would replace the selection). `anchor.settling` together
+    with a `field` means the take was re-pinned to the launching app itself; a field is never reported for an
+    app other than the take's pin.
+  - Decision order for a final: **commands → page questions → fill**. (1) The host's own words first: an
+    answer to a carried decision, cancel words, a bare "nein/no" within 5 s (Not this after an act, **undo the
+    typing** after a fill; after a fill whose Return already submitted it nothing is deleted and the note says
+    how to go back; "tippe nein" types the word), and a bare "frag pi/ask pi" within 5 s of a fill (the fill
+    is undone and its words go to the agent). (2) Policy never fills: deletion refusal, compound and
+    deictic requests go their way as today, and deletion words never reach a field on their own. (3) Escapes
+    and continuations, before the commands, on voice and typed finals: "frag pi …/ask pi …/hey pi …" always
+    goes to pi; "nein, X" / "No, I meant X" within 30 s of pi-os's own fill, while `ownFill` says the field
+    still holds it, replaces that fill (a fill whose `voice.correctsTakeId` names the fill's take; otherwise
+    nothing is typed and the correction aims at no older act); "tippe …/type …/diktiere …/gib … ein" always
+    types its remainder (explicit; a remainder with deletion words is held for one Return and never submits);
+    with `app: "browser"`, "such nach X / search for X" fills X with `submit` into a ready `search` or `address`
+    field, else opens the anchored search site's or the default web search's URL in that browser (an ordinary
+    `act` intent `web`, `openURL`), and "google X" while the anchored page is Google fills its search box
+    (outside a browser the commands decide first, and a search form no command took fills a focused `search`
+    field with `submit` in step 6).
+    (4) Commands run as today: instant commands (acts, lists, answers such as calculations, units and times,
+    refusals) and explicit pi tasks with a task head (EN/DE: write/schreib, summarize/fasse zusammen,
+    translate/übersetze, explain/erkläre, create/erstelle, remind/erinnere, plan, draft, reply/antworte, …,
+    requests addressed to pi such as "kannst du …", German verb-final commands). An installed app's exact name
+    said alone stays a command; on a voice final, a name said alone that only resembles an app is typed instead
+    of getting a did-you-mean. (5) Page and window questions stay with pi: deictic or window-band wording ("this page",
+    "diese Seite", "hier", "what does it say", German questions that point with "das"/"dem" such as "ist das
+    wahr", `scope.window` ≥ 0.7, or ≥ 0.5 with a window reason) is never typed. (6) **Everything else is
+    typed**, on voice finals only (a typed bar entry addresses pi and fills only through step 3), into an
+    implicitly eligible field: plain questions ("wie hoch ist der Eiffelturm") and short phrases ("Albert
+    Einstein") included. (7) Otherwise today's path (did-you-mean, the check gate, the agent). A take whose
+    recognizers doubt it, and any dictation-like take at a `terminal`, gets the check card with `voice.fill:
+    "offer"` instead of an implicit fill.
+  - Field eligibility (`FILL_*`, Swift `InstantFieldKind.fill`): **implicit** (step 6) into `search`,
+    `address`, `text` and `multiline` while `ready`, empty or not, single- or multi-line (documents and chats
+    included); **explicit only** into `terminal` ("tippe …", or the check card's "↩ Type into Terminal");
+    **explicit with the Settings credential opt-in only** into `credential` and `sensitive` (username,
+    password, 2FA and payment fields: never implicit, never journaled, never sent to a remote classifier);
+    **never** into `confirm` ("type DELETE/LÖSCHEN to confirm") or `rename` (a Finder rename editor), not even
+    explicitly. A spoken sensitive explicit fill is an `act` with `confirm: true` (one Return); a typed one was
+    confirmed by the composer's own Return (`confirm` false). This does not relax
+    the deletion policy or the native gates. While the bound field is `credential` or `sensitive`, a take
+    that is not a command or a page question is never forwarded to the agent on its own (it is most likely
+    the secret, DESIGN5 C5): the host shows a local card instead (the heard text masked; "↩ Type it" only
+    with the opt-in, a bound field and computer control, where that ↩ is also a `sensitive` field's one-Return
+    confirm, else the reason it cannot type; "⌥↩ Ask pi anyway"). Node answers such a take that declared
+    `fill` with a plain `fallthrough` `no_match` (no check card, no near miss), and for any `accept` sends no
+    classifier hints and keeps none of its words in the take memo. The macOS host fails closed: it masks every
+    fallthrough reason except `deictic` and `compound` (`no_match`, `low_confidence`, `timeout`, `disabled`,
+    `unknown_place` and any reason it does not know), and a final that got no answer at all, unless the scope
+    is in the window band or the words start with "frag pi …"; it never journals such a take and never shows
+    its words.
+  - Return (`submit`, `fillSubmitAllowed`): **only in search boxes and the address bar** on its own — after a
+    fill into `search` or `address` Node sets `submit: true` and the host presses Return once through the
+    gated key path. The tables also allow an explicit submit into a single-line `text` field, but nothing
+    produces one yet (spoken submit words are not built): the harness drops a fill whose `submit` its field
+    kind does not take on its own, and the macOS host presses Return only into its own bound `search` or
+    `address` field (see Host actions). Never into
+    `multiline` (documents and chats: Return is never pressed there), `terminal`, `sensitive`, `credential`,
+    `confirm` or `rename`, not even when asked. Fill text is one line (CR, LF, tabs and other control
+    characters removed; both sides reject a fill whose text has one), so it never carries a Return of its own.
+  - Responses (only to a request that declared `fill`): `act` with intent `fill`, `action: {type:
+    "typeIntoPinned", text, submit?: true}`, `confirm` false (true for a spoken sensitive explicit fill and for
+    an explicit remainder held for its deletion words), `voice: {source?, via: "field", correctsTakeId?}`; the
+    title is display copy. `via: "field"` offers no "Not this", nothing is learned from it (`/dictionary/learn`
+    refuses every gesture against a fill take) and "No, I meant X" never aims at it. `correctsTakeId` on a fill
+    is "nein, X": the host first removes that earlier fill, only when it can prove the field still holds exactly
+    it, and types nothing new otherwise. `fallthrough` `low_confidence` with `voice: {check: true, fill:
+    "offer"}`: the check card's ↩ types the card text into the bound field as one line, never with Return,
+    instead of resending it; an edited text is typed as well (it is not resent while the card offers typing);
+    ⌥↩ asks pi with the card text. The host shows the offer only while it can still type there, otherwise
+    today's card. A `fill` offer without `check` is ignored, and an unknown `fill` word is dropped on its own.
+  - Compatibility: an older harness drops `target` and ignores `"fill"` (today's decisions); an older host
+    sends neither and gets byte-identical responses; the Windows host never calls `/instant` and never sends
+    `target` or `context.target`, so nothing changes there.
 
 - `scope` (optional, any phase and decision): how likely the text refers to the active window
   (Node rules, < 0.01 ms; reasons are content-free codes such as `pronoun`, `ui-verb`,
@@ -864,7 +994,8 @@ Entry point for a hotkey submission. Request:
   the language goes in `locale`. A take's near-miss (heard target, top candidates, other hypotheses)
   reaches the agent server-side through the take memo, with no wire change.
 - `context?: ContextWire` (see Context scope): general vs window scope as the host's chip showed
-  it. Absent means legacy window behaviour (Windows, older Mac builds).
+  it. Absent means legacy window behaviour (Windows, older Mac builds). Its optional `target` carries
+  the continuity facts (see Context scope).
 - `attachments?: Attachment[]` (see Attachments): what the user explicitly pulled into the
   request. Absent means none.
 - A bad `context` or `attachments` is `400 invalid_arguments`; for attachments
@@ -1052,6 +1183,8 @@ interface ContextWire {
   pull: "allowed" | "denied";   // may the agent call use_active_window (meaningful in general scope)
   source: "default" | "suggested" | "user" | "setting" | "followup";
   scopeHint?: number;           // 0..1, the fused score the chip used; telemetry and labels only
+  target?: { field?: "search" | "address" | "text" | "multiline" | "terminal" | "sensitive" | "credential" | "confirm" | "rename";
+             anchored?: boolean };  // macOS continuity, content-free; see below
 }
 ```
 
@@ -1109,6 +1242,13 @@ interface ContextWire {
   - Routing gets the scope: general never attaches the window image, window always shows it and needs
     a vision model, a pulled thread routes as window, legacy keeps the screen-need formula. Route
     reasons carry `scope=general|window`.
+- **`target`** (continuity, macOS only; on `/invoke` and follow-ups): the bound focused field's kind at
+  the final and whether pi-os's own open put the pinned app in front (`anchored`). Content-free (never a
+  name, title, URL, label or value) and strict: an unknown kind or a non-boolean `anchored` is `400`,
+  unknown keys inside it are dropped, null is absent. It is rendered as at most one prompt sentence, adds
+  no screenshot, window JSON or tool, and grants no authority; it never widens the scope. Windows and
+  older Mac builds send none (today's prompt). Status: the macOS host sends it on a take's own fresh
+  `/invoke` (`field` only for `search`, `address`, `text` and `multiline`); follow-ups send none yet.
 - **`scopeHint` is advisory**: Node logs it (with its own rules score for the same words) for labels
   and never acts on it alone; the host's choice is what runs.
 - **Scores**: `/instant` `scope.window` (Node rules) averaged with the host's optional on-device

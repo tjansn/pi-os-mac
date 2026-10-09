@@ -103,6 +103,17 @@ adds a faster path on top of the agent:
   pi. Currency conversions download the European Central Bank's daily reference rates on
   first use (no question or personal data is sent); that is the only network request instant
   commands make.
+- **It continues where you are** ([details](VOICE_MAGIC.md#pass-5-2026-10-08-continuity)). After *open Safari*,
+  *open google* opens in that Safari window: links go to the browser in front, or to the one pi-os is still
+  launching, and only otherwise to your default browser. When a text field has the caret, what you say goes into it,
+  questions included; commands, requests for pi (*schreib …*, *fasse … zusammen*) and questions about the page
+  (*what is this page about*, *was steht da*) never do. Return is pressed only in search boxes and the address bar.
+  *nein* within 5 s undoes the typing (the note's *Undo* too), *tippe …* always types, *frag pi …* always asks pi.
+  Password, code and payment fields get text only when you say *tippe …* and allow it in *Settings → General*; words
+  spoken there that no command takes are hidden as *•••*, never sent to pi on their own and never kept. Switch
+  typing off in *Settings → Voice → Type into the focused field*; it needs computer control. Typing into fields is on
+  the `feat/continuity` branch (built and tested offline, not installed); links following the browser in front are
+  installed.
 - **Auto model.** *Auto (recommended)* is listed first in Settings and picks a fast adequate
   model and effort per request (*Prefer speed / Balanced / Prefer quality*). It is the
   default when no model is stored; explicit choices still work.
@@ -180,7 +191,7 @@ in the tray settings page).
 | `shared/protocol/protocol.md` | You change any endpoint, port, or message shape |
 | `shared/schemas/desktop-context.ts` | You touch the context snapshot shape (C# mirror must stay field-compatible) |
 | `AGENTS.md` | You use a coding agent in this repository |
-| `VOICE_MAGIC.md` | You want the voice/instant/Auto design, its measurements, the evaluations (macbrow, jev, json-render, Laya, Clef, pi-durable), the pass-3 voice reliability work (EN/DE recognition, Parakeet, the dictionary) and what is still unverified |
+| `VOICE_MAGIC.md` | You want the voice/instant/Auto design, its measurements, the evaluations (macbrow, jev, json-render, Laya, Clef, pi-durable), the pass-3 voice reliability work (EN/DE recognition, Parakeet, the dictionary), pass-5 continuity (links in the browser in front, typing into the focused field) and what is still unverified |
 
 ## Current Windows capabilities
 

@@ -29,6 +29,23 @@ export interface TakeRecord extends TakeMemoRecord {
    * meant X" acts without naming it, `no_i_meant` against it is refused).
    */
   item?: boolean;
+  /**
+   * The take typed into the focused field (continuity: `act` intent `fill`). It never teaches a rule (every
+   * /dictionary/learn gesture against it is refused), "No, I meant X" never aims at it (`latestActed` skips it),
+   * and "nein, X" right after it replaces it (`latestFill`).
+   */
+  fill?: boolean;
+}
+
+/** What continuity reads from the memo (DESIGN5 §3.2, §5.10). */
+export interface ContinuityMemo {
+  /** The take with this id, within the TTL (an anchor's take: what it opened). */
+  get(takeId: string, now?: number): TakeRecord | undefined;
+  /**
+   * The newest take other than `exceptTakeId`, when it was pi-os's own fill at most `withinMs` ago. Any later take
+   * (an answer, an open) means a "nein" is about that one instead.
+   */
+  latestFill(withinMs: number, exceptTakeId?: string, now?: number): TakeRecord | undefined;
 }
 
 /** Bounded so a long-lived take cannot grow without limit (lists show ≤ 8 rows). */
@@ -41,7 +58,7 @@ export interface TakeMemoOptions {
   clock?: () => number;
 }
 
-export class InMemoryTakeMemo implements TakeMemo {
+export class InMemoryTakeMemo implements TakeMemo, ContinuityMemo {
   private readonly takes = new Map<string, TakeRecord>();
   private readonly maxTakes: number;
   private readonly ttlMs: number;
@@ -84,7 +101,19 @@ export class InMemoryTakeMemo implements TakeMemo {
     const records = [...this.takes.values()];
     for (let index = records.length - 1; index >= 0; index--) {
       const record = records[index]!;
-      if (record.decision === "act" && !this.expired(record, now)) return record;
+      // A fill typed words, it acted on nothing a correction could name (DESIGN5 §5.10).
+      if (record.decision === "act" && !record.fill && !this.expired(record, now)) return record;
+    }
+    return undefined;
+  }
+
+  latestFill(withinMs: number, exceptTakeId?: string, now: number = this.clock()): TakeRecord | undefined {
+    const records = [...this.takes.values()];
+    for (let index = records.length - 1; index >= 0; index--) {
+      const record = records[index]!;
+      if (record.takeId === exceptTakeId) continue;
+      if (this.expired(record, now)) return undefined;
+      return record.fill === true && now - record.at <= withinMs ? record : undefined;
     }
     return undefined;
   }
@@ -118,8 +147,9 @@ function mergeTake(previous: TakeRecord, record: TakeMemoRecord): TakeRecord {
   }
   next.at = Math.min(previous.at, record.at);
   next.offered = [...new Set([...previous.offered, ...record.offered])].slice(-MAX_OFFERED);
-  // A take that opened a file or folder once stays one (it never teaches a rule).
+  // A take that opened a file or folder, or typed into a field, once stays one (it never teaches a rule).
   if (previous.item) next.item = true;
+  if (previous.fill) next.fill = true;
   return next;
 }
 
@@ -185,12 +215,15 @@ function textHypothesis(text: string): VoiceHypothesis[] {
 export function takeRecordFor(request: InstantRequest, response: InstantResponse, at: number, details: TakeDetails = {}): TakeRecord | undefined {
   if (request.phase !== "final" || !request.takeId) return undefined;
   const inputMode = request.inputMode ?? "text";
-  const voiceHypotheses = inputMode === "voice" && (request.hypotheses?.length ?? 0) > 0;
-  const hypotheses = voiceHypotheses ? [...request.hypotheses!] : textHypothesis(request.text);
+  // A credential or sensitive field was focused (continuity `target`): the words may be the secret, so the memo
+  // keeps none of them — no hypotheses, heard target or near miss (DESIGN5 C5/P3). Nothing can be learned from it.
+  const secret = request.target?.field?.kind === "credential" || request.target?.field?.kind === "sensitive";
+  const voiceHypotheses = !secret && inputMode === "voice" && (request.hypotheses?.length ?? 0) > 0;
+  const hypotheses = secret ? [] : voiceHypotheses ? [...request.hypotheses!] : textHypothesis(request.text);
   const meta = response.decision === "act" || response.decision === "list" || response.decision === "fallthrough" ? response.voice : undefined;
   const picked = voiceHypotheses ? hypotheses.find((hypothesis) => hypothesis.text === request.text) ?? hypotheses[0] : undefined;
   const recognizer = details.recognizer ?? meta?.source ?? picked?.source ?? RECOGNIZERS.any;
-  const heard = details.heard ?? (meta?.heard ? foldPhrase(meta.heard) : undefined);
+  const heard = secret ? undefined : details.heard ?? (meta?.heard ? foldPhrase(meta.heard) : undefined);
   const offered: string[] = [];
   let acted: SafeTarget | undefined;
   if (response.decision === "list") offered.push(...offeredBundleIds(response.card));
@@ -216,8 +249,9 @@ export function takeRecordFor(request: InstantRequest, response: InstantResponse
     offered: offered.slice(0, MAX_OFFERED),
     ...(acted ? { acted } : {}),
     ...(meta?.learnedEntryId ? { learnedEntryId: meta.learnedEntryId } : {}),
-    ...(details.nearMiss ? { nearMiss: details.nearMiss } : {}),
+    ...(details.nearMiss && !secret ? { nearMiss: details.nearMiss } : {}),
     ...(response.decision === "list" && meta?.didYouMean ? { didYouMean: true } : {}),
     ...(response.decision === "act" && (response.intent === "open_item" || response.action.type === "openFile") ? { item: true } : {}),
+    ...(response.decision === "act" && response.intent === "fill" ? { fill: true } : {}),
   };
 }

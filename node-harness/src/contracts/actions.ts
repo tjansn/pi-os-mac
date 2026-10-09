@@ -19,8 +19,15 @@ export type SystemOp = (typeof SYSTEM_OPS)[number];
 
 export type HostAction =
   | { type: "copyText"; text: string }
-  /** Instant lane only; the host routes it through input.typeText and InputPolicy. */
-  | { type: "typeIntoPinned"; text: string }
+  /**
+   * Instant lane only; the host routes it through input.typeText and InputPolicy. `submit: true` (continuity
+   * fills only, `act` intent `fill`): after the text the host presses Return once as a SEPARATE gated
+   * `pressKey enter` (LauncherPolicy plan: identity/focus re-check and the destructive-control check), never
+   * as a newline inside the text, so the text must then be single-line (and an `act` with intent `fill` is
+   * single-line whether or not it submits: fillActConsistent). A literal `true`; `false` and null read as
+   * absent. The ⌘↩ answer-card path and card bindings never set it.
+   */
+  | { type: "typeIntoPinned"; text: string; submit?: true }
   /** http/https only; the host re-validates the scheme. */
   | { type: "openURL"; url: string }
   | { type: "openApp"; bundleId: string }
@@ -60,6 +67,16 @@ export const AGENT_OPEN_ACTION_TYPES: readonly HostActionType[] = ["openApp", "o
 
 export const MAX_ACTION_TEXT = 4_000;
 export const MAX_ACTION_PROMPT = 500;
+/** Control and line-separator characters: a `submit` text is one line (each CR/LF would be a Return of its own). */
+const CONTROL_TEXT = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u;
+
+/**
+ * One line: no control or line-separator character (Swift `AttachmentValidation.hasControl`). Every continuity
+ * fill and every `submit` text must be one: a CR/LF would be a Return of its own and a Tab would move focus.
+ */
+export function isOneLineText(text: string): boolean {
+  return !CONTROL_TEXT.test(text);
+}
 const TOKEN = /^[A-Za-z0-9_-]{8,128}$/;
 const BUNDLE_ID = /^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/;
 
@@ -97,8 +114,13 @@ export function parseHostAction(value: unknown): HostAction | null {
   if (!isRecord(value) || typeof value.type !== "string") return null;
   switch (value.type) {
     case "copyText":
-    case "typeIntoPinned":
-      return boundedString(value.text, MAX_ACTION_TEXT) ? { type: value.type, text: value.text } : null;
+      return boundedString(value.text, MAX_ACTION_TEXT) ? { type: "copyText", text: value.text } : null;
+    case "typeIntoPinned": {
+      if (!boundedString(value.text, MAX_ACTION_TEXT)) return null;
+      if (value.submit === undefined || value.submit === null || value.submit === false) return { type: "typeIntoPinned", text: value.text };
+      if (value.submit !== true || !isOneLineText(value.text)) return null;
+      return { type: "typeIntoPinned", text: value.text, submit: true };
+    }
     case "openURL":
       return isHttpUrl(value.url) ? { type: "openURL", url: value.url } : null;
     case "openApp":

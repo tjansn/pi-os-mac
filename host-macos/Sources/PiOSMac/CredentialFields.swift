@@ -13,16 +13,20 @@ enum CredentialFields {
     static func identified(_ element: AXUIElement, budget: DesktopAX.Budget) -> Bool {
         identified(LiveAXNode(element, budget: budget))
     }
+    /// WebKit's AutoFill type (`AXValueAutofillType`): "credentials" or "strong password" while Safari shows its AutoFill
+    /// key button in the field. A positive signal only (absent elsewhere, and "none" when there is no button).
+    static let autofillTypeAttribute = "AXValueAutofillType"
     /// Reads names only, never AXValue; native and DOM identifiers both count. A label element
     /// (`AXTitleUIElement`) gives its title, value or description unless it is itself a text-entry
     /// control (another field's value is never read). A text-entry element whose label element exists
     /// but cannot be read is treated as a credential field (fail closed).
     static func identified(_ node: any BrowserAXNode) -> Bool {
         let values = node.values([kAXRoleAttribute, kAXSubroleAttribute, kAXTitleAttribute, kAXDescriptionAttribute,
-                                  kAXPlaceholderValueAttribute, kAXIdentifierAttribute, "AXDOMIdentifier"])
+                                  kAXPlaceholderValueAttribute, kAXIdentifierAttribute, "AXDOMIdentifier", autofillTypeAttribute])
         guard let role = values[kAXRoleAttribute] as? String, textEntryRoles.contains(role) else { return false }
         let subrole = values[kAXSubroleAttribute] as? String
         if subrole == kAXSecureTextFieldSubrole { return true }
+        if FieldClassifier.isCredentialAutofill(values[autofillTypeAttribute] as? String) { return true }
         var labels = [kAXTitleAttribute, kAXDescriptionAttribute, kAXPlaceholderValueAttribute].compactMap { values[$0] as? String }
         let title = BrowserPageReader.titleElement(node)
         if title.unreadable { return true }
@@ -52,7 +56,7 @@ enum CredentialFields {
     @MainActor static func confirmEnable() -> Bool {
         let alert = NSAlert()
         alert.messageText = "Allow username and password input?"
-        alert.informativeText = "pi-os will be allowed to type into clearly identified username and password fields in your chosen target. This does not read saved passwords or disable macOS security. Field values remain omitted from text snapshots.\n\nText you give the agent can be sent to your selected model provider and handled by trusted extensions. Only provide credentials when you intend that exposure. You can turn this permission off at any time; changing it cancels the current task."
+        alert.informativeText = "pi-os will be allowed to type into clearly identified username and password fields in your chosen target. Voice typing (“tippe …”) also uses this permission for verification-code, PIN and payment-card fields. This does not read saved passwords or disable macOS security. Field values remain omitted from text snapshots.\n\nText you give the agent can be sent to your selected model provider and handled by trusted extensions. Only provide credentials when you intend that exposure. You can turn this permission off at any time; changing it cancels the current task."
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Allow Credential Input")
         alert.addButton(withTitle: "Keep Fields Blocked")

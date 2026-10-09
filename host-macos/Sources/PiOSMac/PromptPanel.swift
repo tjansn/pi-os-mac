@@ -198,6 +198,9 @@ final class ListeningIndicator: NSView {
     var displayedPreviewFrame: NSRect? { previewLabel.isHidden ? nil : previewLabel.frame }
     var displayedPreviewText: NSAttributedString? { previewLabel.isHidden ? nil : previewLabel.attributedStringValue }
     var composerFirstLineFrame: NSRect { firstLineFrame(input, in: inputScroll) }
+    /// The fill caption as shown under the transcript (nil when hidden) and its frame in bar coordinates.
+    var displayedFillCaption: String? { captionLabel.isHidden ? nil : captionLabel.stringValue }
+    var fillCaptionFrame: NSRect? { captionLabel.isHidden ? nil : captionLabel.frame }
     var failureMessageFrame: NSRect { failureMessage.frame }
     var failureMessageNeededHeight: CGFloat { failureMessageHeight(width: failureMessage.frame.width) }
     var displayedCard: CardSpec? { cardSource == nil ? nil : cardView.spec }
@@ -285,6 +288,9 @@ final class ListeningIndicator: NSView {
     private let staticProgress = NSImageView()
     private let confirmIcon = NSImageView()
     private let previewLabel = PanelStyle.label("", size: 15)
+    /// "Speak to type into Safari · Search" under the transcript while listening (DESIGN5 §3.7).
+    private let captionLabel = PanelStyle.label("", size: 11)
+    private var fillCaption: FillCaption?
     private let listeningIndicator = ListeningIndicator()
     private let appIcon = NSImageView()
     private let sourceLabel = PanelStyle.label("", size: 11)
@@ -374,7 +380,7 @@ final class ListeningIndicator: NSView {
         panel.redirectTyping = { [weak self] event in self?.typingTarget(for: event) }
         root.addSubview(reading); root.addSubview(bar)
         if let screen = NSScreen.main { workArea = Rect(screen.visibleFrame) }
-        for view in [identity, trusted, inputScroll, placeholder, followupScroll, followupPlaceholder, previewLabel, listeningIndicator,
+        for view in [identity, trusted, inputScroll, placeholder, followupScroll, followupPlaceholder, previewLabel, captionLabel, listeningIndicator,
                      ask, sendFollowup, activity, barStatus, progress, staticProgress, confirmIcon, hideWork, stop, openResult,
                      contextChip, shelfRow, dropOutline] {
             bar.embedded.addSubview(view)
@@ -446,6 +452,8 @@ final class ListeningIndicator: NSView {
         staticProgress.image = PanelStyle.symbol("hourglass", size: 16); staticProgress.contentTintColor = PanelStyle.secondaryInk
         confirmIcon.imageScaling = .scaleProportionallyDown; confirmIcon.setAccessibilityElement(false)
         previewLabel.alignment = .right; previewLabel.setAccessibilityLabel("Quick result")
+        captionLabel.lineBreakMode = .byTruncatingMiddle; captionLabel.usesSingleLineMode = true
+        captionLabel.setAccessibilityRole(.staticText)
         // One line, truncated by the attributed paragraph style; never word-wrapped into a clipped frame.
         previewLabel.usesSingleLineMode = true; previewLabel.maximumNumberOfLines = 1
         previewLabel.cell?.wraps = false; previewLabel.cell?.truncatesLastVisibleLine = true
@@ -592,7 +600,7 @@ final class ListeningIndicator: NSView {
         question = ""; retryStatus = nil; streamStatus = nil; presentedFailure = nil
         listeningState = .off; instantPreview = nil; streaming = false; placeholder.stringValue = idlePlaceholder
         voiceHintShown = false; placeholder.toolTip = nil
-        voiceDecision = nil; decisionChipHandler = nil
+        voiceDecision = nil; decisionChipHandler = nil; fillCaption = nil
         clearCard()
         reset(.prompt); reveal(); panel.makeFirstResponder(input)
     }
@@ -770,7 +778,8 @@ final class ListeningIndicator: NSView {
                 trailing = min(ceil(preview.text.size().width) + 18, room)
             }
             let composerWidth = max(40, editorWidth - trailing)
-            let barHeight = max(baseBarHeight, editorHeight(input, width: composerWidth) + 22) + shelfHeight
+            let caption = captionHeight
+            let barHeight = max(baseBarHeight, editorHeight(input, width: composerWidth) + 22) + shelfHeight + caption
             if previewCardVisible || decisionVisible {
                 let placed = layoutDecision(width: width)
                 let readHeight = placed.height
@@ -783,7 +792,17 @@ final class ListeningIndicator: NSView {
             }
             bar.radius = 25
             layoutComposer(input, scroll: inputScroll, placeholder: placeholder, send: ask, width: composerWidth, trailing: trailing,
-                           preview: preview)
+                           preview: preview, bottom: caption)
+            if caption > 0, let fillCaption {
+                let font = NSFont.systemFont(ofSize: 11 * PanelStyle.textScale)
+                let contrast = PanelStyle.preferences.preset == .contrast || PanelStyle.increaseContrast
+                captionLabel.font = font; captionLabel.textColor = contrast ? .labelColor : PanelStyle.secondaryInk
+                captionLabel.stringValue = fillCaption.text; captionLabel.toolTip = fillCaption.help
+                captionLabel.setAccessibilityHelp(fillCaption.help)
+                let x: CGFloat = isTrusted ? 128 : 62
+                let rowBottom = bar.bounds.height - caption
+                show(captionLabel, NSRect(x: x, y: rowBottom - 6, width: max(40, bar.bounds.width - x - 58), height: ceil(font.ascender - font.descender) + 2))
+            }
         case .reader:
             let hasComposer = presentedFailure == nil && followupEnabled
             let barHeight = hasComposer ? max(baseBarHeight, editorHeight(followup, width: editorWidth) + 22) + shelfHeight : baseBarHeight
@@ -861,6 +880,12 @@ final class ListeningIndicator: NSView {
         }
         root.layoutSubtreeIfNeeded()
     }
+    /// The fill caption's row under the composer: only while listening in the command composer with a caption set.
+    private var captionHeight: CGFloat {
+        guard mode == .prompt, listeningState != .off, fillCaption != nil else { return 0 }
+        let font = NSFont.systemFont(ofSize: 11 * PanelStyle.textScale)
+        return ceil(font.ascender - font.descender) + 4
+    }
     /// The shelf row above the composer (only while something is attached or suggested).
     private var shelfRowHeight: CGFloat {
         guard !shelfChips.isEmpty, mode == .prompt || (mode == .reader && presentedFailure == nil && followupEnabled) else { return 0 }
@@ -886,6 +911,7 @@ final class ListeningIndicator: NSView {
                 decisionSubtitle.font = .systemFont(ofSize: 11.5 * scale)
                 decisionSubtitle.textColor = contrast ? .labelColor : PanelStyle.secondaryInk
                 decisionSubtitle.stringValue = subtitle; decisionSubtitle.toolTip = subtitle
+                decisionSubtitle.setAccessibilityValue(Self.spokenSubtitle(subtitle))
                 y += 1
                 frames.append((decisionSubtitle, NSRect(x: 22, y: y, width: inner, height: line(decisionSubtitle.font!))))
                 y += line(decisionSubtitle.font!)
@@ -930,17 +956,17 @@ final class ListeningIndicator: NSView {
         cardView.select(keys[index])
         return cardView.perform(.primary)
     }
-    /// `top`: the composer row starts below the shelf row.
-    private func layoutIdentity(top: CGFloat = 0) {
-        let h = bar.bounds.height - top
+    /// `top`: the composer row starts below the shelf row; `bottom`: it ends above the fill caption.
+    private func layoutIdentity(top: CGFloat = 0, bottom: CGFloat = 0) {
+        let h = bar.bounds.height - top - bottom
         show(identity, NSRect(x: 6, y: top + (h - 42) / 2, width: 50, height: 42))
         if isTrusted { show(trusted, NSRect(x: 58, y: top + (h - 16) / 2, width: 66, height: 16)) }
     }
     private func layoutComposer(_ editor: PromptEditor, scroll: NSScrollView, placeholder: NSTextField, send: PanelButton,
-                                width: CGFloat, trailing: CGFloat = 0, preview: InlinePreview? = nil) {
+                                width: CGFloat, trailing: CGFloat = 0, preview: InlinePreview? = nil, bottom: CGFloat = 0) {
         let top = shelfRowHeight
-        layoutIdentity(top: top)
-        let h = bar.bounds.height, w = bar.bounds.width, x: CGFloat = isTrusted ? 128 : 62
+        layoutIdentity(top: top, bottom: bottom)
+        let h = bar.bounds.height - bottom, w = bar.bounds.width, x: CGFloat = isTrusted ? 128 : 62
         let rowH = h - top
         let editorH = min(editorHeight(editor, width: width), max(1, rowH - 22))
         show(scroll, NSRect(x: x, y: top + (rowH - editorH) / 2, width: width, height: editorH))
@@ -1352,11 +1378,22 @@ final class ListeningIndicator: NSView {
         }
         layoutCurrent()
         guard let presentation else { return }
-        // VoiceOver hears what Return would do; nothing is spoken over dictation.
-        var spoken = [presentation.title] + (presentation.subtitle.map { [$0] } ?? [])
+        // VoiceOver hears what Return would do; nothing is spoken over dictation. A masked subtitle is never read as bullets.
+        var spoken = [presentation.title] + (presentation.subtitle.map { [Self.spokenSubtitle($0)] } ?? [])
         if let opens = cardView.defaultItemTitle, presentation.card != nil { spoken.append("Return opens " + opens) }
         if !presentation.alternatives.isEmpty { spoken.append(presentation.alternatives.map { "“\($0)”" }.joined(separator: ", ")) }
+        if let keys = Self.spokenKeys(presentation) { spoken.append(keys) }
         if listeningState == .off { Accessibility.announce(spoken.joined(separator: ". "), on: decisionTitle, priority: .medium, using: announce) }
+    }
+    /// "Heard “•••”" is announced as "Heard text hidden".
+    static func spokenSubtitle(_ subtitle: String) -> String { subtitle == FillCopy.secretSubtitle ? FillCopy.secretSubtitleSpoken : subtitle }
+    /// Where Return no longer does what it did (the masked card types into the field; the check card's fill offer types
+    /// into the app instead of re-running the text), the footer is spoken too, with the keys as words.
+    static func spokenKeys(_ presentation: VoiceDecisionPresentation) -> String? {
+        let typingOffer = presentation.kind == .check && presentation.footer.hasPrefix("↩ Type into")
+        guard presentation.kind == .secret || typingOffer, !presentation.footer.isEmpty else { return nil }
+        return presentation.footer.replacingOccurrences(of: "⌥↩ ", with: "Option-Return: ").replacingOccurrences(of: "↩ ", with: "Return: ")
+            .replacingOccurrences(of: "  ·  ", with: ". ")
     }
     /// The note sits just above the open bar, or where the bar was once it has gone.
     public func presentVoiceToast(_ toast: VoiceToast, onAction: @escaping @MainActor (Int) -> Void) {
@@ -1367,6 +1404,8 @@ final class ListeningIndicator: NSView {
         case .learned: "character.book.closed"
         case .ask: "questionmark.circle"
         case .undone: "arrow.uturn.backward.circle"
+        case .typed: "keyboard"
+        case .notTyped: "exclamationmark.circle"
         }
         let actions: [(title: String, handler: () -> Void)] = toast.actions.enumerated().map { index, title in
             (title, { onAction(index) })
@@ -1515,6 +1554,13 @@ final class ListeningIndicator: NSView {
 extension PromptPanel: CommandSurface {
     public var showsComposer: Bool { mode == .prompt }
     public func presentFailure(_ error: Error) { showFailure(error) }
+    /// Typing needs the pinned window in front, not the bar (as `Application.perform` hides it for ⌘↩'s value).
+    public func hideForInput() { hide() }
+    public func setFillCaption(_ caption: FillCaption?) {
+        guard caption != fillCaption else { return }
+        fillCaption = caption
+        if mode == .prompt { layoutCurrent() }
+    }
 }
 
 extension PromptPanel: ContextChipSurface {

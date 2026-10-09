@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pi-os fixture · Frame</title>
+<link rel="stylesheet" href="/fixture.css">
+<script src="/fixture.js" defer></script>
+</head>
+<body data-page="iframe">
+<main>
+<h1>Embedded focus fixture</h1>
+<p class="note">Harmless loopback page for pi-os continuity QA. What you type never leaves this page; it only shows how many characters arrived.</p>
+<label for="top">Page search (no autofocus)</label>
+<input id="top" type="search" autocomplete="off" placeholder="Page search" data-field="top">
+<output data-echo="top"></output>
+<iframe src="/frame" title="Embedded search"></iframe>
+</main>
+</body>
+</html>

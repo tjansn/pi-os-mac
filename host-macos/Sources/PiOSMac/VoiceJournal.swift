@@ -45,6 +45,10 @@ public actor VoiceJournal: VoiceJournaling {
         VoiceJournalPolicy.isEnabled(stored: defaults.object(forKey: VoiceJournalPolicy.enabledKey))
     }
 
+    /// DESIGN5 §5.8 (change C6, D6): a take spoken while a credential or code field was focused may be the secret itself,
+    /// so it is never kept: no audio, no text, no later update. The command flow asks this before `append`.
+    public nonisolated static func keeps(field kind: InstantFieldKind?) -> Bool { kind != .credential && kind != .sensitive }
+
     /// Switching on prepares the directory (0700, excluded from backups) first: when it cannot be used this throws and
     /// the opt-in stays as it was, so a failed switch-on never leaves the journal recording. Switching off keeps
     /// existing takes.

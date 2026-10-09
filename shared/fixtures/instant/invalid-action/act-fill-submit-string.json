@@ -1,0 +1,17 @@
+{
+  "seq": 4,
+  "elapsedMs": 1,
+  "source": "grammar",
+  "decision": "act",
+  "intent": "fill",
+  "title": "Type into the search field",
+  "action": {
+    "type": "typeIntoPinned",
+    "text": "Albert Einstein",
+    "submit": "yes"
+  },
+  "confirm": false,
+  "voice": {
+    "via": "field"
+  }
+}

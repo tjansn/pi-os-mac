@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pi-os fixture · Moving focus</title>
+<link rel="stylesheet" href="/fixture.css">
+<script src="/fixture.js" defer></script>
+</head>
+<body data-page="moving" data-moving-focus>
+<main>
+<h1>Moving focus fixture</h1>
+<p class="note">Harmless loopback page for pi-os continuity QA. What you type never leaves this page; it only shows how many characters arrived.</p>
+<p class="note">Focus starts in the first box and moves to the second after <code>?ms=</code> milliseconds (default 1500, at most 10000).</p>
+<form role="search">
+<label for="first">First search box</label>
+<input id="first" type="search" autofocus autocomplete="off" placeholder="First search box" data-field="first">
+<output data-echo="first"></output>
+<label for="second">Second search box</label>
+<input id="second" type="search" autocomplete="off" placeholder="Second search box" data-field="second">
+<output data-echo="second"></output>
+</form>
+<output data-echo-page></output>
+</main>
+</body>
+</html>

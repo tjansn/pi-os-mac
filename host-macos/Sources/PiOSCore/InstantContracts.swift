@@ -18,9 +18,131 @@ public enum InstantLimits {
 
 /// Decision kinds this host understands beyond today's (`InstantRequest.accept`, INSTANT_ACCEPTS).
 /// `suggest`: did-you-mean cards and pick learning. `check`: "Did I hear that right?" for
-/// `low_confidence`. `confirm`: one-Return confirms for voice uncertainty. Without them Node answers
-/// with today's vocabulary.
-public enum InstantAccept: String, Codable, CaseIterable, Sendable { case suggest, check, confirm }
+/// `low_confidence`. `confirm`: one-Return confirms for voice uncertainty. `fill`: continuity fills into the
+/// bound focused field (`act` intent `fill`, `voice.fill` offers); declare it only while Settings' fill switch
+/// is on and computer control is ready. Without them Node answers with today's vocabulary.
+public enum InstantAccept: String, Codable, CaseIterable, Sendable { case suggest, check, confirm, fill }
+
+// MARK: - Continuity target (DESIGN5 §8.1 with TOM-ANSWERS; INSTANT_APP_CLASSES / INSTANT_FIELD_KINDS in instant.ts)
+
+/// Host class of the take's pinned app. Closed: an unknown value is a decoding error, as in Node.
+public enum InstantAppClass: String, Codable, CaseIterable, Sendable { case browser, finder, terminal, other }
+
+/// Kind of the bound focused control (DESIGN5 §5.2). A control the host cannot type into is no field at all.
+public enum InstantFieldKind: String, Codable, CaseIterable, Sendable {
+    case search, address, text, multiline, terminal, sensitive, credential, confirm, rename
+
+    /// How a fill may reach this kind (TOM-ANSWERS 1, D6; FILL_* in instant.ts).
+    public enum Fill: Sendable { case implicit, explicitOnly, optIn, never }
+    /// `implicit` ("everything except commands", while `ready`); `explicitOnly` ("tippe …", or the check
+    /// card's ↩ via `voice.fill`); `optIn` (explicit and only with the Settings credential opt-in);
+    /// `never` (not even explicitly).
+    public var fill: Fill {
+        switch self {
+        case .search, .address, .text, .multiline: .implicit
+        case .terminal: .explicitOnly
+        case .sensitive, .credential: .optIn
+        case .confirm, .rename: .never
+        }
+    }
+
+    /// May a fill into this kind carry `submit` (fillSubmitAllowed in instant.ts)? Auto only into `search` and
+    /// `address` (TOM-ANSWERS 2); an explicit submit also into a single-line `text` field; never otherwise
+    /// (documents and chats never get a Return: TOM-ANSWERS 1).
+    public func submitAllowed(explicit: Bool) -> Bool {
+        switch self {
+        case .search, .address: true
+        case .text: explicit
+        case .multiline, .terminal, .sensitive, .credential, .confirm, .rename: false
+        }
+    }
+}
+
+/// `InstantRequest.target`: content-free facts about the take's pinned target at the final (never a bundle id,
+/// name, title, URL, label, value or length). macOS only; the Windows host never sends it. Strict like Node's
+/// parseInstantTarget: closed vocabularies, `ready` required, a TAKE_ID-shaped `takeId`, no `empty` for a
+/// credential field; unknown keys are dropped and null is absent.
+public struct InstantTarget: Codable, Equatable, Sendable {
+    /// pi-os's own open put the pinned app in front and nothing else was activated since (≤ 120 s).
+    public struct Anchor: Codable, Equatable, Sendable {
+        /// The instant take that opened it; nil for agent opens.
+        public var takeId: String?
+        /// Still launching or not yet settled. Sent only when true.
+        public var settling: Bool
+
+        public init(takeId: String? = nil, settling: Bool = false) { self.takeId = takeId; self.settling = settling }
+
+        private enum Keys: String, CodingKey { case takeId, settling }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: Keys.self)
+            takeId = try c.decodeIfPresent(String.self, forKey: .takeId)
+            settling = try c.decodeIfPresent(Bool.self, forKey: .settling) ?? false
+            if let takeId, !AttachmentValidation.isContextId(takeId) {
+                throw DecodingError.dataCorruptedError(forKey: .takeId, in: c, debugDescription: "invalid takeId")
+            }
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: Keys.self)
+            try c.encodeIfPresent(takeId, forKey: .takeId)
+            if settling { try c.encode(true, forKey: .settling) }
+        }
+    }
+
+    /// The bound focused control at the final.
+    public struct Field: Codable, Equatable, Sendable {
+        public var kind: InstantFieldKind
+        /// No characters and no selection. Always nil for `credential` (a length would reveal a password's):
+        /// the initializer drops it and the encoder never emits it.
+        public var empty: Bool?
+        /// Visible and loaded (no web area, or a loaded top-level one; never a nested frame).
+        public var ready: Bool
+        /// Still holds exactly pi-os's last fill. Sent only when true.
+        public var ownFill: Bool
+
+        public init(kind: InstantFieldKind, empty: Bool? = nil, ready: Bool, ownFill: Bool = false) {
+            self.kind = kind; self.empty = kind == .credential ? nil : empty; self.ready = ready; self.ownFill = ownFill
+        }
+
+        private enum Keys: String, CodingKey { case kind, empty, ready, ownFill }
+
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: Keys.self)
+            kind = try c.decode(InstantFieldKind.self, forKey: .kind)
+            empty = try c.decodeIfPresent(Bool.self, forKey: .empty)
+            ready = try c.decode(Bool.self, forKey: .ready)
+            ownFill = try c.decodeIfPresent(Bool.self, forKey: .ownFill) ?? false
+            if kind == .credential, empty != nil {
+                throw DecodingError.dataCorruptedError(forKey: .empty, in: c, debugDescription: "no empty for a credential field")
+            }
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: Keys.self)
+            try c.encode(kind, forKey: .kind)
+            if kind != .credential { try c.encodeIfPresent(empty, forKey: .empty) }
+            try c.encode(ready, forKey: .ready)
+            if ownFill { try c.encode(true, forKey: .ownFill) }
+        }
+    }
+
+    public var app: InstantAppClass
+    public var anchor: Anchor?
+    public var field: Field?
+
+    public init(app: InstantAppClass, anchor: Anchor? = nil, field: Field? = nil) {
+        self.app = app; self.anchor = anchor; self.field = field
+    }
+}
+
+/// `context.target` on POST /invoke and follow-ups (ContextTarget in context.ts): the bound field's kind and
+/// whether pi-os's own open put the app in front. Content-free, one prompt sentence at most, no authority.
+public struct ContextTarget: Codable, Equatable, Sendable {
+    public var field: InstantFieldKind?
+    public var anchored: Bool?
+    public init(field: InstantFieldKind? = nil, anchored: Bool? = nil) { self.field = field; self.anchored = anchored }
+}
 
 public struct InstantRequest: Codable, Equatable {
     public var text: String
@@ -37,16 +159,18 @@ public struct InstantRequest: Codable, Equatable {
     public var hypotheses: [VoiceHypothesis]?
     /// Nil keeps today's decision vocabulary.
     public var accept: [InstantAccept]?
+    /// Finals only (typed and voice): the pinned target's content-free facts. Nil keeps today's request.
+    public var target: InstantTarget?
     public init(text: String, phase: InstantPhase, seq: Int, takeId: String? = nil, contextId: String? = nil,
                 locale: String? = nil, inputMode: String? = nil, silenceMs: Int? = nil,
-                hypotheses: [VoiceHypothesis]? = nil, accept: [InstantAccept]? = nil) {
+                hypotheses: [VoiceHypothesis]? = nil, accept: [InstantAccept]? = nil, target: InstantTarget? = nil) {
         self.text = text; self.phase = phase; self.seq = seq; self.takeId = takeId
         self.contextId = contextId; self.locale = locale; self.inputMode = inputMode; self.silenceMs = silenceMs
-        self.hypotheses = hypotheses; self.accept = accept
+        self.hypotheses = hypotheses; self.accept = accept; self.target = target
     }
 
     private enum CodingKeys: String, CodingKey {
-        case text, phase, seq, takeId, contextId, locale, inputMode, silenceMs, hypotheses, accept
+        case text, phase, seq, takeId, contextId, locale, inputMode, silenceMs, hypotheses, accept, target
     }
 
     /// The same rules as parseInstantRequest (Node answers 400 otherwise). Unknown `accept` words are dropped.
@@ -63,6 +187,7 @@ public struct InstantRequest: Codable, Equatable {
         let silence = try c.decodeIfPresent(Double.self, forKey: .silenceMs)
         hypotheses = try c.decodeIfPresent([VoiceHypothesis].self, forKey: .hypotheses)
         let words = try c.decodeIfPresent([String].self, forKey: .accept)
+        target = try c.decodeIfPresent(InstantTarget.self, forKey: .target)
         guard text.utf16.count <= InstantLimits.maxText else { throw reject(.text, "text too long") }
         guard (0...9_007_199_254_740_991).contains(seq) else { throw reject(.seq, "seq must be a non-negative safe integer") }
         if let takeId, !AttachmentValidation.isContextId(takeId) { throw reject(.takeId, "invalid takeId") }
@@ -103,7 +228,13 @@ public struct InstantRequest: Codable, Equatable {
 
 /// How a voice decision was reached (VOICE_VIAS). Receivers drop an unknown value. `visible`: a visible item of
 /// the take's target context decided (intent `open_item`); it never offers "Not this" and nothing is learned from it.
-public enum VoiceVia: String, Codable, CaseIterable, Sendable { case exact, alias, learned, sound, peer, secondary, url, visible }
+/// `field`: a fill into the bound focused field (intent `fill`); no "Not this" (a bare "nein/no" within 5 s undoes
+/// the typing instead) and nothing is learned from it.
+public enum VoiceVia: String, Codable, CaseIterable, Sendable { case exact, alias, learned, sound, peer, secondary, url, visible, field }
+
+/// `voice.fill` (VOICE_FILLS). Receivers drop an unknown value. `offer`: on the check card (`isCheck`), ↩ types the
+/// (possibly edited) card text into the bound field, never with Return, instead of resending it; ⌥↩ asks pi.
+public enum VoiceFill: String, Codable, CaseIterable, Sendable { case offer }
 
 /// Optional `voice` on `act`, `list` and `fallthrough` (VoiceMeta in contracts/instant.ts): display
 /// and learning hints only, never authority. A malformed meta is dropped, never fatal.
@@ -120,16 +251,18 @@ public struct VoiceMeta: Codable, Equatable, Sendable {
     public var learnedEntryId: String?
     /// "No, I meant X": the earlier take this corrects → `/dictionary/learn` `no_i_meant` for that take.
     public var correctsTakeId: String?
+    /// With `check` only (a host that declared `accept: [.fill]`): the check card's ↩ types into the bound field.
+    public var fill: VoiceFill?
 
     public init(heard: String? = nil, source: String? = nil, via: VoiceVia? = nil, didYouMean: Bool? = nil, check: Bool? = nil,
-                learnedEntryId: String? = nil, correctsTakeId: String? = nil) {
+                learnedEntryId: String? = nil, correctsTakeId: String? = nil, fill: VoiceFill? = nil) {
         self.heard = heard; self.source = source; self.via = via; self.didYouMean = didYouMean; self.check = check
-        self.learnedEntryId = learnedEntryId; self.correctsTakeId = correctsTakeId
+        self.learnedEntryId = learnedEntryId; self.correctsTakeId = correctsTakeId; self.fill = fill
     }
 
-    private enum Keys: String, CodingKey { case heard, source, via, didYouMean, check, learnedEntryId, correctsTakeId }
+    private enum Keys: String, CodingKey { case heard, source, via, didYouMean, check, learnedEntryId, correctsTakeId, fill }
 
-    /// The same rules as parseVoiceMeta: an unknown `via` is dropped on its own; anything else malformed throws.
+    /// The same rules as parseVoiceMeta: an unknown `via` or `fill` is dropped on its own; anything else malformed throws.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         heard = try c.decodeIfPresent(String.self, forKey: .heard)
@@ -139,6 +272,7 @@ public struct VoiceMeta: Codable, Equatable, Sendable {
         check = try c.decodeIfPresent(Bool.self, forKey: .check)
         learnedEntryId = try c.decodeIfPresent(String.self, forKey: .learnedEntryId)
         correctsTakeId = try c.decodeIfPresent(String.self, forKey: .correctsTakeId)
+        fill = try c.decodeIfPresent(String.self, forKey: .fill).flatMap(VoiceFill.init(rawValue:))
         if let heard, !VoiceText.isValid(heard, max: InstantLimits.maxHeardChars) {
             throw DecodingError.dataCorruptedError(forKey: .heard, in: c, debugDescription: "invalid heard")
         }
@@ -160,6 +294,7 @@ public struct VoiceMeta: Codable, Equatable, Sendable {
         try c.encodeIfPresent(check, forKey: .check)
         try c.encodeIfPresent(learnedEntryId, forKey: .learnedEntryId)
         try c.encodeIfPresent(correctsTakeId, forKey: .correctsTakeId)
+        try c.encodeIfPresent(fill, forKey: .fill)
     }
 }
 
@@ -223,6 +358,17 @@ public struct InstantResponse: Decodable, Equatable {
             let action = try c.decode(HostAction.self, forKey: .action)
             let confirm = try c.decode(Bool.self, forKey: .confirm)
             let card = try c.decodeIfPresent(CardSpec.self, forKey: .card)
+            // Continuity (fillActConsistent in instant.ts): a fill types one line (a CR/LF would be a Return of its
+            // own, a Tab would move focus), and only a fill may submit.
+            switch action {
+            case .typeIntoPinned(_, let submit) where submit && intent != "fill":
+                throw DecodingError.dataCorruptedError(forKey: .action, in: c, debugDescription: "submit outside a fill")
+            case .typeIntoPinned(let text, _) where intent == "fill" && AttachmentValidation.hasControl(text):
+                throw DecodingError.dataCorruptedError(forKey: .action, in: c, debugDescription: "a fill types one line")
+            case .typeIntoPinned: break
+            default:
+                if intent == "fill" { throw DecodingError.dataCorruptedError(forKey: .action, in: c, debugDescription: "a fill must type") }
+            }
             decision = .act(intent: intent, title: title, action: action, confirm: confirm, card: card)
         case "refuse":
             let code = try c.decode(String.self, forKey: .code)
@@ -251,6 +397,15 @@ public struct InstantResponse: Decodable, Equatable {
         guard case .handOff(let reason, _) = decision else { return false }
         return reason == "low_confidence" && voice?.check == true
     }
+
+    /// A continuity fill: `act` intent `fill` with `typeIntoPinned` (sent only when the host accepts `fill`).
+    public var isFill: Bool {
+        guard case .act("fill", _, .typeIntoPinned, _, _) = decision else { return false }
+        return true
+    }
+
+    /// The check card's ↩ types into the bound field: `isCheck` plus `voice.fill: "offer"`. Ignored on anything else.
+    public var offersFill: Bool { isCheck && voice?.fill == .offer }
 
     /// The card to display for this response, if any.
     public var card: CardSpec? {

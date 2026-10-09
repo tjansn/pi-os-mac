@@ -99,6 +99,16 @@ import PiOSCore
     private var failure: String?
     private var shutdownPending = false
     private let perf = ProcessInfo.processInfo.environment["PI_OS_PERF"] == "1"
+    /// Continuity (DESIGN5 §3): the current take's state against the anchor ("pi-os just opened X").
+    private var takeContinuity: ContinuityTake?
+    /// The field facts of every live context (DESIGN5 §5.1).
+    private let fieldFacts = FieldFacts()
+    /// §3.5: watches for the launching app while a racing take is held; its re-pin, while one runs.
+    private var raceTask: Task<Void, Never>?
+    private var repin: Task<Void, Never>?
+    /// §3.3: the settle poll of the anchor (one at a time).
+    private var settleTask: Task<Void, Never>?
+    private var settleSerial: Int?
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
         signal(SIGPIPE, SIG_IGN)
@@ -112,6 +122,22 @@ import PiOSCore
             voiceSettings.migrateLanguages()
             let configuration = config!
             launcher = LauncherHost.standard()
+            // Links open in the browser the take pinned (DESIGN5 §4.1): its bundle id and pid from the context registry.
+            launcher.service.pinnedApp = { [weak self] contextId in await self?.pinnedApp(contextId: contextId) }
+            // Continuity (DESIGN5 §3): the take that opened something, explicit choices that beat it, its settle poll.
+            launcher.service.currentTakeId = { [weak self] in self?.controller?.take?.takeId }
+            launcher.service.explicitTarget = { [weak self] contextId in self?.explicitTarget(contextId: contextId) ?? false }
+            launcher.service.anchors.onChange = { [weak self] anchor in self?.settle(anchor) }
+            // The bound field's kind decides a fill's Return (LauncherPolicy.pressesReturn), never Node's word alone.
+            launcher.service.boundFieldKind = { [weak self] contextId in self?.fieldFacts.bound(contextId: contextId)?.kind }
+            if SafariAddressRoute.enabled() {
+                launcher.service.sameTab = { [weak self] url, browser, contextId, anchor in
+                    await self?.safariSameTab(url, browser: browser, contextId: contextId, anchor: anchor) ?? .declined
+                }
+                launcher.service.onLinkNotLoaded = { [weak self] name, retry in
+                    self?.hint("\(name) didn't load it", symbol: "exclamationmark.circle", action: ("Open in a new tab", { retry() }))
+                }
+            }
             let effects = self.effects
             desktop = DesktopService(captures: config.captures, token: config.token,
                 controlEnabled: { configuration.canControl }, traceFile: config.support.appendingPathComponent("logs/host-actions.jsonl"),
@@ -129,6 +155,15 @@ import PiOSCore
             // deletion and budget gates as the agent's typing.
             launcher.service.typeIntoPinned = { contextId, text in
                 _ = try await service.act(.typeText, arguments: InputArguments(contextId: contextId, text: text))
+            }
+            // A fill's Return (DESIGN5 §5.7): its own gated key press after the text, only while the bound field still
+            // has focus; the native gates check identity, the exact window and the destructive control on Enter again.
+            let facts = fieldFacts
+            launcher.service.pressReturnInPinned = { contextId in
+                guard await facts.stillFocused(contextId: contextId) else {
+                    throw DomainError("focus_failed", "The field pi-os typed into no longer has focus; Return was not pressed")
+                }
+                _ = try await service.act(.pressKey, arguments: InputArguments(contextId: contextId, key: "enter"))
             }
             let launcherLog = config.support.appendingPathComponent("logs/launcher-actions.jsonl")
             launcher.service.trace = { event in Self.appendTrace(event, to: launcherLog) }
@@ -177,6 +212,7 @@ import PiOSCore
             controller.terms = recognizerTerms
             controller.journal = journal
             controller.timingLog = timingLog
+            controller.fills = FillSession(input: service)
             controller.voiceTakeFinished = { [weak self] in self?.retryDeferredSpeechModels() }
             let voiceSystem = voiceSystem
             let hint = VoiceOffHint { !voiceSettings.enabled && voiceSystem.engineAvailable }
@@ -468,12 +504,22 @@ import PiOSCore
         let frontApp = NSWorkspace.shared.frontmostApplication
         let frontPID = frontApp?.processIdentifier
         var snapshot = DesktopIdentity.pin()
-        DesktopAX.enrichBeforePanel(&snapshot)
+        let keyDownField = DesktopAX.enrichBeforePanel(&snapshot)
         let settings = ContextSettings()
         let selectionTarget = settings.includeSelection ? SelectionTarget.frontmost() : nil
         let target = snapshot.targetWindow
         let targetApp = target.flatMap { NSRunningApplication(processIdentifier: $0.processId) }
         let isBrave = targetApp?.bundleIdentifier == BrowserPolicy.bundleID
+        let takeId = "take-" + UUID().uuidString
+        // Continuity (DESIGN5 §3.1, §3.4, §3.5): the app in front is pinned as always. Memory reads only, plus one CG
+        // window list when the anchored app is in front with a window other than the pinned one.
+        let continuity = launcher.service.anchors.keyDown(pid: target?.processId ?? frontPID,
+                                                          bundleId: targetApp?.bundleIdentifier ?? frontApp?.bundleIdentifier) { window in
+            window == target?.windowID || DesktopIdentity.windows().contains { ($0[kCGWindowNumber as String] as? UInt32) == window }
+        }
+        takeContinuity = ContinuityTake(takeId: takeId, state: continuity)
+        fieldFacts.began(contextId: snapshot.id, target: target, bundleId: targetApp?.bundleIdentifier,
+                         keyDown: keyDownField.map { LiveAXNode($0.element, budget: DesktopAX.Budget(0)) })
         // The hint is cheap (settings only); the AX tab pin itself runs after the panel.
         var shown = snapshot
         if isBrave { shown.browser = BrowserPin.hint(access: BrowserPin.access, background: BrowserPin.backgroundActions) }
@@ -481,11 +527,15 @@ import PiOSCore
         context = snapshot.id; takeSnapshot = snapshot
         workDismissed = false; nativeInputStarted = false; latestResultID = nil; pulled = false
         let appName = target?.processName ?? frontApp?.localizedName ?? "Desktop"
-        let takeId = "take-" + UUID().uuidString
         let strings = [target?.processName ?? appName, target?.title ?? ""]
         let chip = ContextChipController(
             choice: ContextChoice(available: target != nil, setting: settings.activeWindow),
             appName: target?.processName ?? appName, bundleId: targetApp?.bundleIdentifier, scorer: scorer)
+        switch continuity {
+        case .anchored: chip.setProvenance(.anchored)
+        case .awaiting(let anchor): chip.setProvenance(.opening(appName: Self.appName(anchor), bundleId: anchor.bundleId))
+        case .none: break
+        }
         chip.surface = panel
         chip.suppressSuggestions = { [weak self] in self?.shelfTakesTheReference == true }
         self.chip = chip
@@ -512,6 +562,8 @@ import PiOSCore
         // few ms), then the context is registered with the host. Everything that names the context waits.
         let inserted = Task { @MainActor [weak self] in
             if self?.context == id { self?.panel.flushToScreen() }
+            // After the panel's first frame: the field classification, off the main thread (≤ 10 ms).
+            if self?.context == id { self?.fieldFacts.classify(contextId: id) }
             var pinned = snapshot
             let pinStart = DispatchTime.now().uptimeNanoseconds
             let browserPin = isBrave ? BrowserPin.capture(&pinned) : nil
@@ -544,6 +596,7 @@ import PiOSCore
         chip.onStartCapture = { [weak prepared] in prepared?.startCapture() }
         preparation = prepared; preparedTake = takeId
         chip.start()
+        if case .awaiting(let anchor) = continuity { watchRace(takeId: takeId, anchor: anchor) }
         // The pi hotkey with a live selection: a visible, removable chip (Accessibility only; never the
         // clipboard on this path). Read after the panel: selections survive the app losing key.
         if let selectionTarget {
@@ -568,7 +621,7 @@ import PiOSCore
     // MARK: Context chip, shelf and attention
 
     private func toggleContext(followup: Bool) {
-        if followup { followupChip?.toggle() } else { controller.toggleContext() }
+        if followup { followupChip?.toggle() } else { controller.toggleContext(); choseExplicitly() }
         panel.announceContextChange()
     }
     private func shelfChanged() {
@@ -670,6 +723,11 @@ import PiOSCore
     /// The take may end while a pin is being registered: its result is then dropped (and its pin removed).
     private func isCurrent(_ takeId: String) -> Bool { controller.take?.takeId == takeId && invocation == nil }
     private func attach(_ outcome: AttentionController.Outcome, takeId: String) async {
+        // A tether or pointing is an explicit target choice: continuity is ignored for this take (DESIGN5 §3.6).
+        switch outcome {
+        case .window, .element: if isCurrent(takeId) { choseExplicitly() }
+        case .missed: break
+        }
         switch outcome {
         case .window(let snapshot):
             await retarget(snapshot, takeId: takeId)
@@ -709,6 +767,10 @@ import PiOSCore
         takeBrowserPinned = Self.browserRouteOnly(pinned.browser)
         controller.retarget(contextId: pinned.id)
         let pinnedApp = pinned.targetWindow.flatMap { NSRunningApplication(processIdentifier: $0.processId)?.bundleIdentifier }
+        // Field facts are read again for the new target (DESIGN5 §3.6): the app's own focused element, after the panel.
+        fieldFacts.began(contextId: pinned.id, target: pinned.targetWindow, bundleId: pinnedApp, keyDown: nil)
+        fieldFacts.classify(contextId: pinned.id)
+        if let old, old != pinned.id { fieldFacts.drop(contextId: old) }
         launcher.visible?.prefetch(contextId: pinned.id, target: VisibleTarget.classify(pinned.targetWindow, bundleId: pinnedApp))
         if let old, old != pinned.id {
             launcher.service.revokeTokens(contextId: old)
@@ -721,6 +783,8 @@ import PiOSCore
         let app = pinned.targetWindow.flatMap { NSRunningApplication(processIdentifier: $0.processId) }
         chip?.retarget(appName: pinned.targetWindow?.processName ?? app?.localizedName ?? "Application", bundleId: app?.bundleIdentifier,
                        include: include)
+        // Only the race re-pin itself; a later explicit retarget (tether, pointing) is the user's window, not pi-os's open.
+        if takeContinuity?.repinned == true, takeContinuity?.explicitChoice == false { chip?.setProvenance(.anchored) }
         panel.announceContextChange()
         // The prepared session was built for the old context; build one for this one (best effort).
         Task { await harness.prepare(contextId: pinned.id, takeId: take.takeId) }
@@ -1053,9 +1117,22 @@ import PiOSCore
         preparedTake = nil
         if let harness { Task { await harness.cancelPrepared(takeId: takeId) } }
     }
+    /// The app a context pinned, for routing a link: the take's own pin without a hop, else the host's registry (an
+    /// earlier or pointed-at pin, revalidated there). Bundle id and pid only; nil when it has no window or app.
+    private func pinnedApp(contextId: String) async -> AppInstance? {
+        let snapshot: Snapshot?
+        if let take = takeSnapshot, take.id == contextId { snapshot = take }
+        else { snapshot = try? await desktop?.snapshot(contextId) }
+        guard let pid = snapshot?.targetWindow?.processId,
+              let bundleId = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier else { return nil }
+        return AppInstance(bundleId: bundleId, pid: pid)
+    }
     private func discardContext() {
         let oldContext = context, oldThread = thread, reservation = invocationReservation, extra = extraContexts
         context = nil; thread = nil; invocationReservation = nil; extraContexts = []; takeSnapshot = nil
+        // Continuity is per take; the anchor itself lives on (it is the launcher's, ≤ 120 s).
+        raceTask?.cancel(); raceTask = nil; repin?.cancel(); repin = nil; takeContinuity = nil
+        if let oldContext { fieldFacts.drop(contextId: oldContext) }
         attentionTask?.cancel(); attentionTask = nil
         threadScope = nil; threadApp = nil
         followupScore?.cancel(); followupScore = nil; followupChip?.end(); followupChip = nil
@@ -1079,12 +1156,16 @@ import PiOSCore
     /// Kind, outcome and duration only: never a path, URL, app name, token or text.
     private static func appendTrace(_ event: LauncherTraceEvent, to file: URL) {
         if ProcessInfo.processInfo.environment["PI_OS_PERF"] == "1" {
-            print("[launcher] route=\(event.route) action=\(event.action) performed=\(event.performed ?? "-") outcome=\(event.outcome) ms=\(event.durationMs)")
+            print("[launcher] route=\(event.route) action=\(event.action) performed=\(event.performed ?? "-") outcome=\(event.outcome) browser=\(event.browser ?? "-") submit=\(event.submit ?? "-") ms=\(event.durationMs)")
             fflush(stdout)
         }
         var row: [String: Any] = ["at": ISO8601DateFormatter().string(from: Date()), "route": event.route, "action": event.action,
                                   "outcome": event.outcome, "durationMs": event.durationMs]
         if let performed = event.performed { row["performed"] = performed }
+        // Closed vocabulary (launching | pinned | default | fallback): which browser route a link took, never which page.
+        if let browser = event.browser { row["browser"] = browser }
+        // Closed vocabulary (pressed | skipped | refused): a fill's Return, never the text.
+        if let submit = event.submit { row["submit"] = submit }
         guard var bytes = try? JSONSerialization.data(withJSONObject: row) else { return }
         bytes.append(10)
         let fm = FileManager.default
@@ -1131,6 +1212,8 @@ import PiOSCore
         controller.onPermissions = { [weak self] in self?.permissions() }
         controller.onControlDisabled = { [weak self] in
             guard let self else { return }
+            // Policy C4: continuity ends with computer control.
+            self.launcher.service.anchors.invalidate(); self.launcher.service.launches.invalidate()
             if self.invocation != nil || self.panel.mode == .prompt || self.thread != nil { self.cancel() }
         }
         settingsWindow = controller; controller.show(page); controller.present()
@@ -1188,6 +1271,225 @@ import PiOSCore
             NSApp.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
+    }
+}
+
+// MARK: - Continuity (DESIGN5 §3, §5.1): the anchor, the launch race, the final's target and the bound field
+
+extension Application {
+    /// `InstantRequest.target` for the take's final (DESIGN5 §8.1), content-free. Called by the command flow right before
+    /// it builds a final `/instant` request. A take racing a pi-os launch (§3.5) may be re-pinned to the launching app
+    /// during a wait of at most 150 ms here (`CommandController.retarget(contextId:)` runs then), so the caller reads the
+    /// take's contextId again after this returns. After this call no re-pin happens for the take. `field` is the bound
+    /// field (`boundField(contextId:)`) re-read now; while the host cannot type there (computer control off, a
+    /// DevTools-pinned Brave) or the take is still pinned to the previous app during a launch, it is left out unless it is
+    /// a credential or code field (`reportedField`). A racing take's field is never bound (§5.3: nothing is typed there).
+    /// nil without a pinned window or for a context that is not the current take's.
+    public func instantTarget(contextId: String) async -> InstantTarget? {
+        guard contextId == context else { return nil }
+        await finishRace()
+        takeContinuity?.startFinal()
+        guard let current = context, let snapshot = takeSnapshot, snapshot.id == current, let window = snapshot.targetWindow else { return nil }
+        let bundleId = NSRunningApplication(processIdentifier: window.processId)?.bundleIdentifier
+        let anchor = explicitTarget(contextId: current) ? nil
+            : takeContinuity?.wireAnchor(pinnedPid: window.processId, pinnedBundleId: bundleId, live: launcher.service.anchors.current)
+        // A take racing a pi-os launch (still pinned to the previous app) reads its field too: a password or code field
+        // there is reported (masked card, no journal, no classifiers) but never bound, so nothing is typed into it.
+        let racing = takeContinuity?.fieldAllowed == false
+        let read = await fieldFacts.final(contextId: current)
+        guard context == current else { return nil }
+        let report = Self.finalField(read, canType: Self.canType(control: config.canControl, browserPinned: takeBrowserPinned), racing: racing)
+        if !report.bound { fieldFacts.unbind(contextId: current) }
+        return InstantTarget(app: FieldClassifier.appClass(bundleId: bundleId), anchor: anchor, field: report.field)
+    }
+
+    /// What a final reports of the field it read, and whether that field stays bound (typing may go there): a take racing
+    /// a pi-os launch reports only a credential or code field and binds nothing (DESIGN5 §5.3 veto); otherwise
+    /// `reportedField` decides and the field stays bound.
+    nonisolated static func finalField(_ field: InstantTarget.Field?, canType: Bool, racing: Bool) -> (field: InstantTarget.Field?, bound: Bool) {
+        (reportedField(field, canType: canType && !racing), !racing)
+    }
+
+    /// The field a take reports: any kind while the host can type there; otherwise (computer control off, a DevTools-pinned
+    /// Brave) only a credential or code field. Its words may be the secret, so the masked card, the journal skip and Node's
+    /// no-classifier rule hold in read-only mode too (DESIGN5 §5.8, critic C5, TOM-ANSWERS 5); the host declares no fill
+    /// then, so Node decides as today otherwise.
+    nonisolated static func reportedField(_ field: InstantTarget.Field?, canType: Bool) -> InstantTarget.Field? {
+        guard let field, canType || FillSession.secret(field.kind) else { return nil }
+        return field
+    }
+
+    /// The field the last `instantTarget` bound for this context (the element typing must still find focused, critic
+    /// C2/C3), or nil. A value: keep your own copy for Undo, because the facts are dropped with the context at the next
+    /// key-down (C10).
+    public func boundField(contextId: String) -> BoundField? { fieldFacts.bound(contextId: contextId) }
+
+    /// The background classification of the take's focused control (the caption, DESIGN5 §3.7), before the final. Without
+    /// typing (read-only, a DevTools-pinned Brave, a take racing a launch) only a credential or code field (`reportedField`).
+    public func fieldPreview(contextId: String) async -> InstantTarget.Field? {
+        guard contextId == context else { return nil }
+        let racing = takeContinuity?.fieldAllowed == false
+        let preview = await fieldFacts.preview(contextId: contextId)
+        guard contextId == context else { return nil }
+        return Self.finalField(preview, canType: Self.canType(control: config.canControl, browserPinned: takeBrowserPinned), racing: racing).field
+    }
+
+    /// "Not this" or "No, I meant X" on the take that opened something: it is no longer "what you just opened" (§3.4).
+    public func continuityRejected(takeId: String) {
+        launcher.service.anchors.rejected(takeId: takeId)
+        launcher.service.launches.rejected(takeId: takeId)
+    }
+
+    /// The current take chose its target explicitly (Tab, ⇧ chord, menu, tether, pointing): continuity is ignored for
+    /// it (§3.6), including a launch pi-os started for its links.
+    func explicitTarget(contextId: String) -> Bool {
+        guard contextId == context else { return false }
+        syncExplicitChoice()
+        return takeContinuity?.explicitChoice == true
+    }
+    /// Tab and tether report here; the ⇧ chord and "Ask About This Window…" choose on the chip directly.
+    func choseExplicitly() {
+        guard takeContinuity?.explicitChoice == false else { return }
+        takeContinuity?.choseExplicitly()
+        if case .opening = chip?.provenance { chip?.setProvenance(.none) }
+        if chip?.provenance == .anchored { chip?.setProvenance(.none) }
+    }
+    private func syncExplicitChoice() {
+        if chip?.choice.userChoice != nil { choseExplicitly() }
+    }
+
+    /// §3.5 step 2: while the take is held, re-pin it to the app pi-os is launching once that app is in front with a
+    /// window. Never after an explicit choice, never after the final started, never toward a background app.
+    func watchRace(takeId: String, anchor: ContinuityAnchor) {
+        raceTask?.cancel()
+        raceTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                guard let self, self.takeContinuity?.takeId == takeId, self.controller.take?.takeId == takeId, self.invocation == nil else { return }
+                self.syncExplicitChoice()
+                guard let take = self.takeContinuity, take.mayRepin else {
+                    if self.takeContinuity?.repinned != true, case .opening = self.chip?.provenance { self.chip?.setProvenance(.none) }
+                    return
+                }
+                guard let live = self.launcher.service.anchors.current, live.serial == anchor.serial else {
+                    // The launch failed, the user put another app in front, or the anchor ended: the take stays.
+                    if case .opening = self.chip?.provenance { self.chip?.setProvenance(.none) }
+                    return
+                }
+                if await self.repinToAnchor(takeId: takeId, anchor: live) { return }
+                try? await Task.sleep(nanoseconds: UInt64(ContinuityTracker.settlePoll * 1_000_000_000))
+            }
+        }
+    }
+    /// §3.5 step 3: at the final a racing take waits at most 150 ms for the launching app, then proceeds where it is.
+    private func finishRace() async {
+        syncExplicitChoice()
+        if let take = takeContinuity, take.mayRepin, case .awaiting(let anchor) = take.state {
+            let anchors = launcher.service.anchors, deadline = anchors.now + ContinuityTracker.finalWait
+            while anchors.now < deadline, let live = anchors.current, live.serial == anchor.serial,
+                  takeContinuity?.mayRepin == true {
+                if await repinToAnchor(takeId: take.takeId, anchor: live) { break }
+                try? await Task.sleep(nanoseconds: UInt64(ContinuityTracker.settlePoll * 1_000_000_000))
+            }
+        }
+        if let repin { await repin.value }
+        raceTask?.cancel(); raceTask = nil
+        // No re-pin before the final: the take stays with the app in front, and the chip must name what the agent sees
+        // (DESIGN5 §3.7), not "Safari (opening…)". The cancelled watcher does not reset it on its way out.
+        if takeContinuity?.repinned != true, case .opening = chip?.provenance { chip?.setProvenance(.none) }
+    }
+    /// The launching app is frontmost with its first on-screen window: the take re-pins there (`retarget`, include:
+    /// false, so the chip is not a choice; the fingerprint, Brave pin and visible-items prefetch run again).
+    private func repinToAnchor(takeId: String, anchor: ContinuityAnchor) async -> Bool {
+        guard let front = NSWorkspace.shared.frontmostApplication,
+              anchor.isApp(pid: front.processIdentifier, bundleId: front.bundleIdentifier) else { return false }
+        let snapshot = DesktopIdentity.pin()
+        guard let window = snapshot.targetWindow, window.processId == front.processIdentifier,
+              var take = takeContinuity, take.takeId == takeId, take.mayRepin else { return false }
+        take.repinned(to: anchor); takeContinuity = take
+        let work = Task { @MainActor [weak self] () -> Void in
+            guard let self else { return }
+            await self.retarget(snapshot, takeId: takeId, include: false)
+        }
+        repin = work
+        await work.value
+        if repin == work { repin = nil }
+        return true
+    }
+
+    /// §3.3: the anchor settles once the front app, its first on-screen window and the app's focused window agree.
+    /// Polled every 25 ms for at most 1.5 s (a running app) or 4 s (a cold launch); the app's activation starts it again.
+    /// The first AX message to a just-launched app (8–25 ms) is paid here, off the hot path.
+    func settle(_ anchor: ContinuityAnchor) {
+        guard !anchor.settled, settleSerial != anchor.serial else { return }
+        settleTask?.cancel()
+        settleSerial = anchor.serial
+        let running = !NSRunningApplication.runningApplications(withBundleIdentifier: anchor.bundleId).isEmpty
+        let cap = running ? ContinuityTracker.settleCapWarm : ContinuityTracker.settleCapCold
+        let anchors = launcher.service.anchors
+        settleTask = Task { @MainActor [weak self] in
+            let deadline = anchors.now + cap
+            while !Task.isCancelled, anchors.now <= deadline {
+                guard let live = anchors.current, live.serial == anchor.serial, !live.settled else { break }
+                if let settled = await Self.settledWindow(live) {
+                    anchors.settled(live.serial, windowId: settled.windowId, startPage: settled.startPage)
+                    break
+                }
+                try? await Task.sleep(nanoseconds: UInt64(ContinuityTracker.settlePoll * 1_000_000_000))
+            }
+            if self?.settleSerial == anchor.serial { self?.settleSerial = nil }
+        }
+    }
+    private static func settledWindow(_ anchor: ContinuityAnchor) async -> (windowId: UInt32, startPage: Bool)? {
+        guard let front = NSWorkspace.shared.frontmostApplication,
+              anchor.isApp(pid: front.processIdentifier, bundleId: front.bundleIdentifier) else { return nil }
+        let pid = front.processIdentifier
+        guard let first = DesktopIdentity.windows().first(where: DesktopIdentity.normal),
+              (first[kCGWindowOwnerPID as String] as? Int32) == pid, let id = first[kCGWindowNumber as String] as? UInt32,
+              let frame = DesktopIdentity.bounds(first) else { return nil }
+        let safari = BrowserFamily.browser(bundleId: anchor.bundleId)?.family == .safari
+        return await Task.detached(priority: .utility) { () -> (windowId: UInt32, startPage: Bool)? in
+            let budget = DesktopAX.Budget(0.08)
+            guard let window = budget.element(AXUIElementCreateApplication(pid), kAXFocusedWindowAttribute),
+                  let bounds = budget.frame(window), DesktopAX.sameFrame(bounds, frame) else { return nil }
+            // Reading the focused element's role is also what turns on a Chromium browser's web tree (BrowserPin).
+            let focused = DesktopAX.perAppFocusedElement(pid: pid, window: window, budget: budget)
+            let role = focused.flatMap { budget.read($0, kAXRoleAttribute) as? String }
+            var startPage = false
+            if safari, let focused, role == kAXTextFieldRole,
+               budget.read(focused, kAXIdentifierAttribute) as? String == FieldClassifier.safariAddressIdentifier,
+               (budget.read(focused, kAXNumberOfCharactersAttribute) as? NSNumber)?.intValue == 0 {
+                startPage = true
+            }
+            return (id, startPage)
+        }.value
+    }
+
+    /// Safari's exact-tab route glue (DESIGN5 §4.3; `PI_OS_SAFARI_SAME_TAB=1` only): the anchor is Safari's own fresh
+    /// start page in the take's very window, computer control is on, and the process is still the one pi-os opened.
+    private func safariSameTab(_ url: URL, browser: AppInstance, contextId: String?, anchor: ContinuityAnchor?) async -> SafariAddressRoute.Outcome {
+        guard BrowserFamily.browser(bundleId: browser.bundleId)?.family == .safari, config.canControl, let contextId,
+              let anchor, anchor.kind == .app, anchor.startPage,
+              BrowserFamily.sameApp(anchor.bundleId, browser.bundleId) else { return .declined }
+        let snapshot: Snapshot?
+        if let take = takeSnapshot, take.id == contextId { snapshot = take } else { snapshot = try? await desktop?.snapshot(contextId) }
+        guard let target = snapshot?.targetWindow, anchor.pid == target.processId, anchor.windowId == target.windowID,
+              let identity = anchor.identity, ContinuityAnchors.processIdentity(target.processId) == identity,
+              let fingerprint = NativeDesktopDriver.fingerprint(target.processId) else { return .declined }
+        return await Task.detached(priority: .userInitiated) { () -> SafariAddressRoute.Outcome in
+            let driver = NativeDesktopDriver(fingerprint: fingerprint)
+            return await SafariAddressRoute.run(url, window: LiveSafariWindow(target: target), identityHolds: { (try? driver.inspect(target)) != nil })
+        }.value
+    }
+
+    /// The name of the app an anchor is opening, for the chip ("Safari (opening…)"): never logged.
+    static func appName(_ anchor: ContinuityAnchor) -> String {
+        if let pid = anchor.pid, let name = NSRunningApplication(processIdentifier: pid)?.localizedName { return name }
+        if let browser = BrowserFamily.browser(bundleId: anchor.bundleId) { return browser.name }
+        if let running = NSRunningApplication.runningApplications(withBundleIdentifier: anchor.bundleId).first?.localizedName { return running }
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: anchor.bundleId) {
+            return FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
+        }
+        return "the app"
     }
 }
 
