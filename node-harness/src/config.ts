@@ -15,6 +15,12 @@ export interface HarnessConfig {
   agentEnabled: boolean;
   /** Max wall-clock time per invocation in ms (PI_OS_INVOKE_TIMEOUT_MS). 0 disables. Default: 5 min. */
   invokeTimeoutMs: number;
+  /**
+   * The same limit for a full pi session's turn (macOS `trustedGlobal`, protocol.md "Full pi session (macOS)";
+   * PI_OS_FULL_INVOKE_TIMEOUT_MS): coding work and the user's command guard's approval dialog count against it.
+   * 0 disables. Default (also when absent): FULL_INVOKE_TIMEOUT_MS. Isolated sessions and Windows keep invokeTimeoutMs.
+   */
+  fullInvokeTimeoutMs?: number;
   /** Trusted directory where the C# host writes screenshots. */
   capturesDir: string;
   /** Explicit read-only mode; Mac additionally negotiates native input availability per invocation. */
@@ -37,6 +43,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): HarnessConfig 
     hostToken: env.PI_OS_TOKEN,
     agentEnabled: parseAgentEnabled(env.PI_OS_AGENT),
     invokeTimeoutMs: parseTimeoutMs(env.PI_OS_INVOKE_TIMEOUT_MS),
+    fullInvokeTimeoutMs: parseTimeoutMs(env.PI_OS_FULL_INVOKE_TIMEOUT_MS, FULL_INVOKE_TIMEOUT_MS),
     capturesDir: env.PI_OS_CAPTURES_DIR ?? join(supportDirectory(env), "captures"),
     readOnly: env.PI_OS_READ_ONLY === "1",
     insecureDev: env.PI_OS_INSECURE_DEV === "1" && env.PI_OS_SUPERVISED !== "1",
@@ -64,9 +71,12 @@ function parseSearchTemplate(raw: string | undefined): string | undefined {
   }
 }
 
-function parseTimeoutMs(raw: string | undefined): number {
-  const value = Number.parseInt(raw ?? "300000", 10);
-  return Number.isFinite(value) && value >= 0 ? value : 300_000;
+/** A full pi session's default invocation limit: 60 minutes. */
+export const FULL_INVOKE_TIMEOUT_MS = 60 * 60_000;
+
+function parseTimeoutMs(raw: string | undefined, fallback = 300_000): number {
+  const value = Number.parseInt(raw ?? String(fallback), 10);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
 /** Unset -> true (agent mode is the product); explicit 0/false -> slice mode. */

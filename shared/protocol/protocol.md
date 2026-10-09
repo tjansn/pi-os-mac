@@ -952,6 +952,13 @@ most 3 exist, a newer prepare for a take replaces it, and
 (for example when the key is released without a request). A prepare for an unknown context
 builds nothing.
 
+`workingDirectory?: string` (macOS full pi session only, see "Full pi session (macOS)"):
+`{"contextId":"ctx-123","takeId":"take-7","workingDirectory":"/Users/fixture/Desktop"}`. Strictly
+validated like on `/invoke` (an invalid value is `400 invalid_arguments` naming the issue code, never
+the value; `null` is absent; a `cancel` ignores it). The working directory is part of what a prepared
+session was built from: `/invoke` adopts it only with the same `workingDirectory` (both absent counts
+as the same).
+
 ### `POST /invoke`
 
 Entry point for a hotkey submission. Request:
@@ -998,8 +1005,13 @@ Entry point for a hotkey submission. Request:
   the continuity facts (see Context scope).
 - `attachments?: Attachment[]` (see Attachments): what the user explicitly pulled into the
   request. Absent means none.
-- A bad `context` or `attachments` is `400 invalid_arguments`; for attachments
-  `error.details.issues` lists `{path, code}` (at most 32). Neither ever echoes a value, and nothing
+- `workingDirectory?: string` (macOS full pi session only): the folder the session runs in, an
+  absolute, normalized POSIX path (see "Full pi session (macOS)"). Absent or `null` keeps today's
+  directory; isolated sessions and the Windows host never send it. Not a follow-up member: a thread
+  keeps its first turn's directory (a follow-up body ignores the key like any unknown key).
+- A bad `context`, `attachments` or `workingDirectory` is `400 invalid_arguments`; for attachments
+  `error.details.issues` lists `{path, code}` (at most 32), for `workingDirectory` the message names
+  the issue code (`workingDirectory is invalid (<code>)`). None ever echoes a value, and nothing
   is created.
 
 Without a `takeId` (the Windows host, older Mac builds), a first-turn `/invoke` without
@@ -1060,7 +1072,9 @@ Result-surfacing fields (ux-design-notes.md):
 
 - `activity`: current live line for the host pill — a tool name while a tool
   executes, `"thinking"` during reasoning, absent when idle. Cleared when the
-  invocation reaches a terminal state.
+  invocation reaches a terminal state. In a full pi session pi's coding tools appear
+  under their own names (`read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`,
+  `powershell`; steps `agent.<name>`), never with their arguments (see "Full pi session (macOS)").
 - `responseText`: final agent answer, capped (~8 KB); set on completion.
 - Every string Node serializes in a record (`responseText`, `partialText`, `failureMessage`,
   `activity`, step details, the prompt) is well-formed UTF-16: caps never split a surrogate
@@ -1133,7 +1147,9 @@ Requests cancellation of a running invocation (A.3):
 - `404 {"error":{"code":"not_found"}}` — unknown invocation id.
 
 Each invocation also has a wall-clock timeout (`PI_OS_INVOKE_TIMEOUT_MS`,
-default 300000, `0` disables). A timed-out invocation ends in state
+default 300000, `0` disables). A turn of a full pi session (macOS `trustedGlobal`, see "Full pi
+session (macOS)") runs under its own limit instead (`PI_OS_FULL_INVOKE_TIMEOUT_MS`, default 3600000,
+`0` disables). A timed-out invocation ends in state
 `timed_out`; both terminal paths record a `cancel` / `timeout` step.
 
 #### `POST /invocations/{invocationId}/followup`
@@ -1491,7 +1507,9 @@ Optional advisory intent classifier, stored separately in `classifier.json`; def
 ### Resource compatibility settings
 
 `GET /settings/resources` returns
-`{"current":{"mode":"isolated"|"trustedGlobal"},"warning":"..."}`.
+`{"current":{"mode":"isolated"|"trustedGlobal"},"warning":"...","status":{"fullSession":false,"guard":"none"}}`.
+`status` is additive, read-only and content-free (see "Full pi session (macOS)"); older harnesses
+omit it, and hosts drop one that fails strict decoding instead of failing Settings.
 
 `POST /settings/resources` accepts `{"mode":"isolated"}` or
 `{"mode":"trustedGlobal","acknowledgeUnpinnedAccess":true}`. Enabling trusted mode
@@ -1503,8 +1521,122 @@ to future sessions/catalog loads, and is suppressed whenever native control is u
 Default Mac mode remains isolated. Trusted mode intentionally loads global pi resources
 and coding tools; arbitrary trusted code can bypass native window restrictions. The UI
 must show this distinction and obtain explicit confirmation, not imply sandboxing.
-Project extensions/context are not trusted on Mac. Factory providers are registered
+Project extensions/context are not trusted on Mac today; the full pi session below moves
+trusted Mac sessions to pi's own trust resolution. Factory providers are registered
 before model choice; catalog-only loading does not invoke a model or session-start hooks.
+
+### Full pi session (macOS)
+
+Contracts `node-harness/src/contracts/piSession.ts`, Swift `PiOSCore/PiSessionContracts.swift`,
+fixtures `shared/fixtures/pi-session/*.json` (both sides agree on every value of
+`working-directory-cases.json`, including its issue code; invalid bodies name theirs in `_expect`;
+`node-harness/test/piSessionContracts.test.ts`, `PiSessionContractsTests.swift`).
+Status: contract only (types, validation, fixtures); harness and host behaviour land separately.
+
+A full pi session is the resource mode `trustedGlobal` on macOS (Settings → resources, explicit
+acknowledgement; fresh installs stay isolated; it still requires computer control). It acts like a
+normal terminal pi session:
+
+- **Tools**: pi's coding tools (`read`, `bash`, `edit`, `write` active as pi's `DEFAULT_TOOL_NAMES`,
+  and `grep`, `find`, `ls`, `powershell` as the user's `defaultTools` setting selects) plus the user's
+  global extensions, skills and prompt templates, always, alongside pi-os's own tools.
+- **Destructive commands**: pi-os adds no confirm of its own. A global extension that guards bash
+  applies exactly as in terminal pi (Tom's `~/.pi/agent/extensions/dcg-guard.ts` runs
+  `dcg --desktop-review` on every bash `tool_call`, shows dcg's own approval dialog and fails closed).
+  pi-os's desktop deletion policy (no file deletion, Move to Trash or Empty Trash through computer
+  use) and the credential rules are unchanged. `bash` is not a filesystem sandbox, and neither the
+  working-directory checks nor the native checks claim to be one.
+- **Prompt**: the first turn of a thread decides and its follow-ups keep it (prompt caching). The
+  Auto router's quick and fast lanes and short general questions keep the lean `PI_OS_SYSTEM_PROMPT`;
+  standard, deep and max, every coding or task turn, and a first turn that is a pi command (below)
+  get pi's full coding prompt with project context.
+- **pi commands**: a request (first turn or follow-up) that starts with `/` after trimming is sent to
+  pi as typed (trimmed, without pi-os's `## Request` wrapper) with pi's own expansion on, as terminal
+  pi does: an extension command (`/<command> …`) runs in pi (it makes no model request unless the
+  command sends one), `/skill:<name> …` expands to the skill, `/<template> …` to the prompt template;
+  anything else reaches the model unchanged. The turn's desktop context (window summary or active
+  app, attachments, voice notes, follow-up scope notes) goes into a hidden pi message right after it
+  (customType `pi-os-command-context`, headed "## pi-os context for the command above", followed by
+  any attachment images); the window's screenshot travels with the command message. Every other
+  request keeps today's wrapper and pi's expansion stays off.
+- **Invocation limit**: a full session's turns (first and follow-up) run under
+  `PI_OS_FULL_INVOKE_TIMEOUT_MS` (default 60 minutes, `0` disables) instead of
+  `PI_OS_INVOKE_TIMEOUT_MS`, counted from the invocation's start once its session is known: long
+  coding steps and the user's command guard's approval dialog (dcg's waits up to 140 s) count against
+  it. Isolated sessions and Windows keep `PI_OS_INVOKE_TIMEOUT_MS` (default 5 minutes).
+- **Project resources**: the working directory's AGENTS.md and `.pi` settings load like in normal pi,
+  through pi's own trust resolution (`~/.pi/agent/trust.json`), not forced off.
+- **Sessions**: threads are regular pi session files (pi `SessionManager`, file-based, in the working
+  directory's bucket under the pi agent dir), so `pi --resume` in that folder continues them and
+  follow-ups append to the same file. An explicit request ("continue my last pi session", "mach mit
+  der letzten pi-Session weiter") continues the folder's most recent session. Isolated threads stay
+  in memory.
+- **Isolated sessions and Windows** stay byte-identical: no `workingDirectory` is sent or used, no new
+  record field appears, prompts and tools are today's.
+
+**`workingDirectory`** on `POST /invoke` and `POST /invocations/prepare` (never on follow-ups: a
+thread keeps its first turn's directory):
+
+```ts
+workingDirectory?: string   // absolute, normalized POSIX folder path, ≤ 1024 UTF-8 bytes; null = absent
+```
+
+- *What the host sends* ("what I'm looking at", read at key-down; the take's prepare and `/invoke`
+  carry the same value; only while full mode is on): the front Finder window's folder (the Finder
+  desktop is `~/Desktop`); the front terminal window's folder (Terminal, iTerm2, Ghostty, WezTerm,
+  Warp: the window's represented URL / `AXDocument`, when the shell reports it); the open project of
+  the front editor (VS Code, Cursor, Zed, Xcode, Sublime Text, Nova, JetBrains IDEs: the document's
+  folder, walking up to a git root only outside TCC-protected folders, so no privacy prompt appears
+  at key-down); otherwise the home folder. A Trash folder is never used, whatever app shows it (a
+  whole path component `.Trash` or `.Trashes`, ASCII case-insensitive: `~/.Trash`, a volume's
+  `/.Trashes/<uid>`, anything inside them): the home folder instead (Swift `WorkingDirectoryPolicy.isTrash`).
+  The host strips the `/System/Volumes/Data` firmlink prefix
+  and a trailing `/` (Swift `WorkingDirectory(folder:)`) and sends nothing when the result is invalid.
+- *Validation*, strict on both sides; issue codes in check order (the first failing check names it):
+  `not_string`; `not_absolute` (empty, or no leading `/`: no `~`, relative path or URL);
+  `invalid_character` (NUL, line breaks and every other C0/C1 control, DEL, U+2028/U+2029, an
+  unpaired surrogate); `too_long` (more than 1024 UTF-8 bytes, macOS `PATH_MAX`); `not_normalized`
+  (an empty, `.` or `..` component, a trailing `/`, the root `/` itself); `blocked_root` (`/System`,
+  `/private/var/db` and its `/var/db` spelling, `/dev`, or anything inside them; ASCII
+  case-insensitive, whole components). An invalid value is `400 invalid_arguments` whose message
+  names the code only. The checks are lexical: at use Node also requires an existing directory whose
+  real path still passes the blocked-roots rule, and otherwise runs the session in the home folder.
+- *No privacy prompt at key-down*: Node never reads inside a TCC-protected folder (Desktop,
+  Documents, Downloads, iCloud Drive, removable and network volumes) while preparing; project
+  context of such a folder is loaded no earlier than `/invoke`.
+- *Privacy*: the path is user content. It is never logged, traced, put in telemetry or in a record
+  (steps, route reasons and `[perf]` lines stay content-free), and errors never echo it.
+- *Prepared sessions*: the directory is part of what a session was built from; a prepare and an
+  `/invoke` match only with the same value (both absent counts as the same).
+- Isolated sessions ignore a valid value (the Mac host never sends one there); Windows sends none.
+
+**Resource status** on `GET /settings/resources`, read-only and content-free (never a path,
+extension name or command):
+
+```ts
+status: { fullSession: boolean; guard: "dcg" | "other" | "none" }
+```
+
+- `fullSession`: new sessions run as full pi sessions (macOS, `trustedGlobal` stored and not
+  suppressed by a read-only launch or missing computer control). Always false on Windows.
+- `guard`: whether a loaded global extension guards bash, determined in Node (`bashGuardOf`) from the
+  extensions a full session or a full-mode catalog load loaded. Only file-backed global (`user`
+  scope) extensions subscribed to pi's `tool_call` count, never pi-os's own inline ones: `dcg` when
+  such an extension's name has the word `dcg` (`dcg-guard.ts`, `pi-dcg/index.ts`), `other` for any
+  other such extension, `none` otherwise. Always `none` while `fullSession` is false: no global
+  extension code runs in isolated mode, not even to classify it. Hosts show it only with
+  `fullSession: true`. Node loads the global extensions for it once per process (their factories
+  run), and again only after the resource mode changed or the agent dir's `extensions` folder or
+  `settings.json` changed its mtime.
+- Swift: `ResourceStatus` (`guard` decodes as `bashGuard`, `"none"` as `.unguarded`), decoded into
+  `HarnessClient.ResourceSettings.status`.
+
+**Coding tool names** in records: while pi's coding tools run, `activity` carries their names
+verbatim (`read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`, `powershell`: pi's `allToolNames`)
+and `steps[].tool` carries `agent.<name>`, never their arguments (no command, path or file content).
+The host labels them without content (Swift `PiCodingTool.activityLabel`: "Running a command…",
+"Reading a file…", "Editing a file…", "Writing a file…", "Searching in files…", "Finding files…",
+"Listing a folder…"); global extension tools keep their own names and the generic label.
 
 ## Result cards
 

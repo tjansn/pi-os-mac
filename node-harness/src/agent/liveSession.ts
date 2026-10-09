@@ -192,7 +192,11 @@ export class LiveAgentSession {
     try { this.callbacks.onResponse(sample); } catch { /* Telemetry never breaks a turn. */ }
   }
 
-  async prompt(text: string, signal?: AbortSignal, image?: ImageContent): Promise<AgentRunResult> {
+  /**
+   * One prompt, never queued. `expand`: pi's own expansion of a pi command (extension commands, `/skill:` and prompt
+   * templates), as terminal pi does; only a full session's command (agentRunner) asks for it.
+   */
+  async prompt(text: string, signal?: AbortSignal, image?: ImageContent, expand = false): Promise<AgentRunResult> {
     if (this.closed) throw new Error("session_closed: Start a new task");
     if (this.capture) throw new Error("not_idle: A prompt is already running");
     if (signal?.aborted) throw abortError(signal);
@@ -204,7 +208,7 @@ export class LiveAgentSession {
     signal?.addEventListener("abort", abort, { once: true });
     try {
       this.beforeTurn();
-      await this.session.prompt(text, { expandPromptTemplates: false, ...(image ? { images: [image] } : {}) });
+      await this.session.prompt(text, { expandPromptTemplates: expand, ...(image ? { images: [image] } : {}) });
       if (signal?.aborted) throw abortError(signal);
       this.lifetime.signal.throwIfAborted();
       if (this.closed) throw new Error("session_closed: Reader was closed");

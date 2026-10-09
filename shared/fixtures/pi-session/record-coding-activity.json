@@ -1,0 +1,55 @@
+{
+  "invocationId": "inv-pi-0001",
+  "contextId": "ctx-123",
+  "prompt": "run the tests and fix what fails",
+  "invokedAt": "2026-10-09T09:00:00Z",
+  "state": "running",
+  "startedAt": "2026-10-09T09:00:00.120Z",
+  "finishedAt": null,
+  "revision": 9,
+  "activity": "bash",
+  "steps": [
+    {
+      "tool": "desktop.getContext",
+      "at": "2026-10-09T09:00:00.140Z",
+      "ok": true
+    },
+    {
+      "tool": "agent.read",
+      "at": "2026-10-09T09:00:02.010Z",
+      "ok": true
+    },
+    {
+      "tool": "agent.grep",
+      "at": "2026-10-09T09:00:02.900Z",
+      "ok": true
+    },
+    {
+      "tool": "agent.edit",
+      "at": "2026-10-09T09:00:05.300Z",
+      "ok": true
+    },
+    {
+      "tool": "agent.bash",
+      "at": "2026-10-09T09:00:06.700Z",
+      "ok": true
+    }
+  ],
+  "route": {
+    "tier": "standard",
+    "provider": "fixture",
+    "model": "fixture-model",
+    "thinkingLevel": "medium",
+    "reasons": [
+      "intent=task"
+    ],
+    "auto": true
+  },
+  "context": {
+    "scope": "general",
+    "source": "default",
+    "pulled": false,
+    "included": false
+  },
+  "followupAvailable": false
+}

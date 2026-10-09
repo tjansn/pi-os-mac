@@ -109,6 +109,14 @@ import PiOSCore
     /// §3.3: the settle poll of the anchor (one at a time).
     private var settleTask: Task<Void, Never>?
     private var settleSerial: Int?
+    /// Full pi session (decision 2): the folder the take's target shows, resolved off the hotkey path. The take's
+    /// prepare and its /invoke send the same value; follow-ups send none. nil: isolated mode (nothing is sent).
+    private let workingDirectories = TakeWorkingDirectories()
+    private var takeFullSession = false
+    private var takeDirectory: Task<WorkingDirectory?, Never>?
+    /// The running turn's bash call that waits for the user's guard (dcg's own dialog), and the record shown last.
+    private var approval: ApprovalWait?
+    private var lastRunning: HarnessClient.Status?
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
         signal(SIGPIPE, SIG_IGN)
@@ -540,7 +548,10 @@ import PiOSCore
         chip.suppressSuggestions = { [weak self] in self?.shelfTakesTheReference == true }
         self.chip = chip
         shelf.opened()
-        panel.prompt(snapshot: shown, appName: appName, canControl: config.canControl, trustedCompatibility: config.trustedCompatibility)
+        // Read once per take: the panel's "Trusted pi" badge and whether this take sends a working directory agree.
+        let fullSession = config.trustedCompatibility
+        takeFullSession = fullSession && !config.echo
+        panel.prompt(snapshot: shown, appName: appName, canControl: config.canControl, trustedCompatibility: fullSession)
         panel.showShelf(shelf.chips, selection: shelf.hasSelection)
         if perf {
             let ms = Double(DispatchTime.now().uptimeNanoseconds - start) / 1_000_000
@@ -574,12 +585,16 @@ import PiOSCore
             if self?.takeSnapshot?.id == id { self?.takeSnapshot = pinned }
             await desktop.insert(pinned, browserPin: browserPin)
         }
+        // Created after `inserted`: it starts once the panel's first frame is committed (main-actor order), then reads
+        // on its own queue. Isolated mode resolves nothing.
+        let directory = takeFullSession ? resolveDirectory(target, bundleId: targetApp?.bundleIdentifier) : nil
+        takeDirectory = directory
         let warm = Task {
             try Task.checkCancellation()
             try await harness.warm()
             await inserted.value
             try Task.checkCancellation()
-            Task { await harness.prepare(contextId: id, takeId: takeId) }
+            Task { await harness.prepare(contextId: id, takeId: takeId, workingDirectory: await directory?.value) }
         }
         // Lazy: the capture of whatever the take's context is when the chip first includes it.
         let prepared = TakePreparation(warm: warm) { [weak self] in
@@ -779,6 +794,9 @@ import PiOSCore
             if shelf.references(contextId: old) { extraContexts.append(old) } else { await desktop.remove(old) }
         }
         preparation?.restartCapture()
+        // The full session follows the new target's folder; its prepare below and the /invoke use the new value.
+        if takeFullSession { takeDirectory = resolveDirectory(pinned.targetWindow, bundleId: pinnedApp) }
+        let directory = takeDirectory
         panel.retarget(snapshot: pinned)
         let app = pinned.targetWindow.flatMap { NSRunningApplication(processIdentifier: $0.processId) }
         chip?.retarget(appName: pinned.targetWindow?.processName ?? app?.localizedName ?? "Application", bundleId: app?.bundleIdentifier,
@@ -787,7 +805,15 @@ import PiOSCore
         if takeContinuity?.repinned == true, takeContinuity?.explicitChoice == false { chip?.setProvenance(.anchored) }
         panel.announceContextChange()
         // The prepared session was built for the old context; build one for this one (best effort).
-        Task { await harness.prepare(contextId: pinned.id, takeId: take.takeId) }
+        Task { await harness.prepare(contextId: pinned.id, takeId: take.takeId, workingDirectory: await directory?.value) }
+    }
+    /// The full session's working directory for `target` (decision 2): the target's plain values now (no AX), the AX
+    /// and `lstat` reads on the resolver's queue. The home folder when the target tells nothing.
+    private func resolveDirectory(_ target: WindowContext?, bundleId: String?) -> Task<WorkingDirectory?, Never> {
+        let directories = workingDirectories
+        return Task { @MainActor in
+            await directories.resolve(TakeWorkingDirectories.target(target, bundleId: bundleId)).value
+        }
     }
     /// The follow-up composer's chip is scored like the command composer's: /instant `scope` (rules) for
     /// the typed text, debounced, plus the on-device scorer. Only a screen-anchored strong score widens a
@@ -865,6 +891,17 @@ import PiOSCore
             self?.presentRunning(presentation)
         }
         streamThrottle = throttle
+        self.approval?.cancel()
+        // "Waiting for your approval…" only while dcg's own process (its dialog) runs under the harness.
+        let approval = ApprovalWait(scheduler: TaskScheduler()) { [weak self] in GuardProcess.dcgPending(under: self?.harness?.ownedPID) }
+        approval.onChange = { [weak self, weak throttle] in
+            guard let self, let throttle, self.invocation == invocationID, !self.cancelRequested, let state = self.lastRunning else { return }
+            throttle.submit(RunningPresentation.make(state, label: self.runningLabel(state), visible: !self.workDismissed && !self.nativeInputStarted))
+            if self.approval?.waiting == true { self.setStatus(ApprovalWait.status, attention: true) } else { self.setStatus("Working on your question") }
+        }
+        self.approval = approval; lastRunning = nil
+        // Fresh turns only: a thread keeps its first turn's folder (protocol.md "Full pi session (macOS)").
+        let directory = followup ? nil : takeDirectory
         running = Task { [weak self] in
             guard let self else { return }
             do {
@@ -884,8 +921,11 @@ import PiOSCore
                 try Task.checkCancellation()
                 if followup { try await self.harness.followup(invocationID, prompt: request.prompt, scope: scope, attachments: attachments) }
                 else {
+                    let workingDirectory = await directory?.value
+                    try Task.checkCancellation()
                     try await self.harness.submit(id: invocationID, context: id, prompt: request.prompt,
-                                                  takeId: request.takeId, input: request.input, scope: scope, attachments: attachments)
+                                                  takeId: request.takeId, input: request.input, scope: scope, attachments: attachments,
+                                                  workingDirectory: workingDirectory)
                 }
                 try Task.checkCancellation()
                 // Sent: those chips leave the shelf; their files stay until the thread closes.
@@ -893,9 +933,9 @@ import PiOSCore
                 self.submitted = true
                 self.thread = invocationID
                 try await self.follow(invocationID, throttle: throttle)
-            } catch is CancellationError { throttle.cancel() /* explicit cancel owns UI and child teardown */ }
+            } catch is CancellationError { throttle.cancel(); approval.cancel() /* explicit cancel owns UI and child teardown */ }
             catch {
-                throttle.cancel()
+                throttle.cancel(); approval.cancel()
                 guard self.invocation == invocationID else { return }
                 if (error as? DomainError)?.code == "harness_unreachable" { self.harness.stop() }
                 let code = (error as? DomainError)?.code
@@ -943,11 +983,14 @@ import PiOSCore
             effects.activity(state.activity)
             guard !cancelRequested else { return false }
             if state.activity == "use_active_window" || state.context?.pulled == true { pulled = true }
-            let label = state.activity == "thinking" ? "Thinking…" : Self.activityLabel(state.activity, app: threadApp?.name)
-            throttle.submit(RunningPresentation.make(state, label: label, visible: !workDismissed && !nativeInputStarted))
+            lastRunning = state
+            let wasWaiting = approval?.waiting == true
+            approval?.observe(activity: state.activity, steps: state.steps)
+            if wasWaiting && approval?.waiting != true { setStatus("Working on your question") }
+            throttle.submit(RunningPresentation.make(state, label: runningLabel(state), visible: !workDismissed && !nativeInputStarted))
             return false
         case "completed":
-            throttle.cancel()
+            throttle.cancel(); approval?.cancel()
             thread = state.followupAvailable == true ? invocationID : nil
             panel.setFollowupEnabled(thread != nil)
             // Agent cards: strict decode already happened; only the model action subset is shown.
@@ -971,10 +1014,10 @@ import PiOSCore
             guard invocation == invocationID else { return true }
             finish(); return true
         case "aborted":
-            throttle.cancel(); effects.end()
+            throttle.cancel(); approval?.cancel(); effects.end()
             panel.hide(); finish(cancelled: true); return true
         default:
-            throttle.cancel(); effects.end()
+            throttle.cancel(); approval?.cancel(); effects.end()
             thread = state.followupAvailable == true ? invocationID : nil
             throw DomainError.invocation(state: state.state, message: state.failureMessage)
         }
@@ -1002,7 +1045,14 @@ import PiOSCore
             if visible { panel.streamCard(spec, complete: complete, fallbackText: fallback, status: status) }
         }
     }
+    /// The running record's status line: a bash call waiting for the user's guard, reasoning, or the tool's label.
+    private func runningLabel(_ state: HarnessClient.Status) -> String {
+        if approval?.waiting == true { return ApprovalWait.label }
+        return state.activity == "thinking" ? "Thinking…" : Self.activityLabel(state.activity, app: threadApp?.name)
+    }
     static func activityLabel(_ name: String?, app: String? = nil) -> String {
+        // pi's coding tools in a full pi session: content-free (never the command, file or folder).
+        if let name, let tool = PiCodingTool(rawValue: name) { return tool.activityLabel }
         switch name {
         case "use_active_window": return "Looking at \(ContextChipCopy.shortName(app ?? "the window"))…"
         case "desktop_capture_window": return "Looking at the window…"
@@ -1047,6 +1097,7 @@ import PiOSCore
     }
     private func finish(cancelled: Bool = false, failed: Bool = false) {
         invocation = nil; submitted = false; cancelRequested = false; running = nil; preparation = nil; streamThrottle = nil
+        approval?.cancel(); approval = nil; lastRunning = nil
         setStatus(cancelled ? "Task cancelled" : failed ? "Your request needs attention" : "Your answer is ready", attention: !cancelled)
         if cancelled || thread == nil {
             discardContext(); releaseInvocationReservation()
@@ -1062,7 +1113,7 @@ import PiOSCore
         if let id = invocation, submitted {
             guard !cancelRequested else { return }
             cancelRequested = true
-            streamThrottle?.cancel()
+            streamThrottle?.cancel(); approval?.cancel()
             panel.updateActivity("Cancelling…")
             Task { [weak self] in
                 guard let self else { return }
@@ -1084,6 +1135,7 @@ import PiOSCore
         controller.interrupt()
         invocation = nil; submitted = false; cancelRequested = false; running?.cancel(); running = nil
         streamThrottle?.cancel(); streamThrottle = nil
+        approval?.cancel(); approval = nil; lastRunning = nil
         preparation?.cancel(); preparation = nil
         cancelPreparedTake()
         panel.hide(); setStatus("Ready when you are")
@@ -1130,6 +1182,8 @@ import PiOSCore
     private func discardContext() {
         let oldContext = context, oldThread = thread, reservation = invocationReservation, extra = extraContexts
         context = nil; thread = nil; invocationReservation = nil; extraContexts = []; takeSnapshot = nil
+        // The take's folder goes with its context (a later take resolves its own).
+        takeDirectory = nil; takeFullSession = false
         // Continuity is per take; the anchor itself lives on (it is the launcher's, ≤ 120 s).
         raceTask?.cancel(); raceTask = nil; repin?.cancel(); repin = nil; takeContinuity = nil
         if let oldContext { fieldFacts.drop(contextId: oldContext) }

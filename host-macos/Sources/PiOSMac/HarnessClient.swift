@@ -294,21 +294,23 @@ private final class OwnedChild {
     /// POST /invoke. `takeId` lets Node reuse the session prepared at key-down; `input` is additive
     /// (Windows never sends it) and tells the agent the prompt was spoken. `scope` is what the context
     /// chip showed (nil = legacy window behaviour); `attachments` is the context shelf, untrusted data.
+    /// `workingDirectory` is the full pi session's folder (nil: none sent, as in isolated mode).
     public func submit(id: String, context: String, prompt: String, takeId: String?, input: AgentInput?,
-                       scope: ContextWire? = nil, attachments: [Attachment] = []) async throws {
+                       scope: ContextWire? = nil, attachments: [Attachment] = [], workingDirectory: WorkingDirectory? = nil) async throws {
         let payload = try Self.invokePayload(id: id, contextId: context, prompt: prompt, invokedAt: Date(), takeId: takeId,
-                                             input: input, context: scope, attachments: attachments)
+                                             input: input, context: scope, attachments: attachments, workingDirectory: workingDirectory)
         _ = try await request("POST", "/invoke", payload: payload)
     }
-    /// The /invoke body (protocol §3.5, DESIGN3 wire additions). `context` and `attachments` are additive:
-    /// absent means legacy; an empty shelf sends no `attachments` key.
+    /// The /invoke body (protocol §3.5, DESIGN3 wire additions). `context`, `attachments` and `workingDirectory`
+    /// are additive: absent means legacy; an empty shelf sends no `attachments` key.
     static func invokePayload(id: String, contextId: String, prompt: String, invokedAt: Date, takeId: String?, input: AgentInput?,
-                              context: ContextWire?, attachments: [Attachment]) throws -> [String: Any] {
+                              context: ContextWire?, attachments: [Attachment], workingDirectory: WorkingDirectory? = nil) throws -> [String: Any] {
         var payload: [String: Any] = ["invocationId": id, "contextId": contextId, "prompt": prompt, "retainSession": true,
                                       "invokedAt": ISO8601DateFormatter().string(from: invokedAt)]
         if let takeId { payload["takeId"] = takeId }
         if let input { payload["input"] = input.payload }
         try addContext(context, attachments: attachments, to: &payload)
+        if let workingDirectory { payload["workingDirectory"] = workingDirectory.path }
         return payload
     }
     /// The /followup body: the prompt plus the follow-up composer's chip and the shelf.
@@ -324,8 +326,16 @@ private final class OwnedChild {
     }
     /// POST /invocations/prepare at key-down: Node pre-builds the take's session. Best effort;
     /// an older harness without the route (404) or a failure just means no reuse.
-    public func prepare(contextId: String, takeId: String) async {
-        _ = try? await request("POST", "/invocations/prepare", payload: ["contextId": contextId, "takeId": takeId])
+    /// `workingDirectory` must be the one the take's /invoke sends: a prepared session is adopted only for the same folder.
+    public func prepare(contextId: String, takeId: String, workingDirectory: WorkingDirectory? = nil) async {
+        _ = try? await request("POST", "/invocations/prepare", payload: Self.preparePayload(contextId: contextId, takeId: takeId,
+                                                                                            workingDirectory: workingDirectory))
+    }
+    /// The /invocations/prepare body; `workingDirectory` is additive (absent: none, as in isolated mode).
+    static func preparePayload(contextId: String, takeId: String, workingDirectory: WorkingDirectory?) -> [String: Any] {
+        var payload: [String: Any] = ["contextId": contextId, "takeId": takeId]
+        if let workingDirectory { payload["workingDirectory"] = workingDirectory.path }
+        return payload
     }
     /// The take ended without an /invoke: Node may drop its prepared session now instead of at
     /// the 30 s expiry. Best effort; never starts or waits for a child.
@@ -366,7 +376,23 @@ private final class OwnedChild {
         _ = try await request("POST", "/settings/model", payload: ["provider": selection.provider, "modelId": selection.modelId, "thinkingLevel": selection.thinkingLevel])
     }
     public struct ResourceSelection: Codable { public let mode: String }
-    public struct ResourceSettings: Decodable { public let current: ResourceSelection; public let warning: String? }
+    /// GET /settings/resources. `status` (full session on/off, bash guard) is additive: nil from an older harness,
+    /// and a status that fails strict decoding is dropped rather than failing Settings.
+    public struct ResourceSettings: Decodable {
+        public let current: ResourceSelection
+        public let warning: String?
+        public let status: ResourceStatus?
+        public init(current: ResourceSelection, warning: String?, status: ResourceStatus? = nil) {
+            self.current = current; self.warning = warning; self.status = status
+        }
+        private enum Keys: String, CodingKey { case current, warning, status }
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: Keys.self)
+            current = try c.decode(ResourceSelection.self, forKey: .current)
+            warning = try c.decodeIfPresent(String.self, forKey: .warning)
+            status = (try? c.decodeIfPresent(ResourceStatus.self, forKey: .status)) ?? nil
+        }
+    }
     public func resources() async throws -> ResourceSettings {
         try await warm()
         return try JSONDecoder().decode(ResourceSettings.self, from: await request("GET", "/settings/resources"))

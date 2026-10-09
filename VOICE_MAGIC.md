@@ -683,6 +683,41 @@ dieser Seite?" → deictic (pi); "Schreib eine Mail an Anna." → pi; "Öffne Go
 dictation into a multiline field → fill without Return; a password field → nothing typed; a terminal → one-Return card;
 "Tippe Hallo Welt." → fill without Return (2–55 ms each). Typing itself (Q3–Q8) is not verified live yet.
 
+## Pass 6 (2026-10-09): a full pi session
+
+Tom: "I need the pi desktop assistant to be able to act like a fully normal pi session, with terminal access and
+everything." His decisions: destructive commands go through his dcg hook ("it should prompt its own approval dialogue
+when hit"); the working folder is what he is looking at; full tools always, the lean prompt only for quick asks;
+sessions are saved like normal pi sessions, keeping everything.
+
+- **Full mode** is the macOS resource mode `trustedGlobal` (Settings → General → "Full pi session", with an
+  acknowledgement; fresh installs stay isolated; it needs computer control). No tool allowlist: pi's coding tools
+  (read, bash, edit, write, …), the user's global extensions, skills and prompt templates, and pi-os's own tools.
+- **Destructive commands:** pi-os adds no confirm of its own. A global extension that guards bash (Tom's
+  `~/.pi/agent/extensions/dcg-guard.ts`, which runs `dcg --desktop-review`) intercepts every bash call exactly as
+  in terminal pi; Settings shows "Destructive commands: reviewed by dcg" or "No command guard found". Nothing in
+  pi-os runs a shell outside the bash tool (codemode reaches tools through the same hook). The computer-use
+  deletion policy for desktop actions is unchanged; typing into a Terminal window through `desktop_act` is covered
+  by that policy's known-command checks, not by dcg.
+- **Working folder:** the front Finder window's folder (the desktop → `~/Desktop`), the front terminal window's
+  folder (Terminal, iTerm2, Ghostty, WezTerm, Warp, from the window's represented URL), the front editor's project
+  (git root, walked up only outside privacy-protected folders), else home; never a Trash folder. Read at key-down
+  without touching protected folders, sent as `workingDirectory` on prepare and /invoke, validated strictly.
+- **Project context:** pi's own trust resolution (`~/.pi/agent/trust.json`), so a project's `AGENTS.md` loads as in
+  terminal pi.
+- **Prompt:** the first turn decides: quick and fast lanes keep the lean pi-os prompt; standard, deep and max,
+  coding requests, `/` commands and resumed sessions get pi's coding prompt with project context. A request that
+  starts with `/` reaches pi unwrapped, so `/skill:…`, prompt templates and extension commands work.
+- **Saved sessions:** full threads are regular pi session files in pi's bucket for their folder (`pi --resume` there
+  continues them); follow-ups append; "continue my last pi session" / "mach mit der letzten pi-Session weiter"
+  resumes the folder's most recent one. Files keep exactly what the model saw (Tom's decision).
+- **Time limit:** full sessions get 60 minutes (`PI_OS_FULL_INVOKE_TIMEOUT_MS`), time in dcg's dialog included;
+  isolated sessions keep 5 minutes.
+- **Bar:** "Running a command…", "Reading files…", "Editing files…"; "Waiting for your approval…" only while a dcg
+  review process is open under the harness.
+- **Not verified live yet:** the dcg dialog from a pi-os session (planned with Tom: an empty `/tmp` probe folder),
+  terminal folders reported by each terminal app, long-running tasks in the bar.
+
 ## Next steps
 
 Run the continuity live QA (Q1–Q11) with Tom on a signed build, then decide `PI_OS_SAFARI_SAME_TAB`, chunking per

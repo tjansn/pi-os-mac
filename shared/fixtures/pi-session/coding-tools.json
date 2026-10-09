@@ -1,0 +1,18 @@
+{
+  "tools": [
+    "read",
+    "bash",
+    "edit",
+    "write",
+    "grep",
+    "find",
+    "ls",
+    "powershell"
+  ],
+  "defaultActive": [
+    "read",
+    "bash",
+    "edit",
+    "write"
+  ]
+}

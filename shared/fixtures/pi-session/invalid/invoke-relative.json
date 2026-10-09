@@ -1,0 +1,15 @@
+{
+  "invocationId": "inv-pi-0001",
+  "contextId": "ctx-123",
+  "invokedAt": "2026-10-09T09:00:00Z",
+  "retainSession": true,
+  "takeId": "take-7",
+  "prompt": "run the tests",
+  "context": {
+    "scope": "general",
+    "pull": "allowed",
+    "source": "default"
+  },
+  "workingDirectory": "Projects/demo",
+  "_expect": "not_absolute"
+}

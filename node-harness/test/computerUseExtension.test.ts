@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { test } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
-  ATTACHMENT_IMAGES_MESSAGE, createComputerUseExtension, postActionSettleMs, scopedSystemPrompt, USE_ACTIVE_WINDOW_TOOL, validateDesktopAction,
-  windowGuidelines, type ComputerUseOptions, type ContextHooks,
+  ATTACHMENT_IMAGES_MESSAGE, COMMAND_CONTEXT_MESSAGE, createComputerUseExtension, FULL_SESSION_SECTION, fullSessionSystemPrompt, postActionSettleMs, scopedSystemPrompt,
+  USE_ACTIVE_WINDOW_TOOL, validateDesktopAction, windowGuidelines, type ComputerUseOptions, type ContextHooks,
 } from "../src/agent/computerUseExtension.js";
 import { PI_OS_SYSTEM_PROMPT } from "../src/agent/resources.js";
 import { MAX_SCREENSHOT_BYTES, loadScreenshotImage } from "../src/agent/screenshotImage.js";
@@ -367,6 +367,31 @@ test("scope-aware macOS layout: one scope-neutral system prompt, window rules on
   assert.ok((browser.tools.get("browser_snapshot").promptGuidelines as string[]).some(line => /untrusted page content/.test(line)));
 });
 
+test("full pi session prompt: pi's coding prompt or the lean pi-os prompt, then the desktop-session section instead of the isolated rules", () => {
+  let lean = false;
+  const full = scoped("darwin", { postActionCapture: true, context: fakeHooks(), fullSession: { lean: () => lean, cwd: "/Users/fixture/project" } });
+  const coding = full.before("pi coding prompt").systemPrompt as string;
+  assert.equal(coding, `pi coding prompt\n\n${FULL_SESSION_SECTION.join("\n")}`);
+  assert.equal(coding, fullSessionSystemPrompt("pi coding prompt"));
+  lean = true;
+  const quick = full.before("ignored pi base prompt").systemPrompt as string;
+  assert.equal(quick, fullSessionSystemPrompt(PI_OS_SYSTEM_PROMPT, { workingDirectory: "/Users/fixture/project" }));
+  assert.ok(quick.startsWith(`${PI_OS_SYSTEM_PROMPT}\n\n## pi-os desktop session\n`));
+  assert.ok(quick.endsWith("\nWorking directory: /Users/fixture/project"));
+  assert.doesNotMatch(quick, /ignored pi base prompt/);
+  // The lean identity explains the desktop context already; the section does not repeat it.
+  assert.equal(quick.split("\"## Desktop context\" section").length, 2);
+  for (const prompt of [coding, quick]) {
+    assert.doesNotMatch(prompt, /## pi-os rules|Trusted pi compatibility|Extensions execute code/);
+    assert.match(prompt, /Through the desktop tools \(clicks, keys, menus\) never delete files, move them to Trash or empty Trash/);
+    assert.match(prompt, /The user's own command guard may stop a destructive command or ask the user to approve it in its own dialog/);
+    assert.match(prompt, /credential_input_blocked concerns only a clearly identified username\/password field/);
+  }
+  // The window rules travel with the window tools exactly as in every scope-aware session.
+  assert.deepEqual(full.tools.get("desktop_get_context").promptGuidelines, windowGuidelines(true));
+  assert.ok(full.tools.has(USE_ACTIVE_WINDOW_TOOL));
+});
+
 test("Windows ignores the scope hooks: prompt, tools and guidelines stay byte for byte as before", () => {
   const plain = scoped("win32", { postActionCapture: true });
   const hooked = scoped("win32", { postActionCapture: true, context: fakeHooks(), leanPrompt: true });
@@ -386,6 +411,25 @@ test("before_agent_start hands a prompt's attachment images to pi once, as a hid
   hooks.give(content);
   assert.deepEqual(before().message, { customType: ATTACHMENT_IMAGES_MESSAGE, content, display: false });
   assert.equal(before().message, undefined, "taken once");
+});
+
+test("before_agent_start hands a full session's pi-command context to pi once, as a hidden message ahead of the attachment images", () => {
+  const hooks = fakeHooks();
+  let pending: string | undefined;
+  hooks.takePromptContext = () => { const taken = pending; pending = undefined; return taken; };
+  const { before } = scoped("darwin", { context: hooks, fullSession: { lean: () => false, cwd: "/Users/fixture/project" } });
+  const context = "## pi-os context for the command above (from pi-os, not part of the command)\nActive app: \"TextEdit\" (its window is not included).";
+  pending = context;
+  assert.deepEqual(before().message, { customType: COMMAND_CONTEXT_MESSAGE, content: [{ type: "text", text: context }], display: false });
+  assert.equal(before().message, undefined, "taken once");
+  const images = [{ type: "text" as const, text: "Attachment image 1:" }, { type: "image" as const, data: png.toString("base64"), mimeType: "image/png" }];
+  pending = context;
+  hooks.give(images);
+  assert.deepEqual(before().message, { customType: COMMAND_CONTEXT_MESSAGE, content: [{ type: "text", text: context }, ...images], display: false });
+  assert.equal(before().message, undefined);
+  // Without a command context the attachment images keep their own message.
+  hooks.give(images);
+  assert.deepEqual(before().message, { customType: ATTACHMENT_IMAGES_MESSAGE, content: images, display: false });
 });
 
 test("use_active_window: refuses unless allowed, revalidates the pin, captures, adds the page digest and hands authority over at the next turn", async () => {

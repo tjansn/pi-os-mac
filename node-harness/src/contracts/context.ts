@@ -7,6 +7,9 @@
  * The host is authoritative: what its context chip shows at Return is what it sends, and Node never
  * widens that choice. A request WITHOUT `context` keeps the legacy behaviour (window scope, today's
  * prompt and tools): the Windows host and older Mac builds send none.
+ *
+ * The full pi session's working directory is a sibling of `context` on /invoke and /invocations/prepare
+ * (`workingDirectory`, not a member of ContextWire, so it never rides on a follow-up): see piSession.ts.
  */
 
 import { INSTANT_FIELD_KINDS, type InstantFieldKind } from "./instant.js";

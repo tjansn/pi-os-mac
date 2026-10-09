@@ -78,7 +78,13 @@ extension HarnessClient: ModelSettingsService {}
     private let notifications = NSButton(checkboxWithTitle: "Notify when a background task finishes", target: nil, action: nil)
     /// AutoMinimizePolicy: a finished answer steps aside after pi opened something (host-local, applied at once).
     private let hideAfterOpen = NSButton(checkboxWithTitle: AutoMinimizePolicy.settingTitle, target: nil, action: nil)
-    private let compatibility = NSButton(checkboxWithTitle: "Use trusted global pi extensions and coding tools", target: nil, action: nil)
+    /// The full pi session (resource mode `trustedGlobal`), after an acknowledgement sheet; its line names the guard.
+    private let compatibility = NSButton(checkboxWithTitle: FullSessionCopy.toggleTitle, target: nil, action: nil)
+    private let fullSessionNote = PanelStyle.label(FullSessionCopy.offNote, size: 11)
+    /// The acknowledgement before the full session turns on (true: on). The app shows a sheet; tests and the preview
+    /// inject an answer, so no panel ever runs there.
+    var acknowledgeFullSession: @MainActor (FullSessionCopy.Acknowledgement, NSWindow?, @escaping @MainActor (Bool) -> Void) -> Void
+        = { copy, window, done in FullSessionCopy.present(copy, on: window, done: done) }
     private let login = NSButton(checkboxWithTitle: "Open pi-os at login", target: nil, action: nil)
     private let credentials = NSButton(checkboxWithTitle: "Allow input in username and password fields", target: nil, action: nil)
     private let voiceToggle = NSButton(checkboxWithTitle: "Hold the shortcut to talk", target: nil, action: nil)
@@ -157,6 +163,11 @@ extension HarnessClient: ModelSettingsService {}
     var hideAfterOpenControl: (title: String, on: Bool, enabled: Bool) { (hideAfterOpen.title, hideAfterOpen.state == .on, hideAfterOpen.isEnabled) }
     func setHideAfterOpen(_ on: Bool) { hideAfterOpen.state = on ? .on : .off; hideAfterOpenChanged() }
     var hideAfterOpenStored: Bool { AutoMinimizePolicy.enabled(contextDefaults) }
+    /// Settings → General's full pi session switch and the line under it (offscreen tests).
+    var fullSessionControl: (title: String, on: Bool, enabled: Bool) { (compatibility.title, compatibility.state == .on, compatibility.isEnabled) }
+    var fullSessionNoteText: String { fullSessionNote.stringValue }
+    /// As a click on the switch would (its acknowledgement goes through `acknowledgeFullSession`).
+    func setFullSession(_ on: Bool) { compatibility.state = on ? .on : .off; compatibilityChanged() }
     /// The General page's view (offscreen snapshots).
     var generalPage: NSView { pages[Page.general.rawValue] }
     /// Test seams for the Context page's controls (as a click would).
@@ -286,10 +297,11 @@ extension HarnessClient: ModelSettingsService {}
         login.target = self; login.action = #selector(loginChanged); view.addSubview(login)
         compatibility.frame = NSRect(x: 28, y: 420, width: 502, height: 24)
         compatibility.isEnabled = false; compatibility.target = self; compatibility.action = #selector(compatibilityChanged)
-        compatibility.toolTip = "Explicit opt-in. These extensions and tools are not confined to the pinned window. Changes apply to the next task."
+        compatibility.toolTip = FullSessionCopy.toggleTip
         view.addSubview(compatibility)
-        let caution = PanelStyle.label("Pinned-only is the default. Trusted code can act outside the chosen window.", size: 11)
-        caution.frame = NSRect(x: 48, y: 448, width: 480, height: 20); view.addSubview(caution)
+        fullSessionNote.frame = NSRect(x: 48, y: 448, width: 480, height: 20)
+        fullSessionNote.setAccessibilityLabel("Full pi session status")
+        view.addSubview(fullSessionNote)
         let browser = NSButton(title: "Brave Access…", target: self, action: #selector(browserSetup))
         browser.bezelStyle = .rounded; browser.frame = NSRect(x: 28, y: 480, width: 170, height: 32); view.addSubview(browser)
         let browserHint = PanelStyle.label("Your live tab through Accessibility — no approval prompts.", size: 11)
@@ -540,6 +552,7 @@ extension HarnessClient: ModelSettingsService {}
             do {
                 let resources = try await self.harness.resources()
                 self.compatibility.state = resources.current.mode == "trustedGlobal" ? .on : .off
+                self.fullSessionNote.stringValue = FullSessionCopy.note(mode: resources.current.mode, status: resources.status)
                 let catalog = try await self.harness.models()
                 try Task.checkCancellation()
                 self.catalog = catalog
@@ -598,21 +611,26 @@ extension HarnessClient: ModelSettingsService {}
     }
     @objc private func compatibilityChanged() {
         let trusted = compatibility.state == .on
-        if trusted {
-            let alert = NSAlert()
-            alert.alertStyle = .warning
-            alert.messageText = "Trust your global pi configuration?"
-            alert.informativeText = "This loads your pi extensions, skills, prompts and coding tools. Extensions execute code with pi-os permissions. They can read/write files, run commands or act outside the pinned window. Native desktop guards cannot sandbox arbitrary extension code.\n\nOnly enable code you trust. This applies to the next task, not an already-running task."
-            alert.addButton(withTitle: "Enable Trusted Compatibility")
-            alert.addButton(withTitle: "Keep Pinned-Only")
-            guard alert.runModal() == .alertFirstButtonReturn else { compatibility.state = .off; return }
+        guard trusted else { applyFullSession(false); return }
+        // The sheet decides; until then nothing is sent (a decline leaves the stored mode as it was).
+        compatibility.isEnabled = false
+        acknowledgeFullSession(FullSessionCopy.acknowledgement, window) { [weak self] accepted in
+            guard let self else { return }
+            guard accepted else {
+                self.compatibility.state = .off
+                self.compatibility.isEnabled = !self.busy && ControlAvailability.ready
+                return
+            }
+            self.applyFullSession(true)
         }
+    }
+    private func applyFullSession(_ trusted: Bool) {
         busy = true; compatibility.isEnabled = false; apply.isEnabled = false
         task = Task { [weak self] in
             guard let self else { return }
             do {
                 try await self.harness.setResources(trusted: trusted)
-                self.status.stringValue = trusted ? "Trusted compatibility enabled for the next task. Reloading its model catalog…" : "Pinned-only mode enabled for the next task."
+                self.status.stringValue = trusted ? "Full pi session on for the next task. Reloading its model catalog…" : "Full pi session off: pi stays in your chosen window from the next task."
                 self.load()
             } catch {
                 self.busy = false
@@ -956,7 +974,12 @@ extension HarnessClient: ModelSettingsService {}
     }
     /// Offscreen snapshots and tests: wait for the catalog and classifier to load.
     func waitUntilLoaded() async {
-        await task?.value; await voiceTask?.value; await classifierTask?.value
+        // A resources change reloads the catalog in a new task: wait for the latest one.
+        while let current = task {
+            await current.value
+            if task == current { break }
+        }
+        await voiceTask?.value; await classifierTask?.value
         while let pending = voiceWork.first(where: { !$0.isCancelled }) {
             await pending.value
             voiceWork.removeAll { $0 == pending }

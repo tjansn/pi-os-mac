@@ -4,7 +4,8 @@ import Foundation
 // (DESIGN2 §3.2, §4.2). The host is authoritative: what the chip shows at Return is what goes with the
 // question. While it is off and `pull` is allowed, the agent may still look at the window mid-turn
 // (use_active_window; the bar says "Looking at …"). A request without `context` keeps the legacy window
-// behaviour (Windows, older Mac builds).
+// behaviour (Windows, older Mac builds). The full pi session's `workingDirectory` is a sibling of `context` on
+// /invoke and /invocations/prepare, never on a follow-up (`PiSessionContracts.swift`).
 
 public enum ContextScope: String, Codable, CaseIterable { case general, window }
 public enum ContextPull: String, Codable, CaseIterable { case allowed, denied }

@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
 import { dirname, join } from "node:path";
-import { loadConfig, type HarnessConfig } from "./config.js";
+import { FULL_INVOKE_TIMEOUT_MS, loadConfig, type HarnessConfig } from "./config.js";
 import { HostClient, LauncherRouteError, type DesktopContextSnapshot, type ScreenshotRef, type ToolOutcome } from "./hostClient.js";
 import { InvocationStore, TERMINAL_STATES, type InvocationRecord } from "./invocations.js";
 // Types only: the agent stack itself is imported after listen() (importAgentModules).
@@ -37,6 +37,7 @@ import type { AppRecord } from "./contracts/launcher.js";
 import { HOST_ACTION_TYPES } from "./contracts/actions.js";
 import { attachmentStats, parseAttachments, summarizeAttachments, type Attachment, type AttachmentIssue } from "./contracts/attachments.js";
 import { NO_CONTEXT_SCORER, parseContext, requestedContextRecord, SCOPE_THRESHOLDS, scopeBand, type ContextWire } from "./contracts/context.js";
+import { parseWorkingDirectory, type BashGuard, type ResourceStatus } from "./contracts/piSession.js";
 import type { CardSpec } from "./contracts/cards.js";
 import { cardToText } from "./ui/text.js";
 import { perfLog, Stopwatch, type PerfFields } from "./telemetry.js";
@@ -123,6 +124,7 @@ interface InvokeBody {
   input?: unknown;
   context?: unknown;
   attachments?: unknown;
+  workingDirectory?: unknown;
 }
 
 export interface HarnessServerOptions {
@@ -170,6 +172,8 @@ interface RunningInvocation {
   controller: AbortController;
   timedOut: boolean;
   timer?: NodeJS.Timeout;
+  /** (Re)arms the wall-clock limit in ms, counted from the invocation's start; 0 disables it. */
+  limit(ms: number): void;
 }
 
 /** Per-turn request metadata that is not part of the record. */
@@ -182,6 +186,8 @@ interface TurnMeta {
   attachments?: Attachment[];
   /** Assistant responses this turn (telemetry: model turns per invocation). */
   responses?: number;
+  /** /invoke `workingDirectory` (first turns only; a thread keeps its folder). User content: never logged or recorded. */
+  workingDirectory?: string;
 }
 
 /** A session pre-built at key-down for one take (POST /invocations/prepare). */
@@ -193,6 +199,8 @@ interface PreparedTake {
   session?: Promise<LiveAgentSession | undefined>;
   /** The app the take was pinned on (a general turn names it when the window is gone by submit). */
   app?: string;
+  /** The prepare's `workingDirectory` (full pi sessions): part of what the session is built from. Never logged. */
+  workingDirectory?: string;
 }
 
 interface ThreadEntry {
@@ -642,7 +650,7 @@ export class HarnessServer {
       }
 
       if (route === "GET /settings/resources") {
-        return this.json(response, 200, { current: this.resourceSettings.get(), warning: TRUST_WARNING });
+        return this.json(response, 200, { current: this.resourceSettings.get(), warning: TRUST_WARNING, status: await this.resourceStatus() });
       }
       if (route === "POST /settings/resources") {
         const body = await this.readJson(request) as { mode?: unknown; acknowledgeUnpinnedAccess?: unknown } | null;
@@ -653,7 +661,10 @@ export class HarnessServer {
         if (body.mode === "trustedGlobal" && (this.config.readOnly || !(await this.hostAllowsInput()))) {
           return this.json(response, 409, { error: { code: "control_disabled", message: "Trusted compatibility requires the signed native host's computer-control permissions first" } });
         }
+        const previous = this.resourceSettings.get().mode;
         const current = this.resourceSettings.set(body.mode as "isolated" | "trustedGlobal", body.acknowledgeUnpinnedAccess === true);
+        // A mode change reloads the guard status (the extensions may have changed while it was off).
+        if (current.mode !== previous) this.stack?.modules.runner.forgetGlobalBashGuards();
         return this.json(response, 200, { current });
       }
 
@@ -909,7 +920,7 @@ export class HarnessServer {
    * always 202; /invoke with the same takeId + contextId adopts it if nothing changed.
    */
   private async handlePrepare(request: IncomingMessage, response: ServerResponse): Promise<void> {
-    const body = await this.readJson(request, MAX_INSTANT_BODY) as { contextId?: unknown; takeId?: unknown; cancel?: unknown } | null;
+    const body = await this.readJson(request, MAX_INSTANT_BODY) as { contextId?: unknown; takeId?: unknown; cancel?: unknown; workingDirectory?: unknown } | null;
     if (typeof body?.takeId !== "string" || !ID.test(body.takeId)) {
       return this.json(response, 400, { error: { code: "invalid_arguments", message: "takeId is required" } });
     }
@@ -920,13 +931,16 @@ export class HarnessServer {
     if (typeof body.contextId !== "string" || !ID.test(body.contextId)) {
       return this.json(response, 400, { error: { code: "invalid_arguments", message: "contextId and takeId are required" } });
     }
+    // The issue code only, never the value (a cancel above ignores the key).
+    const workingDirectory = parseWorkingDirectory(body.workingDirectory);
+    if (!workingDirectory.ok) return this.json(response, 400, { error: { code: "invalid_arguments", message: workingDirectory.error } });
     this.json(response, 202, { accepted: true, takeId: body.takeId });
-    this.prepareTake(body.contextId, body.takeId);
+    this.prepareTake(body.contextId, body.takeId, workingDirectory.workingDirectory);
   }
 
-  private prepareTake(contextId: string, takeId: string): void {
+  private prepareTake(contextId: string, takeId: string, workingDirectory?: string): void {
     const existing = this.prepared.get(takeId);
-    if (existing?.contextId === contextId || this.stopping || this.usedTakes.has(takeId)) return;
+    if ((existing?.contextId === contextId && existing.workingDirectory === workingDirectory) || this.stopping || this.usedTakes.has(takeId)) return;
     if (existing) this.discardPrepared(takeId, "replaced");
     // No network: fend compile + rate cache; the host app index makes the first "open X" warm.
     if (this.config.instantEnabled !== false) {
@@ -942,6 +956,7 @@ export class HarnessServer {
     const take: PreparedTake = {
       takeId, contextId, controller: new AbortController(),
       timer: setTimeout(() => this.discardPrepared(takeId, "expired"), this.options.prepareTtlMs ?? 30_000),
+      ...(workingDirectory !== undefined ? { workingDirectory } : {}),
     };
     take.timer.unref();
     this.prepared.set(takeId, take);
@@ -962,7 +977,16 @@ export class HarnessServer {
     }
     if (outcome.result.targetWindow?.processName) take.app = outcome.result.targetWindow.processName;
     const { readOnly, launcher } = await this.negotiate(signal);
-    const options = this.runOptions({ contextId: take.contextId, prompt: "" }, outcome.result, readOnly, launcher, signal, undefined, {});
+    const options: AgentRunOptions = {
+      ...this.runOptions({ contextId: take.contextId, prompt: "" }, outcome.result, readOnly, launcher, signal, undefined, {}),
+      ...(take.workingDirectory !== undefined ? { workingDirectory: take.workingDirectory } : {}),
+    };
+    // A full pi session in (or through a link into) a privacy-protected folder is built at /invoke: reading its
+    // project context now could show a privacy prompt at key-down.
+    if (await runner.defersPreparation(options)) {
+      console.log("[prepare] no session: deferred to invoke");
+      return undefined;
+    }
     const live = await (this.options.createSession ?? runner.createLiveSession)(options);
     // Discarded (expiry, cancel, replacement, shutdown) while building. Adoption does not abort.
     if (signal.aborted || this.stopping) {
@@ -1032,6 +1056,9 @@ export class HarnessServer {
     if (!input.ok) return this.json(response, 400, { error: { code: "invalid_arguments", message: input.error } });
     const scoped = parseTurnContext(body, this.config.capturesDir, contextId);
     if (!scoped.ok) return this.invalidTurnContext(response, scoped);
+    // Full pi sessions only (the macOS host sends it while full mode is on); the issue code only, never the value.
+    const workingDirectory = parseWorkingDirectory(body.workingDirectory);
+    if (!workingDirectory.ok) return this.json(response, 400, { error: { code: "invalid_arguments", message: workingDirectory.error } });
     if (typeof body.invocationId === "string" && this.invocations.get(body.invocationId)) {
       return this.json(response, 409, { error: { code: "duplicate_invocation", message: "Invocation already exists; it was not re-executed" } });
     }
@@ -1055,6 +1082,7 @@ export class HarnessServer {
       ...(input.input ? { input: input.input } : {}),
       ...(scoped.context ? { context: scoped.context } : {}),
       ...(scoped.attachments ? { attachments: scoped.attachments } : {}),
+      ...(workingDirectory.workingDirectory !== undefined ? { workingDirectory: workingDirectory.workingDirectory } : {}),
     });
 
     if (body.retainSession === true) this.threads.set(record.invocationId, { expires: this.now() + THREAD_TTL_MS });
@@ -1170,6 +1198,25 @@ export class HarnessServer {
     });
   }
 
+  /**
+   * GET /settings/resources `status` (protocol.md "Full pi session (macOS)"), content-free. Full sessions are on for a
+   * macOS host with `trustedGlobal` stored, no read-only launch and the native input routes. Only then are the global
+   * extensions loaded and classified (globalBashGuard), once per process until the resource mode or the agent dir's
+   * extensions change (cachedGlobalBashGuard); isolated mode never runs their code for this.
+   */
+  private async resourceStatus(): Promise<ResourceStatus> {
+    const off: ResourceStatus = { fullSession: false, guard: "none" };
+    const mode = this.resourceSettings.get().mode;
+    // Off: the next full-mode status loads the global extensions again (they may change meanwhile).
+    if (mode !== "trustedGlobal") this.stack?.modules.runner.forgetGlobalBashGuards();
+    if ((this.options.platform ?? process.platform) !== "darwin" || this.config.readOnly || mode !== "trustedGlobal") return off;
+    if (!(await this.hostAllowsInput().catch(() => false))) return off;
+    let guard: BashGuard = "none";
+    try { guard = await this.agent.modules.runner.cachedGlobalBashGuard(this.agent.services.agentDir); }
+    catch { /* Extensions that cannot load guard nothing; Settings then warns. */ }
+    return { fullSession: true, guard };
+  }
+
   private async hostAllowsInput(signal?: AbortSignal): Promise<boolean> {
     const tools = await this.options.hostClient!.getToolNames(signal);
     return INPUT_TOOLS.every(name => tools.includes(name));
@@ -1268,17 +1315,24 @@ export class HarnessServer {
   }
 
   private async processInvocation(record: InvocationRecord, followup = false): Promise<void> {
-    // A.3: one AbortController per invocation; timeout fires it when configured.
-    const entry: RunningInvocation = { controller: new AbortController(), timedOut: false };
+    // A.3: one AbortController per invocation; timeout fires it when configured. A full pi session's turn gets its
+    // own limit once its session is known (defaultProcessor).
     const watch = new Stopwatch();
-    if (this.config.invokeTimeoutMs > 0) {
-      entry.timer = setTimeout(() => {
-        entry.timedOut = true;
-        entry.controller.abort();
-        console.warn(`[invoke] timeout (${this.config.invokeTimeoutMs}ms) id=${record.invocationId}`);
-      }, this.config.invokeTimeoutMs);
-      entry.timer.unref();
-    }
+    const entry: RunningInvocation = {
+      controller: new AbortController(), timedOut: false,
+      limit: (ms) => {
+        if (entry.timer) clearTimeout(entry.timer);
+        entry.timer = undefined;
+        if (ms <= 0 || entry.controller.signal.aborted) return;
+        entry.timer = setTimeout(() => {
+          entry.timedOut = true;
+          entry.controller.abort();
+          console.warn(`[invoke] timeout (${ms}ms) id=${record.invocationId}`);
+        }, Math.max(0, ms - watch.elapsed()));
+        entry.timer.unref();
+      },
+    };
+    entry.limit(this.config.invokeTimeoutMs);
     this.running.set(record.invocationId, entry);
     const signal = entry.controller.signal;
     const id = record.invocationId;
@@ -1415,6 +1469,8 @@ export class HarnessServer {
       ...(turn.context ? { context: turn.context } : {}),
       ...(turn.attachments ? { attachments: turn.attachments } : {}),
       ...(browserPage ? { browserPage } : {}),
+      // A thread keeps its first turn's folder: a follow-up never carries one.
+      ...(!followup && turn.workingDirectory !== undefined ? { workingDirectory: turn.workingDirectory } : {}),
     };
     if (!followup) {
       // What the instant lane knew about this voice take (near miss, matching dictionary entries) for the
@@ -1469,6 +1525,9 @@ export class HarnessServer {
     const sessionMs = watch.lap();
     this.invocations.setTimings(id, { sessionMs });
     perfLog("invoke.session", sessionMs, { prepared, followup });
+    // A full pi session's turn (coding work, the user's command guard's approval dialog) runs under its own limit,
+    // counted from the invocation's start; isolated and Windows sessions keep invokeTimeoutMs.
+    if (runner.isFullThread(live)) this.running.get(id)?.limit(this.config.fullInvokeTimeoutMs ?? FULL_INVOKE_TIMEOUT_MS);
 
     turnPlan ??= plan(live);
     this.recordPlan(record, live, turnPlan);

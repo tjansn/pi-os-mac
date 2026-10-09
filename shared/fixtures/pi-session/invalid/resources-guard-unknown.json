@@ -1,0 +1,10 @@
+{
+  "current": {
+    "mode": "trustedGlobal"
+  },
+  "warning": "Trusted pi compatibility loads your global extensions, skills, prompts and coding tools. Extensions execute code with pi-os permissions; these tools are not confined to the pinned window. Enable only for code you trust.",
+  "status": {
+    "fullSession": true,
+    "guard": "sandbox"
+  }
+}

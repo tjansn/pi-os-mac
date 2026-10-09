@@ -24,8 +24,21 @@ import PiOSCore
             ], current: current)
         }
         func setModel(_ selection: HarnessClient.ModelSelection) async throws { /* preview only */ }
-        func resources() async throws -> HarnessClient.ResourceSettings { .init(current: .init(mode: "isolated"), warning: "Mock preview only") }
-        func setResources(trusted: Bool) async throws { /* preview only; no code loaded */ }
+        /// The stored resource mode ("isolated" or "trustedGlobal"), as Node's resources.json.
+        var resourceMode = "isolated"
+        /// What a full-mode harness reports as `status` while the mode is trustedGlobal (nil: an older harness without
+        /// one). Isolated reports `fullSession: false, guard: none`, as Node does, whenever this is set.
+        var fullStatus: ResourceStatus?
+        /// Every POST /settings/resources (true: trustedGlobal with the acknowledgement).
+        private(set) var resourcePosts: [Bool] = []
+        func resources() async throws -> HarnessClient.ResourceSettings {
+            let status = fullStatus.map { resourceMode == "trustedGlobal" ? $0 : ResourceStatus(fullSession: false, bashGuard: .unguarded) }
+            return .init(current: .init(mode: resourceMode), warning: "Mock preview only", status: status)
+        }
+        func setResources(trusted: Bool) async throws {
+            // Preview only: no extension code is loaded.
+            resourcePosts.append(trusted); resourceMode = trusted ? "trustedGlobal" : "isolated"
+        }
         /// Mirrors Node: paths come only from what was posted (no PI_OS_LAYA_* here); nothing spawns.
         func classifier() async throws -> ClassifierSettings {
             let reason = classifierPython == nil ? "python_not_configured" : classifierModel == nil ? "model_dir_not_configured" : nil
@@ -402,17 +415,20 @@ import PiOSCore
     static func make(page: SettingsWindow.Page = .general, voiceEnabled: Bool = true,
                      current: HarnessClient.ModelSelection? = nil, notifier: ResultNotifier? = nil,
                      dictionary: DictionaryDocument? = ModelSettingsPreview.fixtureDictionary(),
-                     takes: [VoiceTakeRecord] = ModelSettingsPreview.fixtureTakes(), model: SpeechModelState? = .notDownloaded) -> SettingsWindow {
+                     takes: [VoiceTakeRecord] = ModelSettingsPreview.fixtureTakes(), model: SpeechModelState? = .notDownloaded,
+                     service: Service? = nil) -> SettingsWindow {
         let defaults = UserDefaults(suiteName: "dev.pi-os.settings-preview." + UUID().uuidString)!
         let voiceSettings = VoiceSettings(defaults: defaults, systemLanguages: { ["en-US", "de-DE"] })
         voiceSettings.enabled = voiceEnabled
-        let window = SettingsWindow(harness: Service(current: current), notifier: notifier,
+        let window = SettingsWindow(harness: service ?? Service(current: current), notifier: notifier,
                                     voice: FakeVoiceSystem(), voiceSettings: voiceSettings, contextDefaults: defaults,
                                     dictionary: dictionary.map { FakeDictionaryService(document: $0) },
                                     journal: FakeVoiceJournal(enabled: true, takes: takes),
                                     speechModels: model.map { FakeSpeechModelStore(state: $0) },
                                     prompts: prompts(), appName: fixtureAppName, makeAudio: { _ in SilentTakeAudio() })
         window.recognition?.presentConsent = { _ in false }
+        // The full session's acknowledgement is declined: the preview never shows a sheet or loads extension code.
+        window.acknowledgeFullSession = { _, _, done in done(false) }
         window.window?.title = "pi-os Settings — Mock Preview"
         window.show(page)
         return window

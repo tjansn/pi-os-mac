@@ -1,0 +1,14 @@
+{
+  "invocationId": "inv-pi-0001",
+  "contextId": "ctx-123",
+  "invokedAt": "2026-10-09T09:00:00Z",
+  "retainSession": true,
+  "takeId": "take-7",
+  "prompt": "what is in this folder?",
+  "context": {
+    "scope": "general",
+    "pull": "allowed",
+    "source": "default"
+  },
+  "workingDirectory": "/Users/fixture/Documents/\u00dcber Projekte/pi os (2)"
+}

@@ -1,0 +1,14 @@
+{
+  "invocationId": "inv-pi-0001",
+  "contextId": "ctx-123",
+  "invokedAt": "2026-10-09T09:00:00Z",
+  "retainSession": true,
+  "takeId": "take-7",
+  "prompt": "continue my last pi session",
+  "context": {
+    "scope": "general",
+    "pull": "allowed",
+    "source": "default"
+  },
+  "workingDirectory": null
+}

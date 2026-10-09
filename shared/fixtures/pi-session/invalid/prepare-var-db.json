@@ -1,0 +1,6 @@
+{
+  "contextId": "ctx-123",
+  "takeId": "take-7",
+  "workingDirectory": "/private/var/db/sudo",
+  "_expect": "blocked_root"
+}

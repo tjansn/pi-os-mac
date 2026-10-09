@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { homedir } from "node:os";
 import type { AssistantMessage, ImageContent, Model, TextContent } from "@earendil-works/pi-ai";
 import type { CreateAgentSessionOptions, InlineExtension, ToolDefinition, ToolLoadout } from "@earendil-works/pi-coding-agent";
 import {
@@ -8,7 +9,7 @@ import {
   SessionManager,
 } from "@earendil-works/pi-coding-agent";
 import type { HostClient, DesktopContextSnapshot, ScreenshotRef } from "../hostClient.js";
-import { createComputerUseExtension, USE_ACTIVE_WINDOW_TOOL, type ContextHooks } from "./computerUseExtension.js";
+import { createComputerUseExtension, USE_ACTIVE_WINDOW_TOOL, type ContextHooks, type FullSessionPrompt } from "./computerUseExtension.js";
 import { compactSnapshotSummary, renderPageDigest } from "./desktopTools.js";
 import { pageDigestSection, pageReadOf, type AxTransport, type PageRead } from "../browser/axTransport.js";
 import { axBrowserExtension, BROWSER_TOOLS, browserToolNames } from "../browser/tools.js";
@@ -16,7 +17,11 @@ import { createBrowserTransport, type BrowserTransport } from "../browser/transp
 import { LiveAgentSession, type SessionObserver } from "./liveSession.js";
 export { LiveAgentSession } from "./liveSession.js";
 import { loadScreenshotImage } from "./screenshotImage.js";
-import { createSessionSettings, loadAgentResources, PI_OS_SYSTEM_PROMPT, registerResourceProviders } from "./resources.js";
+import { createSessionSettings, loadAgentResources, PI_OS_SYSTEM_PROMPT, projectTrustOf, registerResourceProviders } from "./resources.js";
+import {
+  continuesLastSession, fullPromptVariant, isFullSession, openFullSession, readsProtectedFolder, resolveWorkingDirectory, sessionDirectory,
+  type FullPromptVariant,
+} from "./fullSession.js";
 import type { ContextPull, ContextRecord, ContextScope, ContextSource, ContextTarget, ContextWire } from "../contracts/context.js";
 import {
   attachmentStats, parseAttachments, renderAttachmentsForPrompt, type Attachment, type ImageAttachment,
@@ -27,7 +32,7 @@ import {
   type DictionaryEntryRef, type DictionaryLookup, type TakeMemo, type TakeMemoRecord, type TakeNearMiss,
 } from "../contracts/dictionary.js";
 import { INSTANT_LIMITS, isRecognizerId, isVoiceText, RECOGNIZERS } from "../contracts/instant.js";
-import { effectiveResourceMode, TRUST_WARNING, type ResourceSelection } from "./resourceSettings.js";
+import { effectiveResourceMode, type ResourceSelection } from "./resourceSettings.js";
 import {
   CODEMODE_TOOL, CODEMODE_TOOL_NAMES, codemodeExtensionFactories, MODEL_ONLY_TOOLS, SCRIPT_CALLABLE_TOOLS,
 } from "./codemodePolicy.js";
@@ -47,7 +52,10 @@ import { FileLedger } from "../ui/ledger.js";
 import { createInstantEngines, type InstantEngines } from "../instant/engines.js";
 import type { CardSpec } from "../contracts/cards.js";
 import { registerLayaProvider, type LayaPredictBackend } from "../classifier/provider.js";
-export { createSessionSettings, loadAgentResources, PI_OS_SETTINGS_OVERRIDES } from "./resources.js";
+export {
+  cachedGlobalBashGuard, createSessionSettings, forgetGlobalBashGuards, globalBashGuard, loadAgentResources, PI_OS_SETTINGS_OVERRIDES,
+} from "./resources.js";
+export { continuesLastSession, fullPromptVariant, isFullSession, type FullPromptVariant } from "./fullSession.js";
 
 /**
  * One in-memory session per pinned thread; sequential follow-ups retain history,
@@ -96,9 +104,11 @@ export interface AgentServices {
   laya?: () => LayaPredictBackend | undefined;
   /** Runtime factory (tests inject an in-process provider). One runtime per session: it holds Auto's decision slot. */
   modelRuntime?: () => Promise<ModelRuntime>;
-  /** pi agent dir / cwd overrides (tests use a fixture agent dir). */
+  /** pi agent dir / cwd overrides (tests use a fixture agent dir). A full pi session never uses `cwd`. */
   agentDir?: string;
   cwd?: string;
+  /** The user's home folder (default os.homedir()): a full session's fallback folder (tests use a temporary one). */
+  home?: string;
   /**
    * Host platform (default process.platform) for every per-host session choice: the read-only default,
    * isolated vs trusted resources, scope-aware prompts and tools, and the model default (macOS defaults
@@ -135,6 +145,12 @@ export interface AgentRunOptions {
   onActivity?: (activity: string | undefined) => void;
   /** Spoken/typed input metadata (POST /invoke `input`). */
   input?: InvokeInput;
+  /**
+   * POST /invoke and /invocations/prepare `workingDirectory` (parseWorkingDirectory): the folder a full pi session
+   * runs in when it exists and belongs to the user (resolveWorkingDirectory; else the home folder). Isolated and
+   * Windows sessions ignore it. User content: never logged or recorded.
+   */
+  workingDirectory?: string;
   /**
    * What the instant lane knew about this voice take (voiceTakeContext over the take memo and the
    * dictionary): rendered into the first prompt's spoken-input note, voice input only. User content,
@@ -403,6 +419,11 @@ export interface SessionExtensionOptions {
   context?: ContextHooks;
   /** Isolated macOS session: the lean pi-os base prompt; tool guidelines move into descriptions. */
   leanPrompt?: boolean;
+  /**
+   * Full pi session (macOS, trusted): the thread's prompt variant (lean or pi's coding prompt, decided by its first
+   * turn). Tool guidelines move into descriptions as under the lean prompt, so they reach the model in both variants.
+   */
+  fullSession?: FullSessionPrompt;
 }
 
 /**
@@ -422,6 +443,7 @@ export function sessionExtensions(options: SessionExtensionOptions) {
       postActionCapture: platform === "darwin",
       ...(options.context ? { context: options.context } : {}),
       ...(options.leanPrompt ? { leanPrompt: true } : {}),
+      ...(options.fullSession ? { fullSession: options.fullSession } : {}),
     });
   const engines = options.engines ?? (defaultEngines ??= toolEnginesFrom(createInstantEngines()));
   const extensions: InlineExtension[] = [
@@ -439,7 +461,7 @@ export function sessionExtensions(options: SessionExtensionOptions) {
     createPromptCacheExtension(),
     ...advertiseScriptCallableOnly(codemodeExtensionFactories()),
   ];
-  return { extensions: options.leanPrompt ? foldPromptGuidelines(extensions) : extensions, computerUse, ledger };
+  return { extensions: options.leanPrompt || options.fullSession ? foldPromptGuidelines(extensions) : extensions, computerUse, ledger };
 }
 
 /**
@@ -479,11 +501,27 @@ export function resolveSessionModel(
  */
 export function sessionSetupKey(options: AgentRunOptions): string {
   const routing = options.services?.routing?.() ?? DEFAULT_ROUTING_SETTINGS;
+  const platform = options.services?.platform ?? process.platform;
+  // A full pi session is also built for its folder and its session file: the requested working directory and
+  // whether the request continues the folder's last pi session (a prepare never does; it has no words yet).
+  const full = isFullSession(platform, options.readOnly ?? platform === "darwin", options.resourceSelection);
   return JSON.stringify([
-    options.services?.platform ?? process.platform, options.contextId, options.readOnly ?? null, options.launcher === true,
+    platform, options.contextId, options.readOnly ?? null, options.launcher === true,
     options.resourceSelection?.mode ?? "isolated", options.modelSelection ?? null, routing.bias,
     browserSetup(options.snapshot.browser),
+    ...(full ? [options.workingDirectory ?? null, continuesLastSession(options.prompt)] : []),
   ]);
+}
+
+/**
+ * Whether a key-down build of this session (POST /invocations/prepare) must wait for /invoke: a full pi session
+ * whose folder is, or may lead into, a privacy-protected folder (fullSession.readsProtectedFolder), so no privacy
+ * prompt can appear before the user submitted. Never true for isolated or Windows sessions.
+ */
+export async function defersPreparation(options: AgentRunOptions): Promise<boolean> {
+  const platform = options.services?.platform ?? process.platform;
+  if (!isFullSession(platform, options.readOnly ?? platform === "darwin", options.resourceSelection)) return false;
+  return readsProtectedFolder(options.workingDirectory, options.services?.home ?? homedir());
 }
 
 /**
@@ -626,6 +664,8 @@ class ThreadContext implements ScopeView {
   browserPage: BrowserPageProvider | undefined;
   /** Attachment images of the prompt being sent (handed to the extension once). */
   promptContent: (TextContent | ImageContent)[] | undefined;
+  /** The desktop context of a full session's pi command being sent (fullCommand), handed to the extension once. */
+  promptContext: string | undefined;
   /** The pinned Brave tab's Accessibility transport (BrowserHint.mode "ax"); refs are adopted into it. */
   ax: AxTransport | undefined;
   /** The page read the prompt being sent shows: adopted at that prompt's start, after the turn's ref invalidation. */
@@ -637,6 +677,8 @@ class ThreadContext implements ScopeView {
   /** Screenshot seeded after the build (seedScreenshot), compared like the build-time seed. */
   seed: string | undefined;
   seedExtension: ((imageId: string) => void) | undefined;
+  /** A full pi session's thread (macOS, trusted); undefined for isolated and Windows sessions. */
+  full: FullThread | undefined;
 
   constructor(readonly capturesDir: string, readonly platform: NodeJS.Platform, readonly contextId?: string) {}
 
@@ -685,7 +727,55 @@ class ThreadContext implements ScopeView {
   }
 }
 
+/** What a full pi session's thread keeps: its prompt variant (first turn decides) and its saved session. */
+interface FullThread {
+  /** The thread's system prompt; undefined until its first turn is planned or sent. */
+  variant?: FullPromptVariant;
+  /** The first request asked to continue the folder's last pi session. */
+  resume: boolean;
+  /** That session existed and its history was loaded. */
+  resumed: boolean;
+}
+
 const threads = new WeakMap<LiveAgentSession, ThreadContext>();
+
+/** A full thread's prompt variant, decided once by its first turn (planTurn, else promptFirst). */
+function decideVariant(thread: ThreadContext | undefined, text: string, input: { tier?: RouteDecision["tier"]; routeInput?: RouteInput;
+  snapshot?: DesktopContextSnapshot & { screenshot?: ScreenshotRef | null } } = {}): void {
+  const full = thread?.full;
+  if (!full || full.variant) return;
+  const surface = input.routeInput?.surface ?? (input.snapshot ? routeContextFromSnapshot(input.snapshot).surface : undefined);
+  full.variant = fullPromptVariant(text, {
+    ...(input.tier ? { tier: input.tier } : {}), ...(input.routeInput ? { classification: input.routeInput.classification } : {}),
+    ...(surface ? { surface } : {}), resume: full.resume,
+  });
+}
+
+/** The thread's prompt variant (full pi sessions only; undefined otherwise or before its first turn). */
+export function promptVariant(live: LiveAgentSession): FullPromptVariant | undefined {
+  return threads.get(live)?.full?.variant;
+}
+
+/** The session is a full pi session (macOS, trusted): its turns run under the full invocation limit. */
+export function isFullThread(live: LiveAgentSession): boolean {
+  return threads.get(live)?.full !== undefined;
+}
+
+/**
+ * A full session's request that is a pi command (`/skill:<name> …`, a prompt template `/<name> …`, an extension
+ * command): the trimmed request, sent to pi as typed with pi's own expansion; undefined for every other request
+ * and for isolated and Windows threads.
+ */
+function fullCommand(thread: ThreadContext | undefined, request: string): string | undefined {
+  const command = request.trim();
+  return thread?.full && command.startsWith("/") ? command : undefined;
+}
+
+/** The desktop context of a pi command, in a hidden message after it (undefined when there is none). */
+function commandContext(lines: readonly string[]): string | undefined {
+  const text = lines.join("\n").trim();
+  return text ? `## pi-os context for the command above (from pi-os, not part of the command)\n${text}` : undefined;
+}
 
 /**
  * DESIGN2 C13: a take is usually prepared before the host's capture lands, so its session holds no
@@ -826,7 +916,6 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentRunResult
 export async function createLiveSession(options: AgentRunOptions): Promise<LiveAgentSession> {
   const { hostClient, contextId, snapshot, capturesDir, log, signal, onToolCall, onActivity } = options;
   const services = options.services ?? {};
-  const cwd = services.cwd ?? process.cwd();
   const agentDir = services.agentDir ?? getAgentDir();
   const routing = services.routing ?? (() => DEFAULT_ROUTING_SETTINGS);
   const lifetime = new AbortController();
@@ -840,6 +929,12 @@ export async function createLiveSession(options: AgentRunOptions): Promise<LiveA
 
   if (signal?.aborted) throw abortError(signal);
   const isolated = effectiveResourceMode(platform, readOnly, options.resourceSelection) === "isolated";
+  // A full pi session (macOS, trusted) runs in the folder the user was looking at (else home), never in the
+  // harness's own directory; isolated and Windows sessions keep theirs.
+  const full = mac && !isolated;
+  const home = services.home ?? homedir();
+  const cwd = full ? await resolveWorkingDirectory(options.workingDirectory, home) : services.cwd ?? process.cwd();
+  if (signal?.aborted) throw abortError(signal);
   // Hooks created here outlive a prepared session's build: they reach the CURRENT observer through `live`.
   let live: LiveAgentSession | undefined;
   // The user's raw requests (promptFirst/promptFollowup add them); a prepared session reads them at execute time.
@@ -851,6 +946,9 @@ export async function createLiveSession(options: AgentRunOptions): Promise<LiveA
   const lean = scoped && isolated;
   const thread = new ThreadContext(capturesDir, platform, contextId);
   thread.ax = ax;
+  const resume = full && continuesLastSession(options.prompt);
+  if (full) thread.full = { resume, resumed: false };
+  const fullPrompt: FullSessionPrompt | undefined = full ? { lean: () => thread.full?.variant === "lean", cwd } : undefined;
   const hooks: ContextHooks | undefined = scoped ? {
     pullState: () => thread.scope !== "general" || thread.pulled ? "pulled" : thread.pull === "allowed" ? "allowed" : "denied",
     pulled: () => {
@@ -860,6 +958,7 @@ export async function createLiveSession(options: AgentRunOptions): Promise<LiveA
     },
     browserPage: () => pulledPage(thread),
     takePromptContent: () => { const content = thread.promptContent; thread.promptContent = undefined; return content; },
+    takePromptContext: () => { const context = thread.promptContext; thread.promptContext = undefined; return context; },
   } : undefined;
   const { extensions, computerUse: extension, ledger } = sessionExtensions({
     contextId, hostClient, capturesDir, readOnly, launcher: options.launcher === true, platform,
@@ -870,6 +969,7 @@ export async function createLiveSession(options: AgentRunOptions): Promise<LiveA
     userRequests: () => userRequests,
     ...(hooks ? { context: hooks } : {}),
     leanPrompt: lean,
+    ...(fullPrompt ? { fullSession: fullPrompt } : {}),
   });
   const loader = await loadAgentResources(extensions, cwd, agentDir, isolated, { platform, ...(lean ? { systemPrompt: PI_OS_SYSTEM_PROMPT } : {}) });
 
@@ -892,15 +992,40 @@ export async function createLiveSession(options: AgentRunOptions): Promise<LiveA
   const resolved = resolveSessionModel(modelRuntime, options.modelSelection, routing().bias, platform);
   if (resolved.fallbackReason) log(`[agent] ${resolved.fallbackReason}; ${platform === "darwin" ? "using Auto" : "using pi's automatic default"}`);
 
+  // Always explicit (also Windows trusted mode) so the image override applies to every session. A full session's
+  // project settings follow the trust its loader resolved.
+  const settingsManager = createSessionSettings(isolated, cwd, agentDir, platform, full ? { projectTrusted: projectTrustOf(loader) ?? false } : {});
+  // Full pi sessions are regular pi session files (written once the first message exists; follow-ups append), so
+  // `pi --resume` in that folder continues them. Everything else stays in memory.
+  let sessionManager: SessionManager;
+  try {
+    if (full) {
+      const configured = settingsManager.getSessionDir();
+      // pi's environment override counts only for the user's own agent dir (a test's fixture dir never sees it).
+      const directory = sessionDirectory(cwd, agentDir, {
+        ...(configured ? { configured } : {}), env: process.env, defaultAgentDir: services.agentDir === undefined, home,
+      });
+      let opened: ReturnType<typeof openFullSession>;
+      // A most recent file pi cannot read is not resumed: the thread starts a new session instead.
+      try { opened = openFullSession(cwd, directory, resume); } catch (error) { if (!resume) throw error; opened = openFullSession(cwd, directory, false); }
+      sessionManager = opened.manager;
+      thread.full!.resumed = opened.resumed;
+    } else sessionManager = SessionManager.inMemory();
+  } catch (error) {
+    release();
+    // pi's file errors quote the session folder, whose name encodes the working directory (user content): the
+    // record and the logs get a content-free message instead (protocol.md: errors never echo the folder).
+    throw full ? new Error(FULL_SESSION_UNAVAILABLE, { cause: error }) : error;
+  }
+
   const sessionOptions: CreateAgentSessionOptions = {
     cwd,
     agentDir,
     modelRuntime,
     resourceLoader: loader,
-    sessionManager: SessionManager.inMemory(),
+    sessionManager,
     ...(isolated ? { tools: sessionToolAllowlist({ readOnly, ...(browser ? { browser } : {}), auto: resolved.auto, activeWindow: scoped }) } : {}),
-    // Always explicit (also Windows trusted mode) so the image override applies to every session.
-    settingsManager: createSessionSettings(isolated, cwd, agentDir, platform),
+    settingsManager,
   };
   if (resolved.model) {
     sessionOptions.model = resolved.model;
@@ -932,7 +1057,9 @@ export async function createLiveSession(options: AgentRunOptions): Promise<LiveA
   thread.seedExtension = imageId => extension.seedScreenshot(imageId);
   log(
     `[agent] model=${session.model ? `${session.model.provider}/${session.model.id}` : "default"}` +
-    ` effort=${session.thinkingLevel} tools=${scopeToolNames(toolNames, thread).length}`,
+    ` effort=${session.thinkingLevel} tools=${scopeToolNames(toolNames, thread).length}` +
+    // Content-free: never the folder or the session file.
+    (thread.full ? ` full=1${thread.full.resumed ? " resumed=1" : ""}` : ""),
   );
 
   let memo: { source: readonly Model<any>[]; catalog: RoutingCatalog } | undefined;
@@ -1021,6 +1148,8 @@ export function planTurn(live: LiveAgentSession, turn: TurnInput): TurnPlan {
   const { auto, catalog } = live.controls;
   if (!auto || !catalog) {
     thread?.sync();
+    // A full thread on a manually chosen model: its first turn's own tier picks the prompt.
+    if (!turn.followup) decideVariant(thread, turn.text, { ...(turn.snapshot ? { snapshot: turn.snapshot } : {}) });
     return { attachScreenshot: !general };
   }
   // The thread's host scope reaches the router (N1 RouteInput): window shows the window image and needs
@@ -1048,6 +1177,8 @@ export function planTurn(live: LiveAgentSession, turn: TurnInput): TurnPlan {
     ...(turn.input?.mode === "voice" ? { spoken: { words: utteranceWords(turn.text) } } : {}),
   });
   auto.setDecision(decision);
+  // A full thread's prompt follows its first turn's lane (quick/fast lean, standard and up pi's coding prompt).
+  if (!turn.followup) decideVariant(thread, turn.text, { tier: decision.tier, routeInput });
   let activeTools: string[] | undefined;
   if (live.controls.toolNames && live.controls.setActiveTools) {
     activeTools = activeToolsFor(live.controls.toolNames, decision);
@@ -1253,17 +1384,29 @@ export function spokenInputNote(input: InvokeInput | undefined, voice?: VoiceTak
 
 const NO_SCREENSHOT_NOTE = "No screenshot is attached to this request; call desktop_capture_window when you need to see the window.";
 
+/** A full session whose pi session folder could not be opened (content-free: never the folder or the file). */
+export const FULL_SESSION_UNAVAILABLE = "session_unavailable: The pi session folder could not be opened";
+
+/** The note of a first request that continues the folder's most recent pi session (content-free). */
+export function continuedSessionLines(resumed: boolean): string[] {
+  return ["## Continued pi session", resumed
+    ? "This thread continues the user's most recent pi session in this folder; the conversation above is from it."
+    : "The user asked to continue their last pi session, but this folder has no saved pi session yet: say so briefly, then help with the request.", ""];
+}
+
 /**
  * Sends one prompt with its attachment images handed to the computer-use extension, and the page read
  * it shows handed to the AX transport (adopted at the prompt's start), for exactly this prompt.
  */
 async function send(live: LiveAgentSession, text: string, signal: AbortSignal | undefined, image: ImageContent | undefined,
-  content: (TextContent | ImageContent)[], staged?: StagedPageRead): Promise<AgentRunResult> {
+  content: (TextContent | ImageContent)[], staged?: StagedPageRead, command?: { context: string | undefined }): Promise<AgentRunResult> {
   const thread = threads.get(live);
   if (thread && content.length) thread.promptContent = content;
   if (thread && staged) thread.staged = staged;
-  try { return await live.prompt(text, signal, image); }
-  finally { if (thread) { thread.promptContent = undefined; thread.staged = undefined; } }
+  if (thread && command?.context) thread.promptContext = command.context;
+  // A full session's pi command goes through pi's own expansion (skills, prompt templates, extension commands).
+  try { return await live.prompt(text, signal, image, command !== undefined); }
+  finally { if (thread) { thread.promptContent = undefined; thread.staged = undefined; thread.promptContext = undefined; } }
 }
 
 /**
@@ -1283,11 +1426,12 @@ export async function promptFirst(live: LiveAgentSession, options: AgentRunOptio
     thread.browserPage = options.browserPage;
     thread.sync();
   }
+  // A full thread whose first turn was not planned (no planTurn) picks its prompt from the request itself.
+  decideVariant(thread, prompt, { snapshot });
   const general = thread?.general ?? false;
   // The session's host platform (createLiveSession: services.platform, else process.platform).
   const platform = thread?.platform ?? options.services?.platform ?? process.platform;
   const mac = platform === "darwin";
-  const isolated = effectiveResourceMode(platform, options.readOnly ?? mac, options.resourceSelection) === "isolated";
   const available = Boolean(snapshot.screenshot?.filePath);
   const attach = !general && attachesScreenshot(snapshot, { attachScreenshot: options.attachScreenshot !== false });
   // Coordinate authority follows delivered images only (computerUseExtension): no image, no authority,
@@ -1305,7 +1449,7 @@ export async function promptFirst(live: LiveAgentSession, options: AgentRunOptio
   ]);
   if (signal?.aborted) throw abortError(signal);
   const shown = attach ? snapshot : { ...snapshot, screenshot: null };
-  const userMessage = [
+  const context = [
     ...(general ? [] : [
       "## Desktop context (target identity pinned before the prompt appeared)",
       mac ? compactSnapshotSummary(shown) : summarizeSnapshot(shown),
@@ -1315,14 +1459,16 @@ export async function promptFirst(live: LiveAgentSession, options: AgentRunOptio
       ...(page ? [page.text, ""] : []),
     ]),
     ...shelf.lines,
-    ...(!isolated && mac ? ["## Trusted pi compatibility", TRUST_WARNING,
-      "Desktop tool refusals must not be bypassed through another input path.", ""] : []),
+    // A full pi session carries its rules in the system prompt (FULL_SESSION_SECTION); a request that continues the
+    // folder's last pi session says whether one was found.
+    ...(thread?.full?.resume ? continuedSessionLines(thread.full.resumed) : []),
     ...spokenInputNote(options.input, options.voice),
     ...(general && thread ? activeAppLines(snapshot, thread.pull, options.context?.target) : []),
-    "## Request",
-    prompt,
-  ].join("\n");
-  return send(live, userMessage, signal, image, shelf.content, page?.read);
+  ];
+  // A full session's pi command reaches pi as typed, so pi's own expansion sees it; its context follows it.
+  const command = fullCommand(thread, prompt);
+  if (command !== undefined) return send(live, command, signal, image, shelf.content, page?.read, { context: commandContext(context) });
+  return send(live, [...context, "## Request", prompt].join("\n"), signal, image, shelf.content, page?.read);
 }
 
 /** What a follow-up may carry besides its words (POST /invocations/{id}/followup). */
@@ -1399,9 +1545,17 @@ export function promptFollowup(live: LiveAgentSession, prompt: string, signal?: 
         + " Earlier screenshots and page content are historical: use them only for what they showed then, and say so.",
       "",
     ] : thread?.general ? [] : image ? [...WINDOW_FOLLOWUP, VIEWING_SCREENSHOT_NOTE] : WINDOW_FOLLOWUP;
-    return [...header, ...shelf.lines, ...spokenInputNote(input), "## Request", prompt].join("\n");
+    return [...header, ...shelf.lines, ...spokenInputNote(input)];
   };
-  if (!shows && !options.attachments?.length) return send(live, compose(undefined, undefined, { lines: [], content: [] }), signal, undefined, []);
+  // A full session's pi command reaches pi as typed, so pi's own expansion sees it; its context follows it.
+  const command = fullCommand(thread, prompt);
+  const dispatch = (image: ImageContent | undefined, page: PageSection | undefined, shelf: AttachmentPrompt) => {
+    const context = compose(image, page, shelf);
+    return command !== undefined
+      ? send(live, command, signal, image, shelf.content, page?.read, { context: commandContext(context) })
+      : send(live, [...context, "## Request", prompt].join("\n"), signal, image, shelf.content, page?.read);
+  };
+  if (!shows && !options.attachments?.length) return dispatch(undefined, undefined, { lines: [], content: [] });
   return (async () => {
     const shot = shows ? options.snapshot?.screenshot?.filePath : undefined;
     const [image, page, shelf] = await Promise.all([
@@ -1410,7 +1564,7 @@ export function promptFollowup(live: LiveAgentSession, prompt: string, signal?: 
       attachmentPrompt(options.attachments ?? [], thread?.capturesDir ?? "", live.controls.ledger, thread?.contextId),
     ]);
     if (signal?.aborted) throw abortError(signal);
-    return send(live, compose(image, page, shelf), signal, image, shelf.content, page?.read);
+    return dispatch(image, page, shelf);
   })();
 }
 
