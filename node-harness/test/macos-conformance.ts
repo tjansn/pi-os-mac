@@ -9,6 +9,8 @@ import { test } from "node:test";
 import { HostClient } from "../src/hostClient.js";
 import { loadScreenshotImage } from "../src/agent/screenshotImage.js";
 import type { HarnessConfig } from "../src/config.js";
+import { parseHostAction } from "../src/contracts/actions.js";
+import type { AppIndexResult, AppRecord, FileCandidate, FileSearchResult, LauncherOpenResult } from "../src/contracts/launcher.js";
 
 async function freePort() {
   const server = createServer();
@@ -54,8 +56,11 @@ test("real Swift NWListener ↔ Node fetch/hostClient and supervised harness (no
   const fixture = JSON.parse(await readFile(resolve("../shared/fixtures/macos-window.json"), "utf8"));
   fixture.screenshot.filePath = join(captures, "window.png");
   await writeFile(join(root, "context.json"), JSON.stringify(fixture));
+  const launcherFixtures = resolve("../shared/fixtures/launcher");
+  const launcherFixture = async (name: string) => JSON.parse(await readFile(join(launcherFixtures, name), "utf8"));
   const host = spawn(resolve("../host-macos/.build/debug/pi-os"), ["--conformance", join(root, "context.json")], {
-    env: { ...process.env, PI_OS_TOKEN: token, PI_OS_HOST_PORT: String(hostPort) }, stdio: ["pipe", "pipe", "pipe"],
+    env: { ...process.env, PI_OS_TOKEN: token, PI_OS_HOST_PORT: String(hostPort), PI_OS_LAUNCHER_FIXTURES: launcherFixtures },
+    stdio: ["pipe", "pipe", "pipe"],
   });
   let node: ChildProcess | undefined;
   const config: HarnessConfig = { port: nodePort, hostBaseUrl: `http://127.0.0.1:${hostPort}`, hostToken: token,
@@ -68,7 +73,11 @@ test("real Swift NWListener ↔ Node fetch/hostClient and supervised harness (no
     for (const auth of [undefined, "wrong", token]) {
       const response = await fetch(base + "/tools", { headers: auth ? { "X-Harness-Token": auth } : {} });
       assert.equal(response.status, auth === token ? 200 : 401);
-      if (auth === token) assert.equal(((await response.json()) as { tools: unknown[] }).tools.length, 3);
+      if (auth === token) {
+        const names = ((await response.json()) as { tools: { name: string }[] }).tools.map(tool => tool.name);
+        assert.deepEqual(names, ["desktop.getContext", "desktop.refreshContext", "desktop.captureWindow",
+          "launcher.searchFiles", "launcher.listApps", "launcher.open"]);
+      }
     }
     const client = new HostClient(config);
     for (const tool of ["desktop.getContext", "desktop.refreshContext", "desktop.captureWindow"]) {
@@ -79,6 +88,58 @@ test("real Swift NWListener ↔ Node fetch/hostClient and supervised harness (no
         assert.equal(image.data, (await readFile(fixture.screenshot.filePath)).toString("base64"));
       }
     }
+    // Launcher routes: the production Swift LauncherHost over shared/fixtures/launcher (no Spotlight,
+    // TCC or effects). contextId is optional, tokens are host-minted, and refusals match the fixtures.
+    const appsFixture = (await launcherFixture("list-apps-response.json")).result as AppIndexResult;
+    const byBundle = (apps: AppRecord[]) => [...apps].sort((a, b) => a.bundleId.localeCompare(b.bundleId));
+    for (const args of [{}, { contextId: fixture.id }]) {
+      const listed = await client.invokeTool<AppIndexResult>("launcher.listApps", args);
+      assert.equal(listed.ok, true);
+      if (listed.ok) {
+        assert.match(listed.result.version, /^apps-\d+$/);
+        assert.deepEqual(byBundle(listed.result.apps), byBundle(appsFixture.apps));
+      }
+    }
+    const searchRequest = (await launcherFixture("search-files-request.json")).arguments as Record<string, unknown>;
+    const filesFixture = (await launcherFixture("search-files-response.json")).result as FileSearchResult;
+    const searched = await client.invokeTool<FileSearchResult>("launcher.searchFiles", searchRequest);
+    assert.equal(searched.ok, true);
+    if (!searched.ok) throw new Error("searchFiles failed");
+    const withoutToken = (items: FileCandidate[]) => items.map(({ token: _token, ...rest }) => rest).sort((a, b) => a.path.localeCompare(b.path));
+    assert.deepEqual(withoutToken(searched.result.items), withoutToken(filesFixture.items));
+    assert.equal(searched.result.truncated, false);
+    assert.equal(typeof searched.result.elapsedMs, "number");
+    const tokens = searched.result.items.map(item => item.token);
+    assert.equal(new Set(tokens).size, tokens.length);
+    for (const minted of tokens) {
+      assert.match(minted, /^tok_[0-9a-f]{32}$/);
+      assert.notEqual(parseHostAction({ type: "openFile", token: minted }), null, "Swift-minted tokens satisfy the Node action contract");
+      assert.ok(!filesFixture.items.some(item => item.token === minted), "Tokens are minted per search, never echoed");
+    }
+    const tooMany = await client.invokeTool("launcher.searchFiles", { nameGroups: [["a", "b", "c", "d", "e", "f", "g"]] });
+    assert.equal(tooMany.ok, false);
+    if (!tooMany.ok) assert.equal(tooMany.error.code, "invalid_arguments");
+    assert.equal((await fetch(base + "/tools/launcher.searchFiles", { method: "POST", headers, body: "{" })).status, 400);
+    const post = async (route: string, body: unknown) =>
+      (await fetch(base + "/tools/" + route, { method: "POST", headers, body: typeof body === "string" ? body : JSON.stringify(body) })).json();
+    assert.deepEqual(await post("launcher.open", await readFile(join(launcherFixtures, "open-request.json"), "utf8")),
+      await launcherFixture("open-response.json"));
+    assert.deepEqual(await post("launcher.open", { arguments: { action: { type: "openURL", url: "file:///etc/passwd" } } }),
+      await launcherFixture("open-response-denied.json"));
+    const pdf = searched.result.items.find(item => item.name === "Invoice-2026-03.pdf")!;
+    const opened = await client.invokeTool<LauncherOpenResult>("launcher.open",
+      { contextId: searchRequest.contextId, action: { type: "openFile", token: pdf.token } });
+    assert.deepEqual(opened, { ok: true, result: { status: "Opened Invoice-2026-03.pdf", performed: "openFile" } });
+    const foreign = await client.invokeTool("launcher.open", { contextId: "ctx-other", action: { type: "revealFile", token: pdf.token } });
+    assert.equal(foreign.ok, false);
+    if (!foreign.ok) assert.equal(foreign.error.code, "token_expired");
+    for (const action of [{ type: "copyText", text: "x" }, { type: "system", op: "display.sleep" }, { type: "deleteFile", token: pdf.token }]) {
+      const refused = await client.invokeTool("launcher.open", { action });
+      assert.equal(refused.ok, false);
+      if (!refused.ok) assert.equal(refused.error.code, "policy_blocked");
+    }
+    assert.equal((await fetch(base + "/tools/launcher.delete", { method: "POST", headers, body: "{}" })).status, 404);
+
     const unknown = await client.getSnapshot("ctx-gone");
     assert.equal(unknown.ok, false);
     if (!unknown.ok) assert.equal(unknown.error.code, "unknown_context");

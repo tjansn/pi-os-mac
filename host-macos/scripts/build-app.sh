@@ -5,7 +5,7 @@ OUTPUT="$ROOT/host-macos/build/pi-os.app"
 IDENTITY="${PI_OS_SIGN_IDENTITY:--}"
 NODE="${PI_OS_NODE_PATH:-$(command -v node || true)}"
 if [[ ! -x "$NODE" || "$NODE" != /* ]]; then
-  echo "Set PI_OS_NODE_PATH to an absolute Node 22+ executable path." >&2; exit 1
+  echo "Set PI_OS_NODE_PATH to an absolute Node 22.19+ executable path." >&2; exit 1
 fi
 if [[ -d "$OUTPUT" ]] && /usr/sbin/lsof -t "$OUTPUT/Contents/MacOS/pi-os" >/dev/null 2>&1; then
   echo "Quit the existing build of pi-os before replacing it." >&2; exit 1
@@ -32,7 +32,11 @@ if [[ "$IDENTITY" == "-" ]]; then
   echo "Do not use it to refresh an authorized installation. Select PI_OS_SIGN_IDENTITY for stable installs." >&2
   codesign --force --sign - "$APP"
 else
-  codesign --force --options runtime --sign "$IDENTITY" "$APP"
+  # App executable only: under the hardened runtime, push-to-talk microphone capture needs audio-input.
+  # A bundled Node keeps Node.entitlements (signed by bundle-runtime.sh, not re-signed here).
+  ENTITLEMENTS="$ROOT/host-macos/Resources/PiOS.entitlements"
+  /usr/bin/plutil -lint "$ENTITLEMENTS" >/dev/null
+  codesign --force --options runtime --entitlements "$ENTITLEMENTS" --sign "$IDENTITY" "$APP"
 fi
 codesign --verify --strict "$APP"
 # Build from an empty stage: no stale bundled runtime or dependency survives a mode switch.

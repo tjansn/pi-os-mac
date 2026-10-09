@@ -127,8 +127,29 @@ public enum HostRoutes {
             var required = ["contextId"]
         }
     }
-    public static func catalog(includeInput: Bool = false) -> HTTPResponse {
+    /// `launcher` lists the launcher routes to advertise (LauncherRoutes.advertised); contextId is optional there.
+    public static func catalog(includeInput: Bool = false, launcher: [String] = []) -> HTTPResponse {
         var tools = names.map { Descriptor(name: $0, description: "Read the pinned target window.") }
+        for name in launcher where LauncherRoutes.names.contains(name) {
+            var tool: Descriptor
+            switch name {
+            case LauncherRoutes.searchFiles:
+                tool = Descriptor(name: name, description: "Search file names with Spotlight. Read-only; results carry host tokens, never effects.")
+                tool.inputSchema.properties["nameGroups"] = Descriptor.Property(type: "array", items: ["type": "array"])
+                tool.inputSchema.properties["contentType"] = Descriptor.Property(type: "string")
+                tool.inputSchema.properties["scopes"] = Descriptor.Property(type: "array", items: ["type": "string"])
+                tool.inputSchema.properties["maxResults"] = Descriptor.Property(type: "number")
+                tool.inputSchema.required = ["nameGroups"]
+            case LauncherRoutes.listApps:
+                tool = Descriptor(name: name, description: "List installed applications from the cached app index. Read-only.")
+                tool.inputSchema.required = []
+            default:
+                tool = Descriptor(name: name, description: "Open an indexed app, an http(s) link or a searched file, or reveal a file in Finder. Executables and scripts are only revealed.")
+                tool.inputSchema.properties["action"] = Descriptor.Property(type: "object")
+                tool.inputSchema.required = ["action"]
+            }
+            tools.append(tool)
+        }
         if includeInput {
             for action in InputAction.allCases {
                 var tool = Descriptor(name: action.rawValue, description: "\(action.name) in the exact pinned window; fails closed before input when verification fails.")

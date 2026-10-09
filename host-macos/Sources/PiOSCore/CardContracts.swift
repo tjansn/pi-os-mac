@@ -36,6 +36,23 @@ public enum JSONValue: Codable, Equatable {
     }
 
     public var stringValue: String? { if case .string(let value) = self { return value }; return nil }
+
+    /// True when any object key at any depth is a json-render `$`-expression.
+    public var containsExpression: Bool {
+        switch self {
+        case .object(let value): value.contains { $0.key.hasPrefix("$") || $0.value.containsExpression }
+        case .array(let value): value.contains(where: \.containsExpression)
+        default: false
+        }
+    }
+}
+
+/// Lets decoders inspect keys that are not part of a fixed CodingKey enum.
+struct CardDynamicKey: CodingKey {
+    var stringValue: String
+    var intValue: Int? { nil }
+    init(stringValue: String) { self.stringValue = stringValue }
+    init?(intValue: Int) { nil }
 }
 
 public enum SystemOp: String, Codable, CaseIterable {
@@ -267,8 +284,15 @@ public struct CardElement: Decodable, Equatable {
     public var children: [String]
     public var on: [String: HostAction]
 
+    /// Structural limits from the pi-os-ui/1 catalog (Node validates the same with Zod).
+    public static let maxTableColumns = 6
+    public static let maxTableRows = 50
+    public static let maxKeyValueItems = 24
+    public static let maxSuggestion = 160
+    /// json-render features pi-os-ui/1 forbids; the host has no expression/state engine.
+    static let dynamicKeys: Set<String> = ["visible", "repeat", "watch"]
+
     private enum Keys: String, CodingKey { case type, props, children, on }
-    private struct Binding: Decodable { var action: String; var params: [String: JSONValue]? }
 
     private struct AnswerP: Decodable { var summary: String? }
     private struct MarkdownP: Decodable { var source: String }
@@ -285,8 +309,17 @@ public struct CardElement: Decodable, Equatable {
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
+        let raw = try decoder.container(keyedBy: CardDynamicKey.self)
+        if let key = raw.allKeys.first(where: { CardElement.dynamicKeys.contains($0.stringValue) }) {
+            throw DecodingError.dataCorruptedError(forKey: key, in: raw, debugDescription: "unsupported dynamic feature")
+        }
+        let rawProps = try c.decode(JSONValue.self, forKey: .props)
+        guard case .object = rawProps, !rawProps.containsExpression else {
+            throw DecodingError.dataCorruptedError(forKey: .props, in: c, debugDescription: "props must be static values")
+        }
         type = try c.decode(CardComponentType.self, forKey: .type)
         children = try c.decodeIfPresent([String].self, forKey: .children) ?? []
+        func reject(_ reason: String) -> Error { DecodingError.dataCorruptedError(forKey: .props, in: c, debugDescription: reason) }
         switch type {
         case .answer:
             props = .answer(summary: try c.decode(AnswerP.self, forKey: .props).summary)
@@ -300,12 +333,17 @@ public struct CardElement: Decodable, Equatable {
             props = .resultCard(kind: p.kind, input: p.input, value: p.value, detail: p.detail, freshness: p.freshness)
         case .keyValue:
             let p = try c.decode(KeyValueP.self, forKey: .props)
+            guard p.items.count <= CardElement.maxKeyValueItems else { throw reject("too many items") }
             props = .keyValue(title: p.title, items: p.items)
         case .table:
             let p = try c.decode(TableP.self, forKey: .props)
+            guard (1...CardElement.maxTableColumns).contains(p.columns.count), p.rows.count <= CardElement.maxTableRows else {
+                throw reject("table size out of range")
+            }
             props = .table(title: p.title, columns: p.columns, rows: p.rows)
         case .itemList:
             let p = try c.decode(ItemListP.self, forKey: .props)
+            guard (p.total ?? 0) >= 0 else { throw reject("negative total") }
             props = .itemList(title: p.title, total: p.total)
         case .item:
             let p = try c.decode(ItemP.self, forKey: .props)
@@ -321,16 +359,38 @@ public struct CardElement: Decodable, Equatable {
             guard ["running", "done", "warning", "error"].contains(p.state) else {
                 throw DecodingError.dataCorruptedError(forKey: .props, in: c, debugDescription: "unsupported state")
             }
+            if let progress = p.progress, !(0...1).contains(progress) { throw reject("progress out of range") }
             props = .status(state: p.state, text: p.text, progress: p.progress)
         case .suggestion:
-            props = .suggestion(prompt: try c.decode(SuggestionP.self, forKey: .props).prompt)
+            let prompt = try c.decode(SuggestionP.self, forKey: .props).prompt
+            guard !prompt.isEmpty, prompt.utf16.count <= CardElement.maxSuggestion else { throw reject("invalid prompt") }
+            props = .suggestion(prompt: prompt)
         }
+        // A binding is exactly {action, params}: no confirm/onSuccess/onError/preventDefault, no expressions.
         var actions: [String: HostAction] = [:]
-        for (event, binding) in try c.decodeIfPresent([String: Binding].self, forKey: .on) ?? [:] {
+        for (event, binding) in try c.decodeIfPresent([String: [String: JSONValue]].self, forKey: .on) ?? [:] {
             guard type.events.contains(event) else {
                 throw DecodingError.dataCorruptedError(forKey: .on, in: c, debugDescription: "unsupported event \(event)")
             }
-            actions[event] = try HostAction.fromBinding(action: binding.action, params: binding.params ?? [:])
+            guard Set(binding.keys).isSubset(of: ["action", "params"]), let action = binding["action"]?.stringValue,
+                  !JSONValue.object(binding).containsExpression else {
+                throw DecodingError.dataCorruptedError(forKey: .on, in: c, debugDescription: "unsupported binding for \(event)")
+            }
+            var params: [String: JSONValue] = [:]
+            switch binding["params"] {
+            case nil: break
+            case .object(let value)?: params = value
+            default: throw DecodingError.dataCorruptedError(forKey: .on, in: c, debugDescription: "binding params must be an object")
+            }
+            actions[event] = try HostAction.fromBinding(action: action, params: params)
+        }
+        // What the user sees is what happens: a chip asks exactly its visible prompt, a result's
+        // copy only copies text (protocol: press → askAgent with the visible prompt, copy → copyText).
+        if case .suggestion(let prompt) = props, let press = actions["press"], press != .askAgent(prompt: prompt) {
+            throw DecodingError.dataCorruptedError(forKey: .on, in: c, debugDescription: "suggestion must ask its visible prompt")
+        }
+        if let copy = actions["copy"], copy.typeName != "copyText" {
+            throw DecodingError.dataCorruptedError(forKey: .on, in: c, debugDescription: "copy must copy text")
         }
         on = actions
     }
@@ -343,10 +403,13 @@ public struct CardSpec: Decodable, Equatable {
     public var root: String
     public var elements: [String: CardElement]
 
-    private enum Keys: String, CodingKey { case format, root, elements }
+    private enum Keys: String, CodingKey { case format, root, elements, state }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
+        guard !c.contains(.state) else {
+            throw DecodingError.dataCorruptedError(forKey: .state, in: c, debugDescription: "card state is not supported")
+        }
         let format = try c.decode(String.self, forKey: .format)
         guard format == CardSpec.format else {
             throw DecodingError.dataCorruptedError(forKey: .format, in: c, debugDescription: "unsupported card format")
@@ -372,5 +435,70 @@ public struct CardSpec: Decodable, Equatable {
     /// Children of an element in order (missing keys were rejected at decode).
     public func children(of key: String) -> [(key: String, element: CardElement)] {
         (elements[key]?.children ?? []).compactMap { child in elements[child].map { (child, $0) } }
+    }
+}
+
+public extension CardSpec {
+    /// Actions a model-authored (agent) card may bind; instant cards may also use
+    /// typeIntoPinned/system. Mirrors MODEL_CARD_ACTION_TYPES in actions.ts.
+    static let modelActionTypes: Set<String> = ["copyText", "openURL", "openApp", "openFile", "revealFile", "copyPath", "askAgent"]
+
+    /// Every HostAction type bound anywhere in the card.
+    var actionTypes: Set<String> { Set(elements.values.flatMap { $0.on.values.map(\.typeName) }) }
+
+    /// Hosts check agent cards with `usesOnly(CardSpec.modelActionTypes)` before showing them.
+    func usesOnly(_ allowed: Set<String>) -> Bool { actionTypes.isSubset(of: allowed) }
+
+    /// The root Answer's one-line summary (accessibility label/announcement, a future spoken reply).
+    var summary: String? {
+        guard case .answer(let summary)? = elements[root]?.props, let summary, !summary.isEmpty else { return nil }
+        return summary
+    }
+
+    /// Plain-text rendering for Copy and for cards that arrive without a responseText
+    /// (instant results). Node's cardToText remains authoritative for agent answers.
+    var plainText: String {
+        var blocks: [String] = []
+        func line(_ element: CardElement) -> String? {
+            guard case .item(let title, let subtitle, _, let detail) = element.props else { return nil }
+            return "• " + title + (subtitle.map { " — " + $0 } ?? "") + (detail.map { " (" + $0 + ")" } ?? "")
+        }
+        func cell(_ value: String) -> String {
+            value.replacingOccurrences(of: "|", with: "\\|").replacingOccurrences(of: "\n", with: " ")
+        }
+        func visit(_ key: String) {
+            guard let element = elements[key] else { return }
+            var rest = element.children
+            switch element.props {
+            case .answer(let summary):
+                if element.children.isEmpty, let summary, !summary.isEmpty { blocks.append(summary) }
+            case .markdown(let source): blocks.append(source)
+            case .resultCard(_, let input, let value, let detail, let freshness):
+                blocks.append([input, "= " + value, detail, freshness?.label].compactMap { $0 }.joined(separator: "\n"))
+            case .keyValue(let title, let items):
+                blocks.append(([title].compactMap { $0 } + items.map { $0.key + ": " + $0.value }).joined(separator: "\n"))
+            case .table(let title, let columns, let rows):
+                var lines = title.map { [$0] } ?? []
+                lines.append("| " + columns.map { cell($0.label) }.joined(separator: " | ") + " |")
+                lines.append("|" + columns.map { $0.align == .right ? " ---: |" : $0.align == .center ? " :---: |" : " --- |" }.joined())
+                lines += rows.map { row in "| " + columns.map { cell(row[$0.key]?.display ?? "") }.joined(separator: " | ") + " |" }
+                blocks.append(lines.joined(separator: "\n"))
+            case .itemList(let title, let total):
+                let items = children(of: key).filter { $0.element.type == .item }
+                var lines: [String] = []
+                if let title { lines.append(title + (total.map { $0 > items.count ? " (\(items.count) of \($0))" : "" } ?? "")) }
+                lines += items.compactMap { line($0.element) }
+                if !lines.isEmpty { blocks.append(lines.joined(separator: "\n")) }
+                rest = element.children.filter { elements[$0]?.type != .item }
+            case .item: if let text = line(element) { blocks.append(text) }
+            case .notice(let tone, let text): blocks.append(tone == "warning" ? "Warning: " + text : tone == "error" ? "Error: " + text : text)
+            case .status(let state, let text, let progress):
+                blocks.append("[\(state)] " + text + (progress.map { " (\(Int(($0 * 100).rounded()))%)" } ?? ""))
+            case .suggestion: break
+            }
+            rest.forEach(visit)
+        }
+        visit(root)
+        return blocks.joined(separator: "\n\n")
     }
 }

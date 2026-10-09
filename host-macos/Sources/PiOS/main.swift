@@ -2,6 +2,28 @@ import AppKit
 import PiOSCore
 import PiOSMac
 
+/// Production LauncherHost over shared/fixtures/launcher data: real route codec, query
+/// validation, result filtering, token minting and policy, but no Spotlight, TCC or effects.
+@MainActor func conformanceLauncher(_ directory: URL) throws -> LauncherHost {
+    struct Envelope<T: Decodable>: Decodable { let result: T }
+    let files = try JSONDecoder().decode(Envelope<FileSearchResult>.self,
+                                         from: Data(contentsOf: directory.appendingPathComponent("search-files-response.json"))).result
+    let apps = try JSONDecoder().decode(Envelope<AppIndexResult>.self,
+                                        from: Data(contentsOf: directory.appendingPathComponent("list-apps-response.json"))).result
+    func date(_ ms: Double?) -> Date? { ms.map { Date(timeIntervalSince1970: $0 / 1000) } }
+    let hits = files.items.map { SpotlightHit(path: $0.path, name: $0.name, contentType: $0.contentType, created: date($0.createdMs),
+                                              modified: date($0.modifiedMs), lastUsed: date($0.lastUsedMs), useCount: $0.useCount) }
+    let seeds = apps.apps.map { app in
+        AppSeed(bundleId: app.bundleId, path: app.path, name: app.name, alternateNames: app.aliases.filter { $0 != app.name })
+    }
+    let running = Set(apps.apps.filter(\.running).map { $0.bundleId.lowercased() })
+    let home = hits.first.map { "/" + $0.path.split(separator: "/").prefix(2).joined(separator: "/") } ?? NSHomeDirectory()
+    let tokens = FileTokenStore()
+    let index = AppIndex(scanner: { seeds }, running: { running }, observeWorkspace: false)
+    return LauncherHost(tokens: tokens, files: FileSearch(tokens: tokens, home: home, engine: { _, _, _ in hits }), apps: index,
+                        service: LauncherService(tokens: tokens, apps: index, system: InertSystemControls(), effects: InertLauncherEffects()))
+}
+
 // A TCC-free real NWListener fixture for Node hostClient/fetch conformance tests.
 // Explicit CLI-only mode: it cannot enter the app's real desktop service.
 if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--conformance" {
@@ -10,12 +32,19 @@ if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--conformance"
         let env = ProcessInfo.processInfo.environment
         guard let token = env["PI_OS_TOKEN"], !token.isEmpty,
               let port = UInt16(env["PI_OS_HOST_PORT"] ?? "17831") else { throw DomainError("configuration_error", "Token and port required") }
+        let launcher = try env["PI_OS_LAUNCHER_FIXTURES"].map { directory in
+            try MainActor.assumeIsolated { try conformanceLauncher(URL(fileURLWithPath: directory, isDirectory: true)) }
+        }
         let server = try LoopbackServer(port: port) { request in
             if request.method == "GET", request.path == "/health" { return .json(["service": "macos-conformance"]) }
             guard HostRoutes.authorized(request.headers["x-harness-token"], token: token) else {
                 return .error(401, "unauthorized", "Missing or wrong X-Harness-Token")
             }
-            if request.method == "GET", request.path == "/tools" { return HostRoutes.catalog() }
+            if request.method == "GET", request.path == "/tools" { return HostRoutes.catalog(launcher: launcher == nil ? [] : LauncherRoutes.names) }
+            // Fixture effects are inert, so the agent route is exercised as if control were enabled.
+            if request.method == "POST", let launcher, let name = LauncherRoutes.name(forPath: request.path) {
+                return await LauncherRoutes.handle(name, body: request.body, backend: launcher, controlEnabled: true)
+            }
             guard request.method == "POST", request.path.hasPrefix("/tools/"),
                   HostRoutes.names.contains(String(request.path.dropFirst(7))) else {
                 return .error(404, "not_found", "Unknown route")

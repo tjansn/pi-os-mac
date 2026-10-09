@@ -123,13 +123,17 @@ public actor DesktopService {
     private let launched = Date()
     private let ttl: TimeInterval
     private let capacity: Int
+    /// Serves POST /tools/launcher.* when set (contextId optional there); nil keeps those routes 404.
+    private let launcher: LauncherBackend?
 
     public init(captures: URL, token: String, ttl: TimeInterval = 1800, capacity: Int = 32,
                 controlEnabled: @escaping () -> Bool = { false }, traceFile: URL? = nil,
-                beforeInput: @escaping () async -> Bool = { false }, afterInput: @escaping (Bool) async -> Void = { _ in }) {
+                beforeInput: @escaping () async -> Bool = { false }, afterInput: @escaping (Bool) async -> Void = { _ in },
+                launcher: LauncherBackend? = nil) {
         self.captures = captures; self.token = token; self.ttl = ttl; self.capacity = capacity
         self.controlEnabled = controlEnabled; self.traceFile = traceFile
         self.beforeInput = beforeInput; self.afterInput = afterInput
+        self.launcher = launcher
     }
     public func insert(_ snapshot: Snapshot, browserPin: BrowserPin? = nil) {
         for (id, entry) in entries where entry.expires <= Date() { remove(id) }
@@ -377,6 +381,23 @@ public actor DesktopService {
         } catch { await gate.release(); throw error }
     }
 
+    /// Reads run concurrently; the agent's launcher.open effect is serialized with input and
+    /// capture. Opening can change any pinned window, not just the caller's (a link may open as a
+    /// new tab in a pinned browser window, and contextId is optional), so every context needs a
+    /// fresh capture before coordinate input.
+    private func launcherRoute(_ name: String, request: HTTPRequest, backend: LauncherBackend) async -> HTTPResponse {
+        guard name == LauncherRoutes.open else {
+            return await LauncherRoutes.handle(name, body: request.body, backend: backend, controlEnabled: controlEnabled())
+        }
+        do { try await gate.acquire() } catch {
+            return .json(ToolOutcome<LauncherOpenResult>.failure(DomainError("busy", "Launcher action cancelled while waiting")))
+        }
+        let response = await LauncherRoutes.handle(name, body: request.body, backend: backend, controlEnabled: controlEnabled())
+        for id in Array(entries.keys) { entries[id]?.coordinatesFresh = false }
+        await gate.release()
+        return response
+    }
+
     public func handle(_ request: HTTPRequest) async -> HTTPResponse {
         if request.method == "GET", request.path == "/health" {
             struct Health: Encodable { let service = "macos-host"; let version = "0.1.0"; let uptimeSeconds: Int }
@@ -385,7 +406,14 @@ public actor DesktopService {
         guard HostRoutes.authorized(request.headers["x-harness-token"], token: token) else {
             return .error(401, "unauthorized", "Missing or wrong X-Harness-Token")
         }
-        if request.method == "GET", request.path == "/tools" { return HostRoutes.catalog(includeInput: controlEnabled()) }
+        if request.method == "GET", request.path == "/tools" {
+            let control = controlEnabled()
+            return HostRoutes.catalog(includeInput: control, launcher: launcher == nil ? [] : LauncherRoutes.advertised(controlEnabled: control))
+        }
+        // Launcher routes take an optional contextId, so they dispatch before the contextId guard below.
+        if request.method == "POST", let launcher, let name = LauncherRoutes.name(forPath: request.path) {
+            return await launcherRoute(name, request: request, backend: launcher)
+        }
         if request.method == "POST", ["/tools/browser.connection", "/tools/browser.validate", "/tools/browser.invalidate"].contains(request.path) {
             struct Body: Decodable { let arguments: BrowserArguments }
             guard let args = try? JSONDecoder().decode(Body.self, from: request.body).arguments, !args.contextId.isEmpty else {
