@@ -9,8 +9,10 @@ import PiOSCore
 // under a budget; a Spotlight query for the folder's direct children when no item is readable (desktop icons hidden,
 // a view without item URLs). Never AppleScript or Apple Events, never FileManager enumeration (that raises the
 // Desktop folder's privacy prompt), and no file is opened or stat'ed. Host file tokens are minted only for the items a
-// route call returns, bound to the take's contextId, and the capture is dropped with the context. Names and paths are
-// user content: nothing here logs them (the perf line carries kinds, counts and durations only).
+// route call returns, bound to the take's contextId, and the capture is dropped with the context. Each source names the
+// folder it shows (`VisibleSource.path`, BUILD6: the desktop's folder, a window's AXDocument folder; lexical only), which
+// file commands create in and `closeFinderWindow` re-checks. Names and paths are user content: nothing here logs them
+// (the perf line carries kinds, counts and durations only).
 
 /// One visible file or folder before it becomes a token. `path` is never logged.
 public struct VisibleEntry: Equatable, Sendable {
@@ -179,7 +181,8 @@ public enum VisibleItemsPolicy {
                 let order = a.name.localizedStandardCompare(b.name)
                 return order == .orderedSame ? a.path < b.path : order == .orderedAscending
             }
-        return VisibleCapture(source: VisibleSource(kind: kind, via: .spotlight, complete: !capped && entries.count <= limit),
+        return VisibleCapture(source: VisibleSource(kind: kind, via: .spotlight, complete: !capped && entries.count <= limit,
+                                                    path: VisibleSource.sendable(folder)),
                               entries: Array(entries.prefix(limit)), truncated: entries.count > limit)
     }
 }
@@ -223,19 +226,21 @@ public final class NativeVisibleItemsSource: VisibleItemsSource, @unchecked Send
         self.axSeconds = axSeconds; self.engine = engine
     }
 
+    /// Every source names its folder (`VisibleSource.path`, BUILD6): the desktop's folder, or the window's AXDocument folder
+    /// it was read from. Lexical only: the path is never stat'ed or listed.
     public func capture(_ target: VisibleTarget) -> VisibleCapture {
         switch target {
         case .desktop(let window, let folder):
             if let walk = desktopIcons(window, folder: folder), !walk.entries.isEmpty {
-                return VisibleCapture(source: VisibleSource(kind: .desktop, via: .ax, complete: walk.complete), entries: walk.entries,
-                                      truncated: walk.truncated)
+                return VisibleCapture(source: VisibleSource(kind: .desktop, via: .ax, complete: walk.complete, path: VisibleSource.sendable(folder)),
+                                      entries: walk.entries, truncated: walk.truncated)
             }
             return spotlight(folder, kind: .desktop)
         case .finderWindow(let window):
             guard let (walk, folder) = windowItems(window) else { return .none }
             if !walk.entries.isEmpty {
-                return VisibleCapture(source: VisibleSource(kind: .finderWindow, via: .ax, complete: walk.complete), entries: walk.entries,
-                                      truncated: walk.truncated)
+                return VisibleCapture(source: VisibleSource(kind: .finderWindow, via: .ax, complete: walk.complete, path: VisibleSource.sendable(folder)),
+                                      entries: walk.entries, truncated: walk.truncated)
             }
             return spotlight(folder, kind: .finderWindow)
         }
@@ -265,7 +270,7 @@ public final class NativeVisibleItemsSource: VisibleItemsSource, @unchecked Send
             let hits = try engine(VisibleItemsPolicy.everyItemQuery, [folder], VisibleItemsPolicy.spotlightCap)
             return VisibleItemsPolicy.spotlightCapture(hits, folder: folder, kind: kind, capped: hits.count >= VisibleItemsPolicy.spotlightCap)
         } catch {
-            return VisibleCapture(source: VisibleSource(kind: kind, via: .spotlight, complete: false), entries: [])
+            return VisibleCapture(source: VisibleSource(kind: kind, via: .spotlight, complete: false, path: VisibleSource.sendable(folder)), entries: [])
         }
     }
 }
@@ -297,11 +302,13 @@ public final class VisibleItemsProvider: @unchecked Sendable {
     private final class Pending: @unchecked Sendable {
         let kind: VisibleSourceKind
         let via: VisibleSourceVia
+        /// The folder known before the capture (the desktop's); a Finder window's is read by the capture.
+        let path: String?
         private let lock = NSLock()
         private var result: VisibleCapture?
         private var waiters: [(VisibleCapture) -> Void] = []
         private var droppedFlag = false
-        init(kind: VisibleSourceKind, via: VisibleSourceVia) { self.kind = kind; self.via = via }
+        init(kind: VisibleSourceKind, via: VisibleSourceVia, path: String?) { self.kind = kind; self.via = via; self.path = path }
         var dropped: Bool { lock.withLock { droppedFlag } }
         var finished: VisibleCapture? { lock.withLock { result } }
         func drop() { lock.withLock { droppedFlag = true } }
@@ -343,7 +350,9 @@ public final class VisibleItemsProvider: @unchecked Sendable {
     public func prefetch(contextId: String, target: VisibleTarget?) {
         guard let target else { drop(contextId: contextId); return }
         let via: VisibleSourceVia = AXIsProcessTrusted() ? .ax : .spotlight
-        let entry = Pending(kind: target.kind, via: via)
+        var known: String?
+        if case .desktop(_, let folder) = target { known = VisibleSource.sendable(folder) }
+        let entry = Pending(kind: target.kind, via: via, path: known)
         lock.withLock {
             pending.removeValue(forKey: contextId)?.drop()
             order.removeAll { $0 == contextId }
@@ -369,6 +378,14 @@ public final class VisibleItemsProvider: @unchecked Sendable {
     /// Contexts with a capture (tests).
     var contexts: [String] { lock.withLock { order } }
 
+    /// The folder a finished capture of `contextId` read, with its kind (`closeFinderWindow` checks the window still shows
+    /// it). Nil while the capture runs, after a drop, or when it named no folder. Never logged.
+    public func capturedFolder(contextId: String) -> (kind: VisibleSourceKind, path: String)? {
+        guard let entry = lock.withLock({ pending[contextId] }), !entry.dropped,
+              let source = entry.finished?.source, let path = source.path else { return nil }
+        return (source.kind, path)
+    }
+
     /// The route: the context's capture (waiting ≤ 150 ms for one still running), tokens minted for the items returned.
     /// An unknown context or another app's window has no sources and no items; a capture still running after the wait
     /// answers its kind with `complete: false` and no items.
@@ -393,8 +410,8 @@ public final class VisibleItemsProvider: @unchecked Sendable {
         guard let capture else {
             report(VisibleTraceEvent(kind: entry.kind.rawValue, via: entry.via.rawValue, items: 0, complete: false, waited: true, timedOut: true,
                                      routeMs: elapsed()))
-            return VisibleItemsResult(sources: [VisibleSource(kind: entry.kind, via: entry.via, complete: false)], items: [], truncated: false,
-                                      elapsedMs: elapsed())
+            return VisibleItemsResult(sources: [VisibleSource(kind: entry.kind, via: entry.via, complete: false, path: entry.path)], items: [],
+                                      truncated: false, elapsedMs: elapsed())
         }
         guard let source = capture.source, !entry.dropped else {
             report(VisibleTraceEvent(kind: "none", via: "-", items: 0, complete: true, waited: ready == nil, timedOut: false, routeMs: elapsed()))

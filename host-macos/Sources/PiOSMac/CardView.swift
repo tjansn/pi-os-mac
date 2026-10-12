@@ -413,6 +413,9 @@ extension HostAction {
         case .copyPath: "Copy path"
         case .system: "Apply"
         case .askAgent: "Ask pi"
+        case .fileOp: "Run"
+        case .quitApp: "Quit app"
+        case .closeFinderWindow: "Close window"
         }
     }
     var cardSymbol: String {
@@ -426,6 +429,9 @@ extension HostAction {
         case .copyPath: "doc.on.clipboard"
         case .system: "gearshape"
         case .askAgent: "bubble.left"
+        case .fileOp: "terminal"
+        case .quitApp: "xmark.app"
+        case .closeFinderWindow: "xmark.rectangle"
         }
     }
 }

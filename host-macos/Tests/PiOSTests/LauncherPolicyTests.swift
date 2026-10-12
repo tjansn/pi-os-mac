@@ -29,8 +29,9 @@ final class LauncherPolicyTests: XCTestCase {
         for name in names {
             for word in forbidden { XCTAssertFalse(name.lowercased().contains(word), "\(name) contains \(word)") }
         }
-        // Every wire action type maps to a plan; nothing outside the closed vocabulary decodes.
-        XCTAssertEqual(Set(HostAction.typeNames).count, 9)
+        // Every wire action type maps to a plan; nothing outside the closed vocabulary decodes. The file commands' three
+        // (fileOp, quitApp, closeFinderWindow) carry no path and no destructive verb: Node runs a staged op after dcg's review.
+        XCTAssertEqual(Set(HostAction.typeNames).count, 12)
         for type in ["deleteFile", "moveToTrash", "emptyTrash", "removeFile", "eraseDisk", "moveFile", "renameFile", "writeFile"] {
             XCTAssertThrowsError(try JSONDecoder().decode(HostAction.self, from: Data(#"{"type":"\#(type)","token":"tok_12345678"}"#.utf8)), type)
             XCTAssertDomainError(try LauncherPolicy.agentOpenAction(.object(["type": .string(type), "token": .string("tok_12345678")])), "policy_blocked")

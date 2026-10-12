@@ -229,8 +229,9 @@ public struct InstantRequest: Codable, Equatable {
 /// How a voice decision was reached (VOICE_VIAS). Receivers drop an unknown value. `visible`: a visible item of
 /// the take's target context decided (intent `open_item`); it never offers "Not this" and nothing is learned from it.
 /// `field`: a fill into the bound focused field (intent `fill`); no "Not this" (a bare "nein/no" within 5 s undoes
-/// the typing instead) and nothing is learned from it.
-public enum VoiceVia: String, Codable, CaseIterable, Sendable { case exact, alias, learned, sound, peer, secondary, url, visible, field }
+/// the typing instead) and nothing is learned from it. `file`: a file command on what the take shows (intent `file_op`,
+/// or `close`); no "Not this" and nothing is learned from it.
+public enum VoiceVia: String, Codable, CaseIterable, Sendable { case exact, alias, learned, sound, peer, secondary, url, visible, field, file }
 
 /// `voice.fill` (VOICE_FILLS). Receivers drop an unknown value. `offer`: on the check card (`isCheck`), ↩ types the
 /// (possibly edited) card text into the bound field, never with Return, instead of resending it; ⌥↩ asks pi.
@@ -309,6 +310,9 @@ public struct ClassifierHints: Codable, Equatable {
     public var complete: Double?
 }
 
+/// `intent` stays an open string here (InstantIntent in contracts/instant.ts). File commands (BUILD6) add `file_op` (an
+/// `act` with `fileOp`, a list whose rows bind `fileOp`, or an answer about one) and `close` (an `act` with `quitApp` or
+/// `closeFinderWindow`).
 public struct InstantResponse: Decodable, Equatable {
     public enum Decision: Equatable {
         case answer(intent: String, title: String, subtitle: String?, card: CardSpec)
@@ -406,6 +410,15 @@ public struct InstantResponse: Decodable, Equatable {
 
     /// The check card's ↩ types into the bound field: `isCheck` plus `voice.fill: "offer"`. Ignored on anything else.
     public var offersFill: Bool { isCheck && voice?.fill == .offer }
+
+    /// A file command (BUILD6): an `act` with `fileOp`, or a list of intent `file_op` or with rows that bind `fileOp`.
+    public var runsFileOp: Bool {
+        switch decision {
+        case .act(_, _, .fileOp, _, _): true
+        case .list(let intent, _, let card, _): intent == "file_op" || card.runsFileOps
+        default: false
+        }
+    }
 
     /// The card to display for this response, if any.
     public var card: CardSpec? {

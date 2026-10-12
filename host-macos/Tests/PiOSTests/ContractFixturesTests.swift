@@ -21,11 +21,15 @@ final class ContractFixturesTests: XCTestCase {
         }
     }
 
+    /// cards/ holds model-authored cards (Node's strict validation with MODEL_CARD_ACTION_TYPES): an invalid one is either
+    /// malformed here too, or binds an action an agent card may not (typeIntoPinned, system, the file commands' fileOp,
+    /// quitApp, closeFinderWindow), which the host drops with `usesOnly(CardSpec.modelActionTypes)` before showing it.
     func testInvalidCardsAreRejected() throws {
         let files = try jsonFiles("cards/invalid")
         XCTAssertFalse(files.isEmpty)
         for file in files {
-            XCTAssertThrowsError(try JSONDecoder().decode(CardSpec.self, from: Data(contentsOf: file)), file.lastPathComponent)
+            guard let card = try? JSONDecoder().decode(CardSpec.self, from: Data(contentsOf: file)) else { continue }
+            XCTAssertFalse(card.usesOnly(CardSpec.modelActionTypes), "\(file.lastPathComponent) would be shown as an agent card")
         }
     }
 
@@ -485,7 +489,8 @@ final class ContractFixturesTests: XCTestCase {
                 results += 1
             }
         }
-        XCTAssertEqual(results, 4)
+        // Four results plus visible-items.with-path.json (file commands: each source names its folder).
+        XCTAssertEqual(results, 5)
         let invalid = try jsonFiles("launcher/invalid").filter { $0.lastPathComponent.hasPrefix("visible-items.") }
         XCTAssertGreaterThanOrEqual(invalid.count, 20)
         for file in invalid { XCTAssertFalse(decodes(file), file.lastPathComponent) }
@@ -745,5 +750,108 @@ final class ContractFixturesTests: XCTestCase {
         XCTAssertEqual(kinds { $0.fill == .explicitOnly }, ["terminal"])
         XCTAssertEqual(kinds { $0.submitAllowed(explicit: false) }, try nodeList("SUBMIT_AUTO_KINDS", in: instant))
         XCTAssertEqual(kinds { !$0.submitAllowed(explicit: true) }, try nodeList("SUBMIT_NEVER_KINDS", in: instant))
+    }
+
+    // MARK: File commands (DESIGN6 with BUILD6: fileOp, quitApp, closeFinderWindow, VisibleSource.path)
+
+    /// The Node builder's shared fixtures (BUILD6 "Wire contract"): every act, list and answer decodes with the shape it names.
+    func testFileCommandInstantFixturesDecode() throws {
+        func decode(_ name: String) throws -> InstantResponse {
+            try JSONDecoder().decode(InstantResponse.self, from: data(fixtures.appendingPathComponent("instant/\(name)")))
+        }
+        let folder = try decode("act-file-op-delete-folder.json")
+        guard case .act("file_op", _, .fileOp(let folderOp), false, _) = folder.decision else { return XCTFail("a folder's delete acts at once") }
+        XCTAssertTrue(HostAction.isOpId(folderOp)); XCTAssertTrue(folder.runsFileOp)
+        let file = try decode("act-file-op-delete-file-confirm.json")
+        guard case .act("file_op", _, .fileOp, true, _) = file.decision else { return XCTFail("a file's delete needs one Return") }
+        let quit = try decode("act-close-quit-app.json")
+        guard case .act("close", _, .quitApp(let bundleId), _, _) = quit.decision else { return XCTFail("expected a quitApp act") }
+        XCTAssertNoThrow(try LauncherPolicy.plan(.quitApp(bundleId: bundleId)), "the fixture's app is one the host may ask to quit")
+        let close = try decode("act-close-finder-window.json")
+        guard case .act("close", _, .closeFinderWindow(let contextId), _, _) = close.decision else { return XCTFail("expected a closeFinderWindow act") }
+        XCTAssertTrue(AttachmentValidation.isContextId(contextId))
+        let which = try decode("list-file-op-which.json")
+        guard case .list("file_op", _, let card, _) = which.decision else { return XCTFail("expected a file_op list") }
+        XCTAssertTrue(which.runsFileOp)
+        XCTAssertGreaterThanOrEqual(card.choiceRows.count, 2, "one row per exact match")
+        XCTAssertTrue(card.choiceRows.allSatisfy { if case .fileOp = $0.action { true } else { false } }, "every row binds its own staged op")
+        XCTAssertFalse(card.usesOnly(CardSpec.modelActionTypes), "an instant card only: an agent card never binds fileOp")
+        let none = try decode("answer-file-op-not-found.json")
+        guard case .answer("file_op", _, _, let answer) = none.decision else { return XCTFail("expected a file_op answer") }
+        XCTAssertFalse(answer.runsFileOps, "an answer runs nothing")
+        // A file command's voice meta (if any) never names a sound-alike or learned decision (the host's undoable vias).
+        for response in [folder, file, quit, close, which] {
+            if let via = response.voice?.via { XCTAssertFalse([VoiceVia.sound, .learned, .alias, .peer, .secondary].contains(via), "\(via)") }
+        }
+    }
+
+    /// `launcher/visible-items.with-path.json`: each source names its folder; the result re-encodes to exactly its wire.
+    func testVisibleItemsFixtureWithPath() throws {
+        let file = fixtures.appendingPathComponent("launcher/visible-items.with-path.json")
+        let envelope = try JSONDecoder().decode(Envelope<VisibleItemsResult>.self, from: data(file))
+        let result = try XCTUnwrap(envelope.result)
+        XCTAssertFalse(result.sources.isEmpty)
+        for source in result.sources {
+            let path = try XCTUnwrap(source.path, "\(source.kind)")
+            XCTAssertTrue(VisibleSource.isPath(path))
+        }
+        let wire = try XCTUnwrap(JSONSerialization.jsonObject(with: data(file)) as? [String: Any])
+        XCTAssertEqual(try JSONSerialization.jsonObject(with: JSONEncoder().encode(result)) as? NSDictionary, wire["result"] as? NSDictionary)
+    }
+
+    /// BUILD6's invalid cases, inline (wherever the Node builder files its fixtures): each rejects the whole response.
+    func testFileCommandActionsAreStrict() throws {
+        func act(_ action: String, intent: String = "file_op") -> Data {
+            Data(#"{"seq":1,"elapsedMs":1,"source":"grammar","decision":"act","intent":"\#(intent)","title":"t","action":\#(action),"confirm":false}"#.utf8)
+        }
+        XCTAssertNoThrow(try JSONDecoder().decode(InstantResponse.self, from: act(#"{"type":"fileOp","opId":"op_7c1e0a9f3b2d4e5f"}"#)))
+        for bad in [#"{"type":"fileOp","opId":"op_short"}"#, #"{"type":"fileOp","opId":"\#(String(repeating: "a", count: 65))"}"#,
+                    #"{"type":"fileOp","opId":"op 7c1e0a9f3b2d4e5f"}"#, #"{"type":"fileOp","opId":"op/7c1e0a9f3b2d4e5f"}"#,
+                    #"{"type":"fileOp","token":"tok_7c1e0a9f3b2d"}"#, #"{"type":"fileOp","opId":12345678901234567}"#, #"{"type":"fileOp"}"#] {
+            XCTAssertThrowsError(try JSONDecoder().decode(InstantResponse.self, from: act(bad)), bad)
+        }
+        for bad in [#"{"type":"quitApp","bundleId":"Safari"}"#, #"{"type":"quitApp","bundleId":"com..apple"}"#, #"{"type":"quitApp","bundleId":""}"#,
+                    #"{"type":"quitApp"}"#, #"{"type":"closeFinderWindow","contextId":""}"#, #"{"type":"closeFinderWindow","contextId":"ctx 1"}"#,
+                    #"{"type":"closeFinderWindow","contextId":"\#(String(repeating: "c", count: 129))"}"#, #"{"type":"closeFinderWindow"}"#] {
+            XCTAssertThrowsError(try JSONDecoder().decode(InstantResponse.self, from: act(bad, intent: "close")), bad)
+        }
+        // Exactly the wire: unknown keys are dropped, nothing else is emitted.
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let cases: [(String, HostAction, String)] = [
+            (#"{"type":"fileOp","opId":"op_7c1e0a9f3b2d4e5f","token":"tok_7c1e0a9f3b2d","path":"/Users/x"}"#, .fileOp(opId: "op_7c1e0a9f3b2d4e5f"),
+             #"{"opId":"op_7c1e0a9f3b2d4e5f","type":"fileOp"}"#),
+            (#"{"type":"quitApp","bundleId":"com.apple.Safari","force":true}"#, .quitApp(bundleId: "com.apple.Safari"),
+             #"{"bundleId":"com.apple.Safari","type":"quitApp"}"#),
+            (#"{"type":"closeFinderWindow","contextId":"ctx-3f2a","windowId":7}"#, .closeFinderWindow(contextId: "ctx-3f2a"),
+             #"{"contextId":"ctx-3f2a","type":"closeFinderWindow"}"#),
+        ]
+        for (wire, action, encoded) in cases {
+            XCTAssertEqual(try JSONDecoder().decode(HostAction.self, from: Data(wire.utf8)), action, wire)
+            XCTAssertEqual(String(decoding: try encoder.encode(action), as: UTF8.self), encoded)
+        }
+        XCTAssertEqual(try JSONDecoder().decode(VoiceMeta.self, from: Data(#"{"via":"file"}"#.utf8)).via, .file)
+    }
+
+    /// Only the instant lane may send the file commands: never a model-authored card, never the agent's launcher.open.
+    func testFileCommandsAreInstantOnly() throws {
+        let instantOnly: Set = ["fileOp", "quitApp", "closeFinderWindow"]
+        XCTAssertTrue(instantOnly.isSubset(of: HostAction.instantOnlyTypes))
+        XCTAssertTrue(instantOnly.isSubset(of: Set(HostAction.typeNames)))
+        XCTAssertTrue(HostAction.instantOnlyTypes.isDisjoint(with: CardSpec.modelActionTypes))
+        XCTAssertTrue(HostAction.instantOnlyTypes.isDisjoint(with: LauncherPolicy.agentOpenTypes))
+        for json in [#"{"type":"fileOp","opId":"op_7c1e0a9f3b2d4e5f"}"#, #"{"type":"quitApp","bundleId":"com.apple.Safari"}"#,
+                     #"{"type":"closeFinderWindow","contextId":"ctx-1"}"#] {
+            XCTAssertThrowsError(try LauncherPolicy.agentOpenAction(JSONDecoder().decode(JSONValue.self, from: Data(json.utf8))), json) {
+                XCTAssertEqual(($0 as? DomainError)?.code, "policy_blocked")
+            }
+        }
+        // An instant card may bind fileOp (a "which one?" row); the same card is never an agent card.
+        for action in ["fileOp\",\"params\":{\"opId\":\"op_7c1e0a9f3b2d4e5f\"}", "quitApp\",\"params\":{\"bundleId\":\"com.apple.Safari\"}",
+                       "closeFinderWindow\",\"params\":{\"contextId\":\"ctx-1\"}"] {
+            let card = try JSONDecoder().decode(CardSpec.self, from: Data(
+                #"{"format":"pi-os-ui/1","root":"r","elements":{"r":{"type":"Answer","props":{},"children":["i"]},"i":{"type":"Item","props":{"title":"test"},"on":{"primary":{"action":"\#(action)}}}}}"#.utf8))
+            XCTAssertFalse(card.usesOnly(CardSpec.modelActionTypes), action)
+        }
     }
 }

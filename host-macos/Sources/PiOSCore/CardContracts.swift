@@ -90,7 +90,9 @@ public enum SystemValue: Codable, Equatable {
     }
 }
 
-/// Closed launcher vocabulary. There is no delete/trash/move/rename/write/power action.
+/// Closed launcher vocabulary. There is no delete/trash/move/rename/write/power action the host performs itself: the one
+/// file-changing path is `fileOp`, which asks Node to run an operation it staged for the take from the user's explicit
+/// command, after the user's dcg guard reviewed it (BUILD6).
 public enum HostAction: Codable, Equatable {
     case copyText(String)
     /// `submit` (continuity fills only, `act` intent `fill`): after the text, one Return as a SEPARATE gated
@@ -104,9 +106,21 @@ public enum HostAction: Codable, Equatable {
     case copyPath(token: String)
     case system(op: SystemOp, value: SystemValue?)
     case askAgent(prompt: String)
+    /// Instant lane only (`act` intent `file_op` and the rows of its lists): POST /fileops/run with this id. Node staged the
+    /// operation for this take (single use, 2 minutes) and runs it as argv after dcg's review; the host never sees a path.
+    case fileOp(opId: String)
+    /// Instant lane only (`act` intent `close`): ask the running app with exactly this bundle id to quit, gracefully
+    /// (`NSRunningApplication.terminate()`); never pi-os itself or Finder.
+    case quitApp(bundleId: String)
+    /// Instant lane only (`act` intent `close`): close the Finder window this context pinned at key-down, only while it is
+    /// still that Finder window showing the same folder.
+    case closeFinderWindow(contextId: String)
 
     public static let typeNames = ["copyText", "typeIntoPinned", "openURL", "openApp", "openFile",
-                                   "revealFile", "copyPath", "system", "askAgent"]
+                                   "revealFile", "copyPath", "system", "askAgent", "fileOp", "quitApp", "closeFinderWindow"]
+    /// Types only the instant lane may send (BUILD6): never in a model-authored card, never through the agent's
+    /// launcher.open.
+    public static let instantOnlyTypes: Set<String> = ["typeIntoPinned", "system", "fileOp", "quitApp", "closeFinderWindow"]
 
     public var typeName: String {
         switch self {
@@ -119,13 +133,21 @@ public enum HostAction: Codable, Equatable {
         case .copyPath: "copyPath"
         case .system: "system"
         case .askAgent: "askAgent"
+        case .fileOp: "fileOp"
+        case .quitApp: "quitApp"
+        case .closeFinderWindow: "closeFinderWindow"
         }
     }
 
-    private enum Keys: String, CodingKey { case type, text, url, bundleId, token, op, value, prompt, submit }
+    private enum Keys: String, CodingKey { case type, text, url, bundleId, token, op, value, prompt, submit, opId, contextId }
 
     public static let maxText = 4_000
     public static let maxPrompt = 500
+
+    /// `^[A-Za-z0-9_-]{16,64}$` (BUILD6): a staged operation's id, minted by Node.
+    public static func isOpId(_ value: String) -> Bool {
+        (16...64).contains(value.unicodeScalars.count) && value.unicodeScalars.allSatisfy(AttachmentValidation.isIdScalar)
+    }
 
     /// Same structural rules as parseHostAction in actions.ts; LauncherPolicy re-checks before acting.
     public static func isHTTPURL(_ value: String) -> Bool {
@@ -182,6 +204,21 @@ public enum HostAction: Codable, Equatable {
         case "system": self = .system(op: try c.decode(SystemOp.self, forKey: .op),
                                       value: try c.decodeIfPresent(SystemValue.self, forKey: .value))
         case "askAgent": self = .askAgent(prompt: try string(.prompt, max: HostAction.maxPrompt))
+        case "fileOp":
+            // `opId` only: a `token` (or any other key) never stands in for it.
+            let opId = try c.decode(String.self, forKey: .opId)
+            guard HostAction.isOpId(opId) else { throw DecodingError.dataCorruptedError(forKey: .opId, in: c, debugDescription: "invalid opId") }
+            self = .fileOp(opId: opId)
+        case "quitApp":
+            let bundleId = try c.decode(String.self, forKey: .bundleId)
+            guard HostAction.isBundleID(bundleId) else { throw DecodingError.dataCorruptedError(forKey: .bundleId, in: c, debugDescription: "invalid bundle id") }
+            self = .quitApp(bundleId: bundleId)
+        case "closeFinderWindow":
+            let contextId = try c.decode(String.self, forKey: .contextId)
+            guard AttachmentValidation.isContextId(contextId) else {
+                throw DecodingError.dataCorruptedError(forKey: .contextId, in: c, debugDescription: "invalid contextId")
+            }
+            self = .closeFinderWindow(contextId: contextId)
         default:
             throw DecodingError.dataCorruptedError(forKey: .type, in: c, debugDescription: "unsupported action \(type)")
         }
@@ -202,6 +239,9 @@ public enum HostAction: Codable, Equatable {
             try c.encode(op, forKey: .op)
             try c.encodeIfPresent(value, forKey: .value)
         case .askAgent(let prompt): try c.encode(prompt, forKey: .prompt)
+        case .fileOp(let opId): try c.encode(opId, forKey: .opId)
+        case .quitApp(let bundleId): try c.encode(bundleId, forKey: .bundleId)
+        case .closeFinderWindow(let contextId): try c.encode(contextId, forKey: .contextId)
         }
     }
 
@@ -455,12 +495,16 @@ public struct CardSpec: Decodable, Equatable {
 }
 
 public extension CardSpec {
-    /// Actions a model-authored (agent) card may bind; instant cards may also use
-    /// typeIntoPinned/system. Mirrors MODEL_CARD_ACTION_TYPES in actions.ts.
+    /// Actions a model-authored (agent) card may bind; instant cards may also use typeIntoPinned/system and the file
+    /// commands' fileOp/quitApp/closeFinderWindow (`HostAction.instantOnlyTypes`). Mirrors MODEL_CARD_ACTION_TYPES in actions.ts.
     static let modelActionTypes: Set<String> = ["copyText", "openURL", "openApp", "openFile", "revealFile", "copyPath", "askAgent"]
 
     /// Every HostAction type bound anywhere in the card.
     var actionTypes: Set<String> { Set(elements.values.flatMap { $0.on.values.map(\.typeName) }) }
+
+    /// A row of this card runs a staged file command (`fileOp`): a preview never shows it as an actionable list, so only
+    /// the final's own decision can run it.
+    var runsFileOps: Bool { actionTypes.contains("fileOp") }
 
     /// Hosts check agent cards with `usesOnly(CardSpec.modelActionTypes)` before showing them.
     func usesOnly(_ allowed: Set<String>) -> Bool { actionTypes.isSubset(of: allowed) }

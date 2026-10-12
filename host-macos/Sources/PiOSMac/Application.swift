@@ -189,6 +189,11 @@ import PiOSCore
             timingLog = VoiceTimingLog(support: config.support)
             // A launch is not awaited (DESIGN4 §7 item 1): one that fails afterwards is a short note, not a lost act.
             launcher.service.onLaunchFailure = { [weak self] error in self?.hint(error.message, symbol: "exclamationmark.circle") }
+            // File commands' close acts (BUILD6 #5): only the take's own Finder window, re-checked before its close button.
+            launcher.service.closeFinderWindow = { [weak self] contextId in
+                guard let self else { throw DomainError("unsupported", "Closing Finder windows is not available here.") }
+                return try await self.closeFinderWindow(contextId: contextId)
+            }
             harness.onUnexpectedExit = { [weak self] in
                 guard let self, self.context != nil else { return }
                 self.controller.interrupt()
@@ -1178,6 +1183,23 @@ import PiOSCore
         guard let pid = snapshot?.targetWindow?.processId,
               let bundleId = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier else { return nil }
         return AppInstance(bundleId: bundleId, pid: pid)
+    }
+    /// `closeFinderWindow` (BUILD6 #5): the window this context pinned at key-down and the folder its visible-items capture
+    /// read then, checked again and closed off the main thread (`FinderWindowClose`). An AX press is input: computer control
+    /// must be on. Never another window; the folder's name is shown, never logged.
+    func closeFinderWindow(contextId: String) async throws -> String {
+        guard config.canControl, AXIsProcessTrusted() else {
+            throw DomainError("policy_blocked", "pi-os is in read-only mode, so it can't close windows.")
+        }
+        let snapshot: Snapshot?
+        if let take = takeSnapshot, take.id == contextId { snapshot = take } else { snapshot = try? await desktop?.snapshot(contextId) }
+        let captured = launcher.visible?.capturedFolder(contextId: contextId)
+        let folder = captured?.kind == .finderWindow ? captured?.path : nil
+        guard let window = snapshot?.targetWindow else { return try FinderWindowClose.status(.gone, folder: folder) }
+        let outcome = await Task.detached(priority: .userInitiated) {
+            await FinderWindowClose.run(window, folder: folder, access: NativeFinderWindowAccess())
+        }.value
+        return try FinderWindowClose.status(outcome, folder: folder)
     }
     private func discardContext() {
         let oldContext = context, oldThread = thread, reservation = invocationReservation, extra = extraContexts

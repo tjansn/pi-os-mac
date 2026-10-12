@@ -130,7 +130,7 @@ final class VisibleItemsTests: XCTestCase {
             SpotlightHit(path: Self.desktop + "/line\nbreak.txt", contentType: "public.plain-text"),
         ]
         let capture = VisibleItemsPolicy.spotlightCapture(hits, folder: Self.desktop, kind: .desktop, capped: false)
-        XCTAssertEqual(capture.source, VisibleSource(kind: .desktop, via: .spotlight, complete: true))
+        XCTAssertEqual(capture.source, VisibleSource(kind: .desktop, via: .spotlight, complete: true, path: Self.desktop), "the source names its folder")
         XCTAssertEqual(capture.entries.map(\.name), ["Fotos", "Präsentation.key", "Radfotos"])
         XCTAssertEqual(capture.entries.last?.modified, Date(timeIntervalSince1970: 1_783_209_600))
         XCTAssertTrue(capture.entries[0].isDirectory)
@@ -148,7 +148,7 @@ final class VisibleItemsTests: XCTestCase {
         var window = Self.window
         window.surface = FinderContextPolicy.desktopSurface
         let capture = source.capture(.desktop(window, folder: Self.desktop))
-        XCTAssertEqual(capture.source, VisibleSource(kind: .desktop, via: .spotlight, complete: true))
+        XCTAssertEqual(capture.source, VisibleSource(kind: .desktop, via: .spotlight, complete: true, path: Self.desktop))
         XCTAssertEqual(capture.entries.map(\.name), ["Radfotos"])
         XCTAssertEqual(calls.value.map(\.0), [#"kMDItemDisplayName == "*""#], "a query every item satisfies, never FileManager")
         XCTAssertEqual(calls.value.map(\.1), [[Self.desktop]]); XCTAssertEqual(calls.value.map(\.2), [VisibleItemsPolicy.spotlightCap])
@@ -158,7 +158,7 @@ final class VisibleItemsTests: XCTestCase {
         // A Spotlight failure is an incomplete, empty desktop source.
         let failing = NativeVisibleItemsSource(axSeconds: 0.05) { _, _, _ in throw DomainError("search_unavailable", "off") }
         XCTAssertEqual(failing.capture(.desktop(window, folder: Self.desktop)),
-                       VisibleCapture(source: VisibleSource(kind: .desktop, via: .spotlight, complete: false), entries: []))
+                       VisibleCapture(source: VisibleSource(kind: .desktop, via: .spotlight, complete: false, path: Self.desktop), entries: []))
     }
 
     func testTargetsAreTheDesktopSurfaceAFinderWindowOrNothing() {

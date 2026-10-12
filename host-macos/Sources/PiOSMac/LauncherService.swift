@@ -27,6 +27,14 @@ public struct AppInstance: Equatable, Sendable {
     }
 }
 
+/// A running app `quitApp` may ask to quit: a regular (Dock) app's process, its bundle id and display name. Never logged.
+public struct RunningApp: Equatable, Sendable {
+    public var pid: pid_t
+    public var bundleId: String
+    public var name: String
+    public init(pid: pid_t, bundleId: String, name: String) { self.pid = pid; self.bundleId = bundleId; self.name = name }
+}
+
 /// The launcher's only side effects, behind a seam so tests never launch apps, open links
 /// or touch the pasteboard. None of them deletes, trashes, moves or writes a file.
 @MainActor public protocol LauncherEffects: AnyObject {
@@ -42,10 +50,17 @@ public struct AppInstance: Equatable, Sendable {
     /// The bundle id of the app the default handler would use for `url` (a link's default browser, a file's app), for
     /// the continuity anchor only; nil when unknown.
     func defaultHandler(for url: URL) -> String?
+    /// `quitApp`: the regular (Dock) apps running with exactly this bundle id, never pi-os's own process.
+    func runningApps(bundleId: String) -> [RunningApp]
+    /// `quitApp`: asks the app to quit (`NSRunningApplication.terminate()`, never a force quit); it may ask about unsaved
+    /// work or decline. False when macOS did not pass the request on (the process is gone or is another app now).
+    func terminate(_ app: RunningApp) -> Bool
 }
 
 public extension LauncherEffects {
     func defaultHandler(for url: URL) -> String? { nil }
+    func runningApps(bundleId: String) -> [RunningApp] { [] }
+    func terminate(_ app: RunningApp) -> Bool { false }
 }
 
 @MainActor public final class WorkspaceEffects: LauncherEffects {
@@ -90,6 +105,18 @@ public extension LauncherEffects {
     }
     public func defaultHandler(for url: URL) -> String? {
         NSWorkspace.shared.urlForApplication(toOpen: url).flatMap { Bundle(url: $0)?.bundleIdentifier }
+    }
+    public func runningApps(bundleId: String) -> [RunningApp] {
+        let own = ProcessInfo.processInfo.processIdentifier
+        return NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).filter {
+            $0.bundleIdentifier == bundleId && $0.activationPolicy == .regular && !$0.isTerminated && $0.processIdentifier != own
+        }.map { RunningApp(pid: $0.processIdentifier, bundleId: bundleId, name: $0.localizedName ?? bundleId) }
+    }
+    /// Re-checked by pid right before: still running and still that app (a reused pid is never asked).
+    public func terminate(_ app: RunningApp) -> Bool {
+        guard let running = NSRunningApplication(processIdentifier: app.pid), running.bundleIdentifier == app.bundleId,
+              !running.isTerminated, app.pid != ProcessInfo.processInfo.processIdentifier else { return false }
+        return running.terminate()
     }
     public func inspect(_ url: URL) -> FileInspection {
         do {
@@ -359,7 +386,9 @@ public struct LauncherTraceEvent: Equatable, Sendable {
 /// Executes launcher effects after LauncherPolicy validation. The UI path (instant acts and card
 /// buttons) calls `perform`; the agent's launcher.open route calls `open`, which is limited to
 /// openApp/openURL/openFile/revealFile. File effects resolve host tokens only; openFile is
-/// downgraded to Reveal for executables, scripts, installers, workflows and link files.
+/// downgraded to Reveal for executables, scripts, installers, workflows and link files. The file
+/// commands' close acts run here too (`quitApp`: a graceful quit; `closeFinderWindow`: the take's own
+/// window through the app); a staged `fileOp` never does (the command bar asks Node to run it).
 @MainActor public final class LauncherService {
     /// Thrown by `perform(.askAgent)`: the caller seeds an agent invocation instead.
     public static let agentHandoffCode = "agent_handoff"
@@ -396,6 +425,10 @@ public struct LauncherTraceEvent: Equatable, Sendable {
     /// The app a context pinned, from the host's context registry: bundle id and pid only (DESIGN5 §4.1). Unset, or
     /// nil for a context: links go to the browser pi-os is launching, else to the default browser.
     public var pinnedApp: ((_ contextId: String) async -> AppInstance?)?
+    /// `closeFinderWindow` (BUILD6 #5): the app closes the Finder window this context pinned at key-down, only while it is
+    /// still that Finder window showing the folder captured then (`FinderWindowClose`), and returns the status. Unset:
+    /// closing windows is unavailable.
+    public var closeFinderWindow: ((_ contextId: String) async throws -> String)?
     /// The app a pi-os open is launching (5 s). `LauncherHost.standard()` follows NSWorkspace activations and quits.
     public let launches: PendingLaunches
     /// What the last pi-os open put in front (DESIGN5 §3, 120 s provenance); both routes create it.
@@ -582,6 +615,30 @@ public struct LauncherTraceEvent: Equatable, Sendable {
             return Executed(status: try await system.perform(command), performed: command.effect.rawValue)
         case .askAgent:
             throw DomainError(Self.agentHandoffCode, "This action continues in the agent.")
+        case .fileOp:
+            // The command bar runs a staged file command itself (POST /fileops/run, CommandController); never this path.
+            throw DomainError("unsupported", "File commands run from the command bar.")
+        case .quitApp(let bundleId):
+            // `plan` refused pi-os itself, Finder and the system's own UI processes. A graceful quit only: the app may ask
+            // about unsaved work or decline, so the status says what was asked.
+            let running = effects.runningApps(bundleId: bundleId)
+            guard !running.isEmpty else {
+                let record = (try? await apps.list())?.apps.first { $0.bundleId.caseInsensitiveCompare(bundleId) == .orderedSame }
+                return Executed(status: "\(record?.name ?? "That app") isn't running", performed: "quitApp")
+            }
+            var asked: [RunningApp] = []
+            for app in running where effects.terminate(app) { asked.append(app) }
+            guard let first = asked.first else {
+                throw DomainError("quit_failed", "macOS didn't pass the quit request on to \(running[0].name).")
+            }
+            return Executed(status: "Asked \(first.name) to quit", performed: "quitApp")
+        case .closeFinderWindow(let target):
+            // Only the take's own window: the act names the context it was decided for, and it must be this request's.
+            guard let contextId, contextId == target else {
+                throw DomainError("policy_blocked", "pi-os closes only the Finder window this request was made in.")
+            }
+            guard let closeFinderWindow else { throw DomainError("unsupported", "Closing Finder windows is not available here.") }
+            return Executed(status: try await closeFinderWindow(target), performed: "closeFinderWindow")
         }
     }
 

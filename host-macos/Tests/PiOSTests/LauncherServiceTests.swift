@@ -42,6 +42,13 @@ import XCTest
     func reveal(_ url: URL) { revealed.append(url.path) }
     func copy(_ text: String) { copied.append(text) }
     func inspect(_ url: URL) -> FileInspection { inspections[url.path] ?? FileInspection(exists: true) }
+    /// `quitApp`: the regular apps "running" per bundle id, and the quits asked for (pids); never a real process.
+    var running: [String: [RunningApp]] = [:]
+    var terminated: [pid_t] = []
+    /// False: macOS did not pass the quit request on.
+    var terminateAnswers = true
+    func runningApps(bundleId: String) -> [RunningApp] { running[bundleId] ?? [] }
+    func terminate(_ app: RunningApp) -> Bool { terminated.append(app.pid); return terminateAnswers }
 }
 
 /// Never touches CoreAudio or pmset.

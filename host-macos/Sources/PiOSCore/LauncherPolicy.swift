@@ -4,9 +4,13 @@ import UniformTypeIdentifiers
 // Launcher contracts and policy (protocol.md "Launcher routes"). Wire types mirror
 // node-harness/src/contracts/launcher.ts and round-trip shared/fixtures/launcher/*.json.
 // The native host owns every launcher effect: Node, cards and the agent only describe
-// actions, and this policy decides what happens. There is deliberately no delete, trash,
+// actions, and this policy decides what happens. The host itself has no delete, trash,
 // move, rename, write, power, lock or logout path, and file effects only ever resolve
-// host-minted tokens (Node never sends a path back for an effect).
+// host-minted tokens (Node never sends a path back for an effect). The one file-changing
+// action, `fileOp` (instant lane only, BUILD6), carries no path either: the host asks Node
+// to run the operation Node staged for the take, which Node runs as argv only after the
+// user's dcg guard reviewed it. `quitApp` asks an app to quit (never a force quit) and
+// `closeFinderWindow` closes the take's own Finder window; neither is open to the agent.
 
 // MARK: - Wire types
 
@@ -122,13 +126,47 @@ public enum VisibleSourceVia: String, Codable, CaseIterable, Sendable { case ax,
 
 /// One source the host read for the context (at most one per kind).
 public struct VisibleSource: Codable, Equatable, Sendable {
+    /// `path`'s limit in UTF-16 units (BUILD6).
+    public static let maxPathChars = 1_024
     public var kind: VisibleSourceKind
     public var via: VisibleSourceVia
     /// False when the host stopped early (AX budget, Spotlight deadline): a miss may be a false negative.
     public var complete: Bool
-    public init(kind: VisibleSourceKind, via: VisibleSourceVia, complete: Bool) {
-        self.kind = kind; self.via = via; self.complete = complete
+    /// The folder shown (BUILD6 "Visible folder path"): the user's Desktop folder for the desktop, a Finder window's target
+    /// folder. Optional (absent when the host cannot tell); absolute, `/`-rooted, one line, ≤ 1024 UTF-16 units. User
+    /// content: never logged.
+    public var path: String?
+    public init(kind: VisibleSourceKind, via: VisibleSourceVia, complete: Bool, path: String? = nil) {
+        self.kind = kind; self.via = via; self.complete = complete; self.path = path
     }
+
+    private enum Keys: String, CodingKey { case kind, via, complete, path }
+
+    /// Strict like parseVisibleSource: an invalid `path` rejects the source (null is absent, unknown keys are dropped).
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        kind = try c.decode(VisibleSourceKind.self, forKey: .kind)
+        via = try c.decode(VisibleSourceVia.self, forKey: .via)
+        complete = try c.decode(Bool.self, forKey: .complete)
+        path = try c.decodeIfPresent(String.self, forKey: .path)
+        if let path, !Self.isPath(path) { throw DecodingError.dataCorruptedError(forKey: .path, in: c, debugDescription: "invalid path") }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: Keys.self)
+        try c.encode(kind, forKey: .kind)
+        try c.encode(via, forKey: .via)
+        try c.encode(complete, forKey: .complete)
+        try c.encodeIfPresent(path, forKey: .path)
+    }
+
+    /// Absolute (`/`-rooted), no NUL, control or line-separator character, at most 1024 UTF-16 units.
+    public static func isPath(_ value: String) -> Bool {
+        value.hasPrefix("/") && value.utf16.count <= maxPathChars && !AttachmentValidation.hasControl(value)
+    }
+
+    /// `path` as a capture may send it: nil when it breaks the rule (the source then just has no folder; Node falls back).
+    public static func sendable(_ path: String?) -> String? { path.flatMap { isPath($0) ? $0 : nil } }
 }
 
 /// A file candidate plus where it is visible; encodes flat (`FileCandidate & {source}` in TypeScript).
@@ -203,6 +241,7 @@ public struct VisibleItemsResult: Codable, Equatable {
         guard sources.count <= VisibleSourceKind.allCases.count, Set(sources.map(\.kind)).count == sources.count else {
             throw reject("at most one source per kind")
         }
+        guard sources.allSatisfy({ $0.path.map(VisibleSource.isPath) ?? true }) else { throw reject("invalid source path") }
         guard items.count <= VisibleItemsLimits.maxResults else { throw reject("too many items") }
         guard elapsedMs.isFinite, elapsedMs >= 0 else { throw reject("invalid elapsedMs") }
         let kinds = Set(sources.map(\.kind))
@@ -227,10 +266,12 @@ public struct VisibleItemsResult: Codable, Equatable {
 
 // MARK: - Policy
 
-/// Every effect the launcher can perform. Nothing here deletes, trashes, moves or writes files.
+/// Every effect the launcher can perform. Nothing here deletes, trashes, moves or writes files itself: `fileOp` hands a
+/// staged id back to Node, which runs the operation after the user's dcg guard reviewed it.
 public enum LauncherEffect: String, CaseIterable {
     case openApp, openURL, openFile, revealFile, copyPath, copyText, typeIntoPinned
     case volumeSet = "volume.set", volumeStep = "volume.step", volumeMute = "volume.mute", displaySleep = "display.sleep"
+    case fileOp, quitApp, closeFinderWindow
 }
 
 public struct VolumeState: Equatable {
@@ -295,6 +336,13 @@ public enum LauncherPlan: Equatable {
     case typeIntoPinned(String, submit: Bool)
     case system(SystemCommand)
     case askAgent(String)
+    /// POST /fileops/run with this id (the command bar's own path, `CommandController`; never LauncherService).
+    case fileOp(opId: String)
+    /// A graceful quit of the running app(s) with exactly this bundle id; pi-os itself, Finder and the system's own UI
+    /// processes are refused by `plan`.
+    case quitApp(bundleId: String)
+    /// The context's own Finder window, re-verified before its close button is pressed.
+    case closeFinderWindow(contextId: String)
 
     public var effect: LauncherEffect? {
         switch self {
@@ -307,6 +355,9 @@ public enum LauncherPlan: Equatable {
         case .typeIntoPinned: .typeIntoPinned
         case .system(let command): command.effect
         case .askAgent: nil
+        case .fileOp: .fileOp
+        case .quitApp: .quitApp
+        case .closeFinderWindow: .closeFinderWindow
         }
     }
 }
@@ -322,6 +373,27 @@ public enum LauncherPolicy {
     /// Ordinary apps are never blocked by brand; only pi-os itself is excluded (InputPolicy.blockedBundles).
     public static func isBlockedBundle(_ value: String) -> Bool {
         InputPolicy.blockedBundles.contains { $0.caseInsensitiveCompare(value) == .orderedSame }
+    }
+    /// Finder never quits through `quitApp` (BUILD6: closing one of its windows is `closeFinderWindow`).
+    public static let finderBundleID = "com.apple.finder"
+    /// macOS's own UI processes, which `quitApp` never asks to quit: quitting loginwindow logs out, and the others are the
+    /// desktop itself (no power, lock or logout path). Not a brand list: ordinary apps all quit.
+    public static let systemUIBundles: Set<String> = [
+        "com.apple.loginwindow", "com.apple.dock", "com.apple.systemuiserver", "com.apple.controlcenter",
+        "com.apple.notificationcenterui", "com.apple.windowmanager", "com.apple.spotlight", "com.apple.wallpaper.agent",
+    ]
+
+    /// `quitApp`'s policy: a valid bundle id that is not pi-os itself, Finder or a system UI process.
+    public static func validateQuit(_ bundleId: String) throws -> String {
+        guard isBundleID(bundleId) else { throw DomainError("invalid_arguments", "Invalid application identifier.") }
+        guard !isBlockedBundle(bundleId) else { throw DomainError("policy_blocked", "pi-os does not quit itself.") }
+        if bundleId.caseInsensitiveCompare(finderBundleID) == .orderedSame {
+            throw DomainError("policy_blocked", "pi-os doesn't quit Finder. To close a Finder window, say “close” and the folder's name.")
+        }
+        guard !systemUIBundles.contains(bundleId.lowercased()) else {
+            throw DomainError("policy_blocked", "pi-os doesn't quit that part of macOS.")
+        }
+        return bundleId
     }
 
     /// http/https with a host and no embedded credentials.
@@ -449,11 +521,19 @@ public enum LauncherPolicy {
         case .copyPath(let value): return .copyPath(token: try token(value))
         case .system(let op, let value): return .system(try systemCommand(op, value: value))
         case .askAgent(let prompt): return .askAgent(try text(prompt, max: HostAction.maxPrompt))
+        case .fileOp(let opId):
+            guard HostAction.isOpId(opId) else { throw DomainError("invalid_arguments", "Invalid file command.") }
+            return .fileOp(opId: opId)
+        case .quitApp(let bundleId): return .quitApp(bundleId: try validateQuit(bundleId))
+        case .closeFinderWindow(let contextId):
+            guard AttachmentValidation.isContextId(contextId) else { throw DomainError("invalid_arguments", "Invalid window context.") }
+            return .closeFinderWindow(contextId: contextId)
         }
     }
 
     /// Decodes an agent's launcher.open action. Anything outside openApp/openURL/openFile/revealFile
-    /// is refused as policy, and a non-http(s) link gets the same refusal the fixtures pin.
+    /// is refused as policy (the instant lane's fileOp, quitApp and closeFinderWindow included), and a
+    /// non-http(s) link gets the same refusal the fixtures pin.
     public static func agentOpenAction(_ raw: JSONValue) throws -> HostAction {
         guard case .object(let fields) = raw, let type = fields["type"]?.stringValue else {
             throw DomainError("invalid_arguments", "Expected an action object with a type.")
