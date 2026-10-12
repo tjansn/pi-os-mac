@@ -19,8 +19,9 @@ npm-debug.log*
 .env.*
 *.usersecrets.xml
 
-# Private project documentation — kept locally, intentionally not committed
-/docs/
+# Private project documentation — only the shared input contract is public
+/docs/*
+!/docs/desktop-input-semantics.md
 
 # Logs & temp
 logs/
