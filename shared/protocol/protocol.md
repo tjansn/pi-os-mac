@@ -607,7 +607,10 @@ voice finals and `accept` for the gated kinds, and sends `voice` on voice decisi
   that misses; ⌥Return asks pi) instead of starting the agent. Without `check` that gate never runs.
   `confirm`: Node may hold a voice `act` with `confirm: true` (one Return) for a secondary engine, a peer
   below the confidence threshold, a bare secondary name or an unknown spoken domain. Without `confirm` it
-  never adds `confirm: true` for voice uncertainty. Unknown `accept` words are ignored, so a newer host
+  never adds `confirm: true` for voice uncertainty. The macOS host also declares `confirm` on typed finals
+  (and on the check card's resend): Node then uses it only for a file command's single-file delete (see File
+  commands); every other typed decision stays as without it (a typed visible sound-alike is a one-row list, a
+  typed "tippe …" with deletion words is dropped). Unknown `accept` words are ignored, so a newer host
   can declare more.
 - Did you mean (DESIGN4 §5.3): a `list` with `intent: "open_app"` and `voice: {heard, didYouMean: true}`,
   ≤ 3 rows. Title "Did you mean Pages?" (one row) or "Did you mean…" (2–3 rows); a new host shows the
@@ -719,7 +722,8 @@ voice finals and `accept` for the gated kinds, and sends `voice` on voice decisi
     goes to pi; "nein, X" / "No, I meant X" within 30 s of pi-os's own fill, while `ownFill` says the field
     still holds it, replaces that fill (a fill whose `voice.correctsTakeId` names the fill's take; otherwise
     nothing is typed and the correction aims at no older act); "tippe …/type …/diktiere …/gib … ein" always
-    types its remainder (explicit; a remainder with deletion words is held for one Return and never submits);
+    types its remainder (explicit; a spoken remainder with deletion words is held for one Return and never submits,
+    a typed one is not typed at all, whether or not the host declares `confirm`);
     with `app: "browser"`, "such nach X / search for X" fills X with `submit` into a ready `search` or `address`
     field, else opens the anchored search site's or the default web search's URL in that browser (an ordinary
     `act` intent `web`, `openURL`), and "google X" while the anchored page is Google fills its search box
@@ -788,7 +792,8 @@ voice finals and `accept` for the gated kinds, and sends `voice` on voice decisi
   runs `rm -r -- /Users/…/Desktop/test` after the user's command guard (dcg) reviewed it.
   - **Active only** when all of these hold, otherwise every decision is exactly today's: a full pi session (the
     check deletions use: macOS, `trustedGlobal`, no read-only launch), the bash guard is `dcg` (resource status
-    `guard`; Node refreshes it at each take's `prepare`, and the lane stays off until it is known), the dcg executable
+    `guard`, `none` without the host's native input routes; Node reads it after launch, on a take's `prepare` at most
+    every 30 s and on mode changes, and the lane stays off until it is known), the dcg executable
     resolves (`PI_OS_DCG` when set — absolute and executable, else off — else `~/.local/bin/dcg`, else `dcg` on
     `PATH`), and the request's `contextId` has visible items from the desktop or a Finder window (`sources` not empty).
   - **Grammar** (closed EN/DE lists over the whole utterance): delete "lösche/lösch/entferne/delete/remove X", "X
@@ -812,8 +817,9 @@ voice finals and `accept` for the gated kinds, and sends `voice` on voice decisi
     never a file-command target (deleting an app stays today's uninstall handling).
   - **Delete**: a directory on disk (packages included) acts at once — dcg reviews `rm -r` with its own dialog; a
     file or symlink (dcg allows `rm` silently) is an `act` with `confirm: true` "Delete “test.txt” permanently?" /
-    "„test.txt“ endgültig löschen?" for hosts that accept `confirm`, else a one-row `list` with that title whose row
-    must be picked. A file is never deleted without one explicit user step after the command.
+    "„test.txt“ endgültig löschen?" for requests that declare `confirm` (the macOS host does on typed and voice
+    finals), else a one-row `list` with that title whose row must be picked. A file is never deleted without one
+    explicit user step after the command.
   - **Copy/move destinations**: standard folders by EN/DE name (Schreibtisch/Desktop, Dokumente/Documents,
     Downloads, Bilder/Pictures, Musik/Music, Filme/Movies, Benutzerordner/Home → their real paths), "hier"/"here"
     (the shown folder's `path`), a visible folder (exact key), a `~/…` or absolute path that is an existing
@@ -833,8 +839,10 @@ voice finals and `accept` for the gated kinds, and sends `voice` on voice decisi
     Return (`confirm: true`, hosts with `confirm`; else today's handling). Every decision carries `voice.via: "file"`:
     no "Not this", nothing is learned, `/dictionary/learn` refuses every gesture against the take, and "No, I meant X"
     never aims at or past it. Typing and partial phases only preview the plan (`answer` "Löschen: test"); ops are
-    staged on finals only. A recognized file command is a command: it is never typed into a focused field (any
-    `accept`), and the fill lane's step 6 never types one.
+    staged on finals only. Where the lane applies (active, a desktop or Finder-window take), a recognized file command
+    is a command: it is never typed into a focused field, also when the lane leaves it to today's handling (the fill
+    lane's step 6 skips it). Anywhere else the same words decide exactly as before ("close enough" in a chat is still
+    typed).
   - **Safety** (each a test): targets are only the resolved items (and the shown folder for create); never the shown
     folder or one of its ancestors, the home folder or its standard folders, `~/Library`, `/`, a volume root,
     anything under `/System`, `/Library`, `/usr`, `/bin`, `/sbin`, `/private`, `/etc`, `/var`, `/tmp`, `/dev` except

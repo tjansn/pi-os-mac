@@ -165,6 +165,15 @@ export function isBareEdit(n: Normalized): boolean {
   return BARE_EDIT.test(fold(n.lower));
 }
 
+/**
+ * The object of an edit verb is text or in-app content ("the last sentence", "die Zeile", "comments from the
+ * document"): file commands (grammar/fileCommands.ts) leave such objects to today's handling.
+ */
+export function isInAppObject(lower: string): boolean {
+  const text = fold(lower);
+  return EDIT_OBJECT.test(text) || IN_APP_CONTEXT.test(text);
+}
+
 const DETERMINER = /^(?:the|a|an|my|your|our|this|that|these|those|all|every|some|der|die|das|den|dem|des|ein|eine|einen|mein|meine|meinen|meinem|alle|diese[nrsm]?)$/;
 const TARGET_VERB_FIRST = /^(?:delete|remove|erase|get rid of|losch|losche|loschen|entferne|entfernen|beseitige) (.+)$/;
 const TARGET_VERB_LAST = /^(.+) (?:loschen|entfernen)$/;

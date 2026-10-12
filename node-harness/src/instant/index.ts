@@ -19,6 +19,10 @@
  * Voice (DESIGN4): add `dictionary` (DictionaryStore, or nonCountingLookup(store) for dispatchers that are
  * not the host's /instant) and `takeMemo` (InMemoryTakeMemo) to the deps; voice finals with `hypotheses`
  * are arbitrated (voice.ts), and `takeDetailsOf(response)` gives the take memo's details.
+ *
+ * File commands (DESIGN6/BUILD6): add `fileCommands: { active, store: new FileOpStore() }` to the host's /instant
+ * dispatcher only (`active`: a full pi session, dcg as the bash guard, resolveDcg() !== null); POST /fileops/run calls
+ * `runFileOp(store, opId, { dcg: resolveDcg })`.
  */
 
 export {
@@ -51,6 +55,12 @@ export {
   type OpenStrength, type ParseOptions,
 } from "./grammar/index.js";
 export { normalize, spokenCore, type Normalized } from "./normalize.js";
+export { decideFileCommand, laneVisible, type FileCommandDeps, type FileLaneInput } from "./fileLane.js";
+export {
+  defaultPathGuard, FILE_OPS, FileOpStore, pathProblem, resolveDcg, reviewCommand, reviewWithDcg, runFileOp,
+  type DcgVerdict, type FileOpKind, type FileOpLogFields, type FileOpPlan, type FileOpResult, type FileOpRunOptions, type PathGuard,
+} from "./fileOps.js";
+export { fileCommandOf, matchFileCommand, type FileCommand, type FileCommandOp } from "./grammar/fileCommands.js";
 export {
   decideVisible, matchKey, matchVisible, NO_VISIBLE, VISIBLE, VisibleItemsCache, visibleTarget,
   type VisibleDecision, type VisibleItemsFetch, type VisibleMatch, type VisibleSnapshot, type VisibleTarget,

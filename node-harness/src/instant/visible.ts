@@ -64,6 +64,8 @@ export interface VisibleSnapshot {
   supported: boolean;
   sources: readonly VisibleSource[];
   entries: readonly VisibleEntry[];
+  /** The host stopped at `maxResults`: a miss may be a false negative (file commands then claim nothing). */
+  truncated?: boolean;
 }
 
 export const NO_VISIBLE: VisibleSnapshot = Object.freeze({ supported: false, sources: [], entries: [] });
@@ -119,7 +121,7 @@ export function snapshotOf(result: VisibleItemsResult): VisibleSnapshot {
     const entry = visibleEntry(item);
     if (entry.key) entries.push(entry);
   }
-  return { supported: true, sources: result.sources, entries };
+  return { supported: true, sources: result.sources, entries, ...(result.truncated ? { truncated: true } : {}) };
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -35,6 +35,12 @@ export interface TakeRecord extends TakeMemoRecord {
    * and "nein, X" right after it replaces it (`latestFill`).
    */
   fill?: boolean;
+  /**
+   * The take was a file command (DESIGN6: intent `file_op` or `close`, `voice.via: "file"`). It never teaches a rule (every
+   * /dictionary/learn gesture against it is refused), and "No, I meant X" never aims at it or past it to an older act
+   * (`latestActed` stops there): a correction after a delete must never re-run or open anything.
+   */
+  fileOp?: boolean;
 }
 
 /** What continuity reads from the memo (DESIGN5 §3.2, §5.10). */
@@ -101,6 +107,8 @@ export class InMemoryTakeMemo implements TakeMemo, ContinuityMemo {
     const records = [...this.takes.values()];
     for (let index = records.length - 1; index >= 0; index--) {
       const record = records[index]!;
+      // A file command is the latest thing that happened: no correction aims at it or at anything before it (DESIGN6).
+      if (record.fileOp && !this.expired(record, now)) return undefined;
       // A fill typed words, it acted on nothing a correction could name (DESIGN5 §5.10).
       if (record.decision === "act" && !record.fill && !this.expired(record, now)) return record;
     }
@@ -147,9 +155,10 @@ function mergeTake(previous: TakeRecord, record: TakeMemoRecord): TakeRecord {
   }
   next.at = Math.min(previous.at, record.at);
   next.offered = [...new Set([...previous.offered, ...record.offered])].slice(-MAX_OFFERED);
-  // A take that opened a file or folder, or typed into a field, once stays one (it never teaches a rule).
+  // A take that opened a file or folder, typed into a field or was a file command once stays one (it never teaches a rule).
   if (previous.item) next.item = true;
   if (previous.fill) next.fill = true;
+  if (previous.fileOp) next.fileOp = true;
   return next;
 }
 
@@ -253,5 +262,12 @@ export function takeRecordFor(request: InstantRequest, response: InstantResponse
     ...(response.decision === "list" && meta?.didYouMean ? { didYouMean: true } : {}),
     ...(response.decision === "act" && (response.intent === "open_item" || response.action.type === "openFile") ? { item: true } : {}),
     ...(response.decision === "act" && response.intent === "fill" ? { fill: true } : {}),
+    ...(isFileCommand(response) ? { fileOp: true } : {}),
   };
+}
+
+/** A file-command decision (DESIGN6): intent `file_op` or `close` on an act, list or answer, or a `fileOp` action. */
+function isFileCommand(response: InstantResponse): boolean {
+  if (response.decision === "act") return response.intent === "file_op" || response.intent === "close" || response.action.type === "fileOp";
+  return (response.decision === "list" || response.decision === "answer") && (response.intent === "file_op" || response.intent === "close");
 }

@@ -117,7 +117,9 @@ export interface VoiceHypothesis {
  *   `voice.check` instead of asking the agent. Node runs the check gate only for such hosts.
  * - `confirm`: the host holds `act` with `confirm: true` for one Return (it always has). Node uses it for
  *   voice uncertainty (a secondary engine, a low-confidence peer, a bare secondary name, an unknown
- *   spoken domain) only for such hosts.
+ *   spoken domain) only for such hosts, and for a file command's single-file delete (DESIGN6/BUILD6 §2). The macOS
+ *   host declares it on typed finals too; there it is used for that file delete only (a typed visible sound-alike
+ *   stays a one-row list and a typed "tippe …" with deletion words stays dropped, as before).
  * - `fill`: the host types into the bound focused field of `target.field`: `act` intent `fill`
  *   (`typeIntoPinned`, `voice.via: "field"`) and `voice.fill: "offer"` on the check card. Node decides a fill
  *   only when the request also carries an eligible `target.field` (FILL_* below); without `"fill"` it never

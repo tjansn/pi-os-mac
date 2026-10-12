@@ -552,8 +552,9 @@ export async function learnFromGesture(request: DictionaryLearnRequest, deps: Le
   const { store, memo } = deps;
   const record = memo.get(request.takeId);
   if (!record) return refused("unknown_take", store.revision());
-  // A take that typed into a field (continuity) teaches nothing: no pick, confirm, edit, correction or rejection.
-  if (record.fill) return refused("nothing_to_learn", store.revision());
+  // A take that typed into a field (continuity) or was a file command (DESIGN6: deleting, copying, … what the take
+  // shows) teaches nothing: no pick, confirm, edit, correction or rejection.
+  if (record.fill || record.fileOp) return refused("nothing_to_learn", store.revision());
   if (request.kind === "reject") return reject(request, record, store);
   // A pick or a confirm of an app is app usage (frecency), whatever is learned from it.
   const used = request.kind === "pick" ? request.bundleId

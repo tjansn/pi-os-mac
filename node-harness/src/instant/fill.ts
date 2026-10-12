@@ -18,8 +18,9 @@ import { VOICE, wordsDisagree } from "./voice.js";
  *
  * The decision order for a final that carries `accept: "fill"` and a `target` (dispatcher.ts wires it):
  *   1. policy: a deletion request is refused as today; deletion vocabulary never reaches a field on its own
- *      (an implicit take with such a word keeps today's path; an explicit "tippe …" remainder with one is held
- *      for one Return and never submits); deixis, compound and bare edits keep today's path;
+ *      (an implicit take with such a word keeps today's path; a spoken explicit "tippe …" remainder with one is held
+ *      for one Return and never submits, a typed one is not typed, `confirm` or not); deixis, compound and bare edits
+ *      keep today's path;
  *   2. escapes: "frag pi …/ask pi …/hey pi …" always goes to pi (nothing is typed); "tippe …/type …/diktiere …/
  *      gib … ein" always types its remainder (Tier E, voice and typed);
  *      "nein, X" right after pi-os's own fill (≤ 30 s, the field still holds it: `ownFill`) replaces it;
@@ -28,7 +29,10 @@ import { VOICE, wordsDisagree } from "./voice.js";
  *      fills a focused search field in step 6), and "google X" fills the anchored Google page's own box;
  *   3. instant commands as today: any act, answer, refusal or list wins, except the "Did you mean …?" of a
  *      name said alone that only resembles an app (an installed app's exact name said alone stays a command,
- *      DESIGN5 A4), and a command that missed (a strong open, a currency, a file search) is never typed;
+ *      DESIGN5 A4), and a command that missed (a strong open, a currency, a file search) is never typed; a file
+ *      command (DESIGN6/BUILD6 §7: "lösche test", "kopiere test nach Dokumente" while the take shows the desktop or a
+ *      Finder window in a full pi session with dcg) decides before this step, and when it leaves the take to today's
+ *      lane it is still never typed (the dispatcher skips step 6 for it);
  *   4. page and window questions stay with pi: deictic words, the contextScope window band, "what does it
  *      say" / "was steht da";
  *   5. explicit pi tasks with a task head (EN/DE) and requests addressed to pi ("kannst du …") stay with pi;

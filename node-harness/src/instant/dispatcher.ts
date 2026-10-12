@@ -28,6 +28,8 @@ import {
   continuityOf, explicitRemainder, fieldTier, fillBody, fillOfferBody, hasPiPrefix, isCorrectionLike, isDictation, namesPageQuestion, searchQuery,
   secretMissBody, secretTarget, shapeFillText, voiceDoubt, warmContinuity, CONFIRM_FIELD_MESSAGE, FILL_REPLACE_MS, type Continuity, type FillLabel,
 } from "./fill.js";
+import { decideFileCommand, laneVisible, type FileCommandDeps } from "./fileLane.js";
+import { matchFileCommand, type FileCommand } from "./grammar/fileCommands.js";
 import { DEFAULT_WEB_SEARCH, DELETION_REFUSAL_MESSAGE, expandTemplate, isKnownSpokenHost, openStrength, parseInstant, type OpenStrength } from "./grammar/index.js";
 import { siteSearchFor } from "./grammar/launch.js";
 import { displayName } from "./learned.js";
@@ -40,8 +42,8 @@ import {
   mergeOffers, nearMissOf, spokenLabel, VOICE, voiceMeta, voiceTake, type FirstTierView, type LaneOutcome, type VoiceTake,
 } from "./voice.js";
 import {
-  choiceRows, decideVisible, foundMatches, itemRow, matchVisible, mergeVisibleOffers, NO_VISIBLE, userVisible, visibleEntry, visibleTarget, withoutApps,
-  type VisibleDecision, type VisibleItemsCache, type VisibleMatch, type VisibleSnapshot, type VisibleTarget,
+  choiceRows, decideVisible, foundMatches, itemRow, matchKey, matchVisible, mergeVisibleOffers, NO_VISIBLE, userVisible, visibleEntry, visibleTarget,
+  withoutApps, type VisibleDecision, type VisibleItemsCache, type VisibleMatch, type VisibleSnapshot, type VisibleTarget,
 } from "./visible.js";
 
 /**
@@ -78,6 +80,15 @@ import {
  * did-you-mean with both (the item first), a clear sound-alike needs one Return. A final strong open form
  * that misses everything may offer Spotlight matches (≤ 3, never an act) before the check gate or the
  * agent. "lösche <visible name>" is refused. A host without the route keeps today's lane exactly.
+ *
+ * File commands (DESIGN6/BUILD6; grammar/fileCommands.ts, fileLane.ts, fileOps.ts): with `fileCommands` (the host's
+ * /instant in a full pi session with dcg as the bash guard), "lösche test", "kopiere test nach Dokumente", "erstelle
+ * Ordner test", "benenne test in test-alt um", "schließe Downloads" … on what the take's desktop or Finder window shows
+ * decide after continuity's escapes and before the learned steps and today's grammar: an `act` `fileOp {opId}` (an op
+ * staged in Node, reviewed by dcg when the host runs it), a list of `fileOp` rows, an answer, or `quitApp` /
+ * `closeFinderWindow`. Voice needs the host's pick to say it with no recognizer doubt and no first-tier reading against
+ * it. Previews only show the plan. A file command is never typed into a focused field. Without the dependency, a
+ * context or visible items from the desktop or a Finder window, or whenever the lane says so, every decision is today's.
  */
 
 export interface InstantDispatcherDeps extends InstantDeps {
@@ -148,6 +159,12 @@ export interface InstantDispatcherDeps extends InstantDeps {
    * Absent or false: today's refusal, byte for byte.
    */
   deletionToAgent?: () => boolean;
+  /**
+   * File commands on what the take shows (DESIGN6/BUILD6; only the host's /instant dispatcher): `active()` says whether a
+   * full pi session with dcg as the bash guard and a resolvable dcg is on (read only after a file command parsed), and
+   * finals stage their ops in `store` for POST /fileops/run. Absent: today's lane exactly.
+   */
+  fileCommands?: FileCommandDeps;
 }
 
 export interface DispatchOptions {
@@ -546,13 +563,17 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
     return { target, decision: matches.length ? decideVisible(matches, target, { strength, appExact: apps.exact, appTop: apps.top, heardIsWord }) : null };
   }
 
-  /** An open_item act: at once (exact), behind one Return (a sound-alike, hosts that accept confirm), else a one-row did-you-mean. Previews list it. */
+  /**
+   * An open_item act: at once (exact), behind one Return (a spoken sound-alike, hosts that accept confirm), else a one-row
+   * did-you-mean. Previews list it. A typed sound-alike stays the one-row list even though macOS hosts now declare
+   * `confirm` on typed finals too (for file commands): typed open decisions are today's.
+   */
   function visibleAct(decision: Extract<VisibleDecision, { kind: "act" }>, request: InstantRequest, voice: boolean): Body {
     const row = itemRow(decision.match.entry);
     const title = `Open ${row.name}`;
     const card = openItemCard(title, row);
     if (request.phase !== "final") return { decision: "list", intent: "open_item", title, card };
-    if (decision.confirm && !accepts(request, "confirm")) return choiceList([decision.match], [], voice);
+    if (decision.confirm && (!voice || !accepts(request, "confirm"))) return choiceList([decision.match], [], voice);
     return { decision: "act", intent: "open_item", title, action: { type: "openFile", token: row.token }, confirm: decision.confirm, card };
   }
 
@@ -613,6 +634,94 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
     } finally {
       budget.dispose();
     }
+  }
+
+  // ------------------------------------------------------------------ file commands (DESIGN6/BUILD6; fileLane.ts)
+
+  /**
+   * The words' file command when the lane may decide: the dependency, a context, no "frag pi …", a parse, and the
+   * server's `active()` (read only then). Null: today's lane.
+   */
+  function fileCommandOf(n: Normalized, text: string, request: InstantRequest, voice: boolean): FileCommand | null {
+    const lane = deps.fileCommands;
+    if (!lane || typeof request.contextId !== "string" || !CONTEXT_ID.test(request.contextId) || hasPiPrefix(text)) return null;
+    let command: FileCommand | null;
+    try {
+      command = matchFileCommand(n, voice ? { voice: true } : {});
+    } catch {
+      return null;
+    }
+    if (!command) return null;
+    try {
+      return lane.active() === true ? command : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** The lane's decision under the default budget (a timeout is one, as everywhere); null leaves the take to today's lane. */
+  async function fileStep(command: FileCommand, request: InstantRequest, n: Normalized, visible: VisibleSnapshot, signal: AbortSignal,
+    voice?: { text: string; source?: string; hold: boolean }): Promise<Body | null> {
+    const lane = deps.fileCommands;
+    if (!lane) return null;
+    const budget = deadline(signal, budgets.defaultMs);
+    try {
+      const work = decideFileCommand({
+        command, request, visible, german: n.lang === "de", home, isWord, nowMs: now().getTime(),
+        apps: () => (deps.apps ? deps.apps.get(budget.signal) : Promise.resolve(null)),
+        ...(voice ? { voice: { text: voice.text, ...(voice.source ? { source: voice.source } : {}) }, hold: voice.hold } : {}),
+      }, lane);
+      const result = await race(work, budget.signal);
+      if (result === TIMEOUT) return fallthrough("timeout");
+      return result === FAILED ? null : result;
+    } finally {
+      budget.dispose();
+    }
+  }
+
+  /** A comparable identity of a file command (its op and matching keys): first-tier readings agree when theirs are equal. */
+  function fileCommandKey(command: FileCommand): string {
+    const key = (name: string): string => visibleTarget(name)?.key ?? matchKey(name);
+    switch (command.op) {
+      case "copy":
+      case "move": {
+        const split = command.splits[0];
+        return `${command.op}:${split ? `${key(split.name)}>${key(split.dest)}` : ""}`;
+      }
+      case "rename":
+        return `rename:${key(command.name)}>${matchKey(command.newName)}`;
+      case "create":
+        return `create:${command.kind}:${matchKey(command.name)}`;
+      default:
+        return `${command.op}:${key(command.name)}`;
+    }
+  }
+
+  /**
+   * A voice final's file command (the host's pick; DESIGN6 §4.5): recognizer doubt, or another first-tier reading that is
+   * a refusal, a deletion object, deixis, a compound or a different file command, leaves the take to today's lane (its
+   * check state included: never an act); a lone Phase A peer below the confidence threshold acts only behind one Return.
+   */
+  async function voiceFile(request: InstantRequest, take: VoiceTake, command: FileCommand, n: Normalized, visible: VisibleSnapshot,
+    signal: AbortSignal): Promise<Body | null> {
+    const sent = take.hypotheses[take.sent]!;
+    if (voiceDoubt(sent, take.firstTier.map((index) => take.hypotheses[index]!))) return null;
+    const mine = fileCommandKey(command);
+    let agreed = false;
+    for (const index of take.firstTier) {
+      if (index === take.sent) continue;
+      const hypothesis = take.hypotheses[index]!;
+      const other = matchFileCommand(normalize(hypothesis.text, hypothesis.locale ?? request.locale), { voice: true });
+      if (other) {
+        if (fileCommandKey(other) !== mine) return null;
+        agreed = true;
+        continue;
+      }
+      const parsed = parseVoice(hypothesis, request);
+      if (parsed?.kind === "refuse" || parsed?.kind === "delete_target" || (parsed?.kind === "fallthrough" && parsed.reason !== "unknown_place")) return null;
+    }
+    const hold = !agreed && sent.role === "peer" && !((sent.confidence ?? -1) >= VOICE.peerConfidence);
+    return fileStep(command, request, n, visible, signal, { text: n.text, ...(take.legacy ? {} : { source: sent.source }), hold });
   }
 
   function system(parsed: Extract<Parsed, { kind: "system" }>, phase: InstantPhase): Body {
@@ -1290,9 +1399,10 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
     }
 
     // "tippe …/type …/diktiere …/gib … ein": the remainder as said (Tier E). Deletion words in it never type on their
-    // own (one Return first, never submitted); a remainder that is itself a deletion request is refused. A code field
-    // waits for one Return after a spoken take; a typed one was confirmed by the composer's own Return (typed finals
-    // never declare `confirm`, so the code would otherwise fall through to pi).
+    // own (one Return first, never submitted, spoken takes only); a remainder that is itself a deletion request is
+    // refused. A code field waits for one Return after a spoken take; a typed one was confirmed by the composer's own
+    // Return. macOS hosts declare `confirm` on typed finals too (for file commands, DESIGN6), but a typed explicit fill
+    // never holds for one Return: one with deletion words is dropped as before, whatever `accept` says.
     const remainder = field ? explicitRemainder(sent.text) : null;
     if (field && remainder !== null) {
       if (field.kind === "confirm") return { decided: { body: refuseBody(CONFIRM_FIELD_MESSAGE), fill: "explicit" } };
@@ -1303,7 +1413,7 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
       if (!text) return { noFill: true };
       const held = deletion || said?.kind === "delete_target";
       const confirm = held || (voice && field.kind === "sensitive");
-      if (confirm && !accepts(request, "confirm")) return { noFill: true };
+      if (confirm && (!voice || !accepts(request, "confirm"))) return { noFill: true };
       return { decided: fillDecision(fillBody(text, field.kind, { submit: !held && submits(field.kind), confirm, source }), held ? "held" : "explicit") };
     }
 
@@ -1435,11 +1545,19 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
     const cont = continuityOf(request);
     const early = cont ? continuityFirst(request, take, cont, parsed, true) : undefined;
     if (early?.decided) return { ...early.decided, details: { recognizer: sentHypothesis.source }, ...label };
-    const visible = await visibleFor(request, () => needsVisible(parsed) || take.firstTier.some((index) => {
+    // File commands (DESIGN6): the host's pick, after continuity's escapes, before arbitration and the learned steps.
+    const file = early?.toPi ? null : fileCommandOf(n, sentHypothesis.text, request, true);
+    const visible = await visibleFor(request, () => file !== null || needsVisible(parsed) || take.firstTier.some((index) => {
       const hypothesis = take.hypotheses[index]!;
       if (index !== take.sent && needsVisible(parseVoice(hypothesis, request))) return true;
       return deps.takeMemo !== undefined && correctionTarget(hypothesis.text) !== null;
     }), signal);
+    // The lane applies only where the take shows the desktop or a Finder window; anywhere else the words are today's.
+    const fileLane = file !== null && laneVisible(visible);
+    if (file && fileLane) {
+      const decided = await voiceFile(request, take, file, n, visible, signal);
+      if (decided) return { body: decided, details: { recognizer: sentHypothesis.source }, via: "file", parsed: `file_${file.op}`, text: n.text };
+    }
     const budget = deadline(signal, parsed && parsed.kind !== "fallthrough" ? budgetFor(parsed, "final") : budgets.defaultMs);
     let apps: Promise<AppMatcher | null> | undefined;
     const matcher = () => (apps ??= deps.apps ? deps.apps.get(budget.signal) : Promise.resolve(null));
@@ -1460,9 +1578,10 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
       }
       // Everything that is not a command goes into the focused field (voice only). A credential or sensitive field's
       // take that typed nothing ("nein, X" after a fill there, a form the field cannot take) still never reaches pi
-      // with its words or a check card that echoes them (DESIGN5 C5); only "frag pi …" asks pi.
+      // with its words or a check card that echoes them (DESIGN5 C5); only "frag pi …" asks pi. A file command the lane
+      // left to today's lane is a command all the same: never typed (BUILD6 §7).
       const secretField = cont?.field !== undefined && fieldTier(cont.field.kind) === "optIn";
-      const typed = cont && (!early?.noFill || (secretField && !early.toPi))
+      const typed = cont && !fileLane && (!early?.noFill || (secretField && !early.toPi))
         ? await continuityAfter(request, take, cont, settled.body, parsed, matcher, signal) : null;
       if (typed) return { ...typed, details: { recognizer: sentHypothesis.source }, ...label };
       // "frag pi …" addresses pi: the router not placing the words is no reason to ask "Did I hear that right?".
@@ -1478,7 +1597,10 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
     return { body: withVoice(fallthrough(result === TIMEOUT ? "timeout" : "no_match"), meta), details: { recognizer: sentHypothesis.source }, ...label };
   }
 
-  /** Open forms and deletion objects consult the visible items (open and refuse); nothing else waits for them. */
+  /**
+   * Open forms and deletion objects consult the visible items (open and refuse); a file command the lane may decide does
+   * too (its callers add it: fileCommandOf). Nothing else waits for them.
+   */
   function needsVisible(parsed: Parsed | null): boolean {
     return parsed?.kind === "open" || parsed?.kind === "delete_target";
   }
@@ -1587,7 +1709,8 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
       const ctx: MatchContext = { now: now(), locale: displayLocale(request.locale, n.lang), webSearchTemplate: webSearchTemplate() };
       const parsed = parseInstant(n, ctx, voice ? { voice: true } : {});
       intentLabel = parsed?.kind ?? "none";
-      const visible = await visibleFor(request, () => needsVisible(parsed)
+      const file = fileCommandOf(n, request.text, request, voice);
+      const visible = await visibleFor(request, () => file !== null || needsVisible(parsed)
         || (phase === "final" && deps.takeMemo !== undefined && correctionTarget(request.text) !== null), signal);
       if (phase === "final") {
         // Continuity on a typed final: the escapes, "nein, X" after a fill and the search forms (never an implicit fill:
@@ -1598,6 +1721,14 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
           voiceFields = fillFields(request, early.decided.fill);
           return finish(early.decided.body);
         }
+        // File commands (DESIGN6): after continuity's escapes, before the learned steps and today's grammar.
+        if (file && !early?.toPi) {
+          const decided = await fileStep(file, request, n, visible, signal);
+          if (decided) {
+            intentLabel = `file_${file.op}`;
+            return finish(decided);
+          }
+        }
         // Typed finals (steps 1, 2 and 6 of DESIGN4 §6.3 with recognizer `any`), after "No, I meant X".
         const typed = await typedFinal(request, n, parsed, signal, dictionary, visible, !early?.afterFill);
         if (typed) {
@@ -1605,6 +1736,13 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
           voiceFields = typed.via ? { via: typed.via } : {};
           noteUse(dictionary, typed.learned);
           return finish(deletionHandOff(typed.body));
+        }
+      } else if (file) {
+        // Typing and partial previews show an act's plan ("Löschen: test") and stage nothing.
+        const preview = await fileStep(file, request, n, visible, signal);
+        if (preview) {
+          intentLabel = `file_${file.op}`;
+          return finish(preview);
         }
       }
       if (!parsed || parsed.kind === "fallthrough") {
