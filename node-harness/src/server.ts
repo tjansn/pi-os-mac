@@ -12,7 +12,7 @@ import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { RouteEvent } from "./agent/routing/autoModel.js";
 import type { LatencyStats } from "./agent/routing/latencyStats.js";
 import { AgentModelSettings, type ModelSelection } from "./agent/modelSettings.js";
-import { AgentResourceSettings, TRUST_WARNING } from "./agent/resourceSettings.js";
+import { AgentResourceSettings, effectiveResourceMode, TRUST_WARNING } from "./agent/resourceSettings.js";
 import { classifyUtterance } from "./agent/routing/heuristics.js";
 import { contextScope, rulesContextScorer, warmContextScope } from "./agent/routing/contextScope.js";
 import { RoutingSettingsStore, validateRoutingPatch, validateTierOverrides } from "./agent/routing/settings.js";
@@ -435,6 +435,9 @@ export class HarnessServer {
       scorer: (text) => rulesContextScorer(text),
       ...this.instantDeps, classifier: advisory,
       onLateHints: (request, hints) => { if (request.takeId) this.rememberHints(request.takeId, hints); },
+      // A full pi session: deletion requests go to pi (bash under the user's command guard) instead of an instant refusal.
+      // Only this dispatcher: /invoke's answers ignore refusals anyway, and learning checks the words with the grammar.
+      deletionToAgent: () => this.fullSessionSelected(),
     });
     // /invoke answers pure results only (answerInstantly): app and file decisions can never answer
     // there, so it never calls the launcher read routes (which the Windows host does not have).
@@ -1215,6 +1218,15 @@ export class HarnessServer {
     try { guard = await this.agent.modules.runner.cachedGlobalBashGuard(this.agent.services.agentDir); }
     catch { /* Extensions that cannot load guard nothing; Settings then warns. */ }
     return { fullSession: true, guard };
+  }
+
+  /**
+   * A full pi session is selected (fullSession.isFullSession on the AgentResourceSettings the agent reads): a macOS
+   * host, no read-only launch and `trustedGlobal` stored. Synchronous; /instant reads it only for a refused deletion.
+   */
+  private fullSessionSelected(): boolean {
+    const platform = this.options.platform ?? process.platform;
+    return platform === "darwin" && effectiveResourceMode(platform, this.config.readOnly === true, this.resourceSettings.get()) === "trustedGlobal";
   }
 
   private async hostAllowsInput(signal?: AbortSignal): Promise<boolean> {

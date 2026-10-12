@@ -699,6 +699,10 @@ sessions are saved like normal pi sessions, keeping everything.
   pi-os runs a shell outside the bash tool (codemode reaches tools through the same hook). The computer-use
   deletion policy for desktop actions is unchanged; typing into a Terminal window through `desktop_act` is covered
   by that policy's known-command checks, not by dcg.
+- **Deletion requests reach pi:** in full mode the instant lane no longer refuses "Lösche den Ordner ~/x", "rm -r ~/x"
+  or "move X to the trash" itself; the take goes to pi (`fallthrough` `no_match`), which deletes or moves files only
+  with bash, so dcg reviews it. Never typed into a field, never learned, never an instant act; isolated mode refuses
+  as before.
 - **Working folder:** the front Finder window's folder (the desktop → `~/Desktop`), the front terminal window's
   folder (Terminal, iTerm2, Ghostty, WezTerm, Warp, from the window's represented URL), the front editor's project
   (git root, walked up only outside privacy-protected folders), else home; never a Trash folder. Read at key-down

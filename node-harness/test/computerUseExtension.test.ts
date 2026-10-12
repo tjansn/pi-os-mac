@@ -349,6 +349,7 @@ test("scope-aware macOS layout: one scope-neutral system prompt, window rules on
   assert.equal(lean.before("ignored pi base prompt").systemPrompt, scopedSystemPrompt(PI_OS_SYSTEM_PROMPT, false));
   assert.doesNotMatch(lean.before().systemPrompt, /pi-os desktop invocation|Begin every task|pinned|ignored pi base prompt/);
   assert.match(lean.before().systemPrompt, /File deletion is prohibited/);
+  assert.doesNotMatch(lean.before().systemPrompt, /only with the bash tool/, "bash deletion is a full-session rule only");
   assert.deepEqual(lean.tools.get("desktop_get_context").promptGuidelines, windowGuidelines(true));
   assert.match(lean.tools.get("desktop_act").promptGuidelines.at(-1), /^On macOS, use cmd for Command shortcuts[\s\S]*verify the result in the returned or a fresh capture\.$/);
   const loader = lean.tools.get(USE_ACTIVE_WINDOW_TOOL);
@@ -385,6 +386,8 @@ test("full pi session prompt: pi's coding prompt or the lean pi-os prompt, then 
     assert.doesNotMatch(prompt, /## pi-os rules|Trusted pi compatibility|Extensions execute code/);
     assert.match(prompt, /Through the desktop tools \(clicks, keys, menus\) never delete files, move them to Trash or empty Trash/);
     assert.match(prompt, /The user's own command guard may stop a destructive command or ask the user to approve it in its own dialog/);
+    // Deletion requests reach a full session (the instant lane hands them to pi): bash under the guard, never desktop UI.
+    assert.match(prompt, /- Delete or move files only with the bash tool \(the user's command guard reviews destructive commands\), never through Finder, the Trash or other desktop UI \(pi-os blocks those anyway\)\./);
     assert.match(prompt, /credential_input_blocked concerns only a clearly identified username\/password field/);
   }
   // The window rules travel with the window tools exactly as in every scope-aware session.

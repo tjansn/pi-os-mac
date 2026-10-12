@@ -771,6 +771,13 @@ voice finals and `accept` for the gated kinds, and sends `voice` on voice decisi
   "lösche den Termin") are not; "delete it", "lösch das", "delete everything I typed" fall
   through as `deictic`. Information questions ("how do I empty the trash"), web and file
   searches and reminders are never refused unless a follow-on clause asks for the deletion.
+- In a full pi session (macOS, resource mode `trustedGlobal`, no read-only launch; see "Full pi
+  session (macOS)") every phase answers such a request with `fallthrough` `no_match` instead of
+  `refuse`, so the final goes to pi and the user's command guard reviews its `bash` calls (dcg's
+  approval dialog); previews show nothing. Everything else stays: it is never filled into a
+  focused field (a dictated deletion and a `confirm` field are still refused), never learned, never an
+  instant act, and a peer's deletion still keeps the take from acting. Isolated mode and Windows refuse
+  as before.
 - `act` only on `phase: "final"`; `typing`/`partial` return previews (`answer`/`list`) or
   `fallthrough`. Node never performs effects: the host executes `action` after its own
   `LauncherPolicy` check. Budgets: 60 ms; 250 ms for the first rate download; file search
@@ -1545,7 +1552,10 @@ normal terminal pi session:
   `dcg --desktop-review` on every bash `tool_call`, shows dcg's own approval dialog and fails closed).
   pi-os's desktop deletion policy (no file deletion, Move to Trash or Empty Trash through computer
   use) and the credential rules are unchanged. `bash` is not a filesystem sandbox, and neither the
-  working-directory checks nor the native checks claim to be one.
+  working-directory checks nor the native checks claim to be one. A deletion or trash request reaches
+  pi: `/instant` answers it with `fallthrough` `no_match` instead of `refuse` (see `POST /instant`), and
+  the prompt tells pi to delete or move files only with `bash`, never through Finder, the Trash or other
+  desktop UI.
 - **Prompt**: the first turn of a thread decides and its follow-ups keep it (prompt caching). The
   Auto router's quick and fast lanes and short general questions keep the lean `PI_OS_SYSTEM_PROMPT`;
   standard, deep and max, every coding or task turn, and a first turn that is a pi command (below)

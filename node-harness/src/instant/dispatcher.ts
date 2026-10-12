@@ -141,6 +141,13 @@ export interface InstantDispatcherDeps extends InstantDeps {
    * may offer Spotlight matches. Absent, or a host without the route (404, not_found): today's lane exactly.
    */
   visibleItems?: VisibleItemsCache;
+  /**
+   * A full pi session is on (macOS, resource mode `trustedGlobal`; the server reads its AgentResourceSettings): a
+   * deletion request the policy refuses goes to the agent as a fallthrough `no_match` instead, so pi runs it with bash
+   * under the user's command guard (dcg's approval dialog). Read only when such a refusal is about to be answered.
+   * Absent or false: today's refusal, byte for byte.
+   */
+  deletionToAgent?: () => boolean;
 }
 
 export interface DispatchOptions {
@@ -489,6 +496,21 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
 
   function refuseBody(message: string): Body {
     return { decision: "refuse", code: "file_deletion_blocked", message, card: refuseCard(message) };
+  }
+
+  /**
+   * In a full pi session (`deps.deletionToAgent`) the policy's deletion refusal is answered as a plain fallthrough
+   * `no_match`: the take goes to pi whole (bash under the user's command guard) and a preview shows nothing. It runs on
+   * the decision the policy already made, so nothing was typed, learned or acted on. Continuity's own refusals (a
+   * dictated deletion, a field that confirms one) never pass through here: those stay refused.
+   */
+  function deletionHandOff(body: Body): Body {
+    if (body.decision !== "refuse" || body.message !== DELETION_REFUSAL_MESSAGE || !deps.deletionToAgent) return body;
+    try {
+      return deps.deletionToAgent() === true ? fallthrough("no_match") : body;
+    } catch {
+      return body;
+    }
   }
 
   /**
@@ -1553,7 +1575,8 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
         voiceFields = { hyps: request.hypotheses?.length ?? 0, ...(decided.via ? { via: decided.via } : {}), ...fillFields(request, decided.fill) };
         details = decided.details;
         noteUse(dictionary, decided.learned);
-        const body = decided.body;
+        // Arbitration's refusal (any first-tier hypothesis) may go to pi; a continuity decision (`fill`) stays as decided.
+        const body = decided.fill ? decided.body : deletionHandOff(decided.body);
         if (body.decision === "fallthrough" && body.reason !== "timeout" && !body.hints) {
           const hints = await hintsFor(body.reason, decided.text, request, phase, signal);
           if (hints) return finish({ ...body, hints });
@@ -1581,7 +1604,7 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
           details = typed.details;
           voiceFields = typed.via ? { via: typed.via } : {};
           noteUse(dictionary, typed.learned);
-          return finish(typed.body);
+          return finish(deletionHandOff(typed.body));
         }
       }
       if (!parsed || parsed.kind === "fallthrough") {
@@ -1608,6 +1631,8 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
         const hints = await hintsFor("no_match", n.text, request, phase, signal);
         return finish(hints ? { decision: "fallthrough", reason: "no_match", hints } : fallthrough("no_match"));
       }
+      // Every phase: a full session's typing and partial previews show nothing for a deletion (no "blocked" warning).
+      body = deletionHandOff(body);
       if (info) body = withVoice(body, voiceMeta({ ...(info.heard ? { heard: info.heard } : {}), ...(info.via ? { via: info.via } : {}), ...(body.decision === "list" && body.voice?.didYouMean ? { didYouMean: true } : {}) }));
       // A typed open-form miss (design C step 4): a Spotlight did-you-mean before the agent, for hosts that serve visible items.
       if (phase === "final" && !voice && parsed.kind === "open" && !parsed.siteUrl && visible.supported

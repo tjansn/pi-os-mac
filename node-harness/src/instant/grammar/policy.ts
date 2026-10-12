@@ -7,7 +7,9 @@ import { isWebSearchPhrase } from "./launch.js";
  *
  * Deletion: file deletion, Move to Trash and Empty Trash are prohibited
  * (AGENTS.md). Such requests get an instant refusal in every phase and are
- * never forwarded to the agent as a task. The rule is deliberately narrow,
+ * never forwarded to the agent as a task, except in a full pi session (macOS
+ * `trustedGlobal`), where the dispatcher hands them to pi and the user's command
+ * guard reviews its bash calls (`deletionToAgent`). The rule is deliberately narrow,
  * because ordinary text editing and in-app edits must keep working:
  *   - Trash phrases ("empty the trash", "move … to the trash", "Papierkorb
  *     leeren"), shell commands with a flag or a path ("rm -rf ~", "del a.pdf")
