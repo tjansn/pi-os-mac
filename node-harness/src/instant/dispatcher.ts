@@ -29,7 +29,7 @@ import {
   secretMissBody, secretTarget, shapeFillText, voiceDoubt, warmContinuity, CONFIRM_FIELD_MESSAGE, FILL_REPLACE_MS, type Continuity, type FillLabel,
 } from "./fill.js";
 import { decideFileCommand, laneVisible, type FileCommandDeps } from "./fileLane.js";
-import { matchFileCommand, type FileCommand } from "./grammar/fileCommands.js";
+import { fileCommandLanguage, matchFileCommand, type FileCommand } from "./grammar/fileCommands.js";
 import { DEFAULT_WEB_SEARCH, DELETION_REFUSAL_MESSAGE, expandTemplate, isKnownSpokenHost, openStrength, parseInstant, type OpenStrength } from "./grammar/index.js";
 import { siteSearchFor } from "./grammar/launch.js";
 import { displayName } from "./learned.js";
@@ -670,7 +670,7 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
     const budget = deadline(signal, budgets.defaultMs);
     try {
       const work = decideFileCommand({
-        command, request, visible, german: n.lang === "de", home, isWord, nowMs: now().getTime(),
+        command, request, visible, german: (fileCommandLanguage(n) ?? n.lang) === "de", home, isWord, nowMs: now().getTime(),
         apps: () => (deps.apps ? deps.apps.get(budget.signal) : Promise.resolve(null)),
         ...(voice ? { voice: { text: voice.text, ...(voice.source ? { source: voice.source } : {}) }, hold: voice.hold } : {}),
         ...(voice?.said ? { said: voice.said } : {}),

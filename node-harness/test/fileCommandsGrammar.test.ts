@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cleanName, fileCommandOf, matchFileCommand, phraseLike, type FileCommand } from "../src/instant/grammar/fileCommands.js";
+import { cleanName, fileCommandLanguage, fileCommandOf, matchFileCommand, phraseLike, type FileCommand } from "../src/instant/grammar/fileCommands.js";
 import { parseInstant } from "../src/instant/grammar/index.js";
 import { normalize } from "../src/instant/normalize.js";
 
@@ -151,4 +151,18 @@ test("file-command helpers: names lose wrapping quotes and trailing punctuation;
   assert.deepEqual(fileCommandOf("lösche test", "de-DE"), { op: "delete", name: "test" });
   assert.equal(fileCommandOf("x".repeat(400)), null);
   assert.equal(fileCommandOf(""), null);
+});
+
+test("file-command language: the verb decides, whatever the name reads like; mixed or no verbs leave it to the text", () => {
+  const lang = (text: string, locale = "de-DE") => fileCommandLanguage(normalize(text, locale));
+  assert.equal(lang("erstelle Ordner a/b"), "de");
+  assert.equal(lang("lösche the report"), "de");
+  assert.equal(lang("Ordner Plans erstellen"), "de");
+  assert.equal(lang("neuer Ordner Projects"), "de");
+  assert.equal(lang("create folder Bilder", "en-US"), "en");
+  assert.equal(lang("delete Entwurf", "en-US"), "en");
+  assert.equal(lang("schließe Safari"), "de");
+  assert.equal(lang("quit Safari", "en-US"), "en");
+  assert.equal(lang("lösche move"), null);
+  assert.equal(lang("Radfotos"), null);
 });

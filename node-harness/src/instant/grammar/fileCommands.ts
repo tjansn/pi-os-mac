@@ -158,6 +158,21 @@ export function fileCommandOf(text: string, locale?: string, voice = true): File
   }
 }
 
+// The command verbs of the forms above, by language (the "neu" and "new" adjectives of CREATE_NEW included).
+const GERMAN_VERB = new RegExp(`${WORD_START}(?:lösche|lösch|loesche|loesch|löschen|loeschen|entferne|entfern|entfernen|erstelle|erstell|erstellen|` +
+  `anlegen|neuer|neuen|neue|neues|kopiere|kopier|kopieren|dupliziere|duplizier|duplizieren|verschiebe|verschieb|verschieben|` +
+  `benenne|benenn|nenne|nenn|umbenennen|schließe|schließ|schliesse|schliess|schließen|schliessen|beende|beend|beenden)${WORD_END}`, "u");
+const ENGLISH_VERB = new RegExp(`${WORD_START}(?:delete|remove|create|make|new|copy|duplicate|move|rename|close|quit)${WORD_END}`, "u");
+
+/**
+ * The language of a file command's verb ("erstelle Ordner a/b" is German whatever the name reads like), or null when
+ * the text holds verbs of both languages or of neither: the lane's copy then follows the whole text's language.
+ */
+export function fileCommandLanguage(n: Normalized): "de" | "en" | null {
+  const german = GERMAN_VERB.test(n.lower), english = ENGLISH_VERB.test(n.lower);
+  return german === english ? null : german ? "de" : "en";
+}
+
 /** True when a missed name reads like a phrase (it holds a place or relation word): the lane then claims nothing. */
 export function phraseLike(name: string): boolean {
   return PREPOSITION_WORD.test(name.toLowerCase());
