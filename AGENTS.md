@@ -62,6 +62,14 @@ sandbox. Do not claim they can prove arbitrary scripts, shell aliases, unlabeled
 controls or trusted extensions cannot delete files. No account actions or deletion
 should be performed as part of QA; use harmless fixture buttons and counters.
 
+Explicit user file commands (Tom, 2026-10-12; DESIGN6): in a full pi session, a
+file command the user says or types on what pi-os shows ("lösche test" on the
+desktop or in a Finder window: delete, create, copy, move, rename) runs as a shell
+command (argv, never a shell string) that the user's command guard (dcg) reviews
+before it runs. This is not computer use: desktop/GUI deletion stays prohibited
+(Finder's Delete, Move to Trash, Empty Trash and clicks on such controls), and so
+does every deletion pi-os would start on its own. QA uses temp dirs and a fake dcg.
+
 ## Local inference coordination
 
 Tom's `_LOCAL_AI` DRACO benchmark coordinates local GPU ownership through
