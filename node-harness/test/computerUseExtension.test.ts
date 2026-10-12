@@ -384,10 +384,14 @@ test("full pi session prompt: pi's coding prompt or the lean pi-os prompt, then 
   assert.equal(quick.split("\"## Desktop context\" section").length, 2);
   for (const prompt of [coding, quick]) {
     assert.doesNotMatch(prompt, /## pi-os rules|Trusted pi compatibility|Extensions execute code/);
-    assert.match(prompt, /Through the desktop tools \(clicks, keys, menus\) never delete files, move them to Trash or empty Trash/);
-    assert.match(prompt, /The user's own command guard may stop a destructive command or ask the user to approve it in its own dialog/);
-    // Deletion requests reach a full session (the instant lane hands them to pi): bash under the guard, never desktop UI.
-    assert.match(prompt, /- Delete or move files only with the bash tool \(the user's command guard reviews destructive commands\), never through Finder, the Trash or other desktop UI \(pi-os blocks those anyway\)\./);
+    // The terminal comes first and is meant to be used: file work, deletion included, goes through bash under the guard
+    // (a quick-lane model once read the old desktop-only restriction as a refusal and handed the command back).
+    assert.match(prompt, /- You have a terminal: the bash tool runs shell commands in the working directory/);
+    assert.match(prompt, /When the user asks to delete, move, rename, copy or create files or folders, or to run, build, test or install something, do it yourself with bash; do not hand the command back to the user\./);
+    assert.match(prompt, /The user's own command guard reviews destructive shell commands \(for example a recursive rm\) and may ask the user to approve them in its own dialog/);
+    assert.match(prompt, /The desktop tools \(clicks, keys and menus in other apps\) never delete files, move them to the Trash or empty the Trash; use bash for file changes instead\./);
+    assert.doesNotMatch(prompt, /even when asked; explain that restriction/);
+    assert.ok(prompt.indexOf("You have a terminal") < prompt.indexOf("The desktop tools (clicks"), "the terminal rule precedes the desktop restriction");
     assert.match(prompt, /credential_input_blocked concerns only a clearly identified username\/password field/);
   }
   // The window rules travel with the window tools exactly as in every scope-aware session.

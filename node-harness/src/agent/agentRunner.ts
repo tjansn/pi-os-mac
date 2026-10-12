@@ -1166,7 +1166,7 @@ export function planTurn(live: LiveAgentSession, turn: TurnInput): TurnPlan {
     ? followupShowsCapture(thread?.transition ?? "none", general, turn.freshScreenshot === true) : !general);
   const attached = turn.attachments?.length ? attachmentStats(turn.attachments) : { images: 0, textChars: 0 };
   const lastTier = auto.lastTier();
-  const routeInput = buildRouteInput(turn.text, { ...base, hasScreenshot: windowImage }, {
+  const routeInput = buildRouteInput(turn.text, { ...base, hasScreenshot: windowImage, ...(thread?.full ? { fullSession: true } : {}) }, {
     followup: turn.followup, ...(lastTier ? { lastTier } : {}), ...(turn.hints ? { hints: turn.hints } : {}),
     ...(thread?.pulled ? { pulled: true } : {}), ...(attached.images > 0 ? { hasImageAttachment: true } : {}),
     ...(attached.textChars > 0 ? { selectionChars: attached.textChars } : {}),

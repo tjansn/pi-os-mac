@@ -35,6 +35,13 @@ const CONVERT_LEAD = leading("convert|umrechnen|rechne|wandle?|konvertier\\p{L}*
 const SEARCH_LEAD = leading("find|search(?: for)?|look for|locate|where(?:'s| is| are)|show me|list|finde?|such(?:e)?|wo (?:ist|sind|liegt|liegen)|zeig(?:e)? mir");
 const DOC_OBJECTS = anywhere("files?|documents?|docs?|pdfs?|folders?|directories?|photos?|pictures?|images?|screenshots?|downloads?|presentations?|spreadsheets?|notes?|e-?mails?|mails?|attachments?|invoices?|receipts?|contracts?|dateien?|dokumente?|ordner|verzeichnis(?:se)?|fotos?|bilder?|bildschirmfotos?|anhänge?|anhaenge?|präsentation(?:en)?|praesentation(?:en)?|tabellen?|notizen?|rechnung(?:en)?|quittung(?:en)?|verträge?|vertraege?|vertrag|\\.?(?:pdf|docx?|xlsx?|pptx?|key|pages|numbers|png|jpe?g|heic|mov|mp4|zip|csv|txt|md)");
 const APP_OBJECTS = anywhere("apps?|applications?|programme?");
+
+// --- file / terminal tasks (full pi sessions only) ---------------------------
+// A request to change files or run something on the Mac: a file verb with a path or a file/folder word, or a shell
+// command said as such. In a full pi session that is work for pi's terminal tools, never a quick ask.
+const FILE_VERB = anywhere("delete|remove|erase|move|rename|copy|duplicate|create|make|unzip|zip|compress|extract|chmod|run|execute|install|uninstall|clean(?: up)?|clear out|empty|lösch\\p{L}*|losch\\p{L}*|loesch\\p{L}*|entfern\\p{L}*|verschieb\\p{L}*|benenn\\p{L}*|umbenenn\\p{L}*|kopier\\p{L}*|duplizier\\p{L}*|erstell\\p{L}*|leg\\p{L}*|entpack\\p{L}*|pack\\p{L}*|führ\\p{L}*|fuehr\\p{L}*|installier\\p{L}*|deinstallier\\p{L}*|räum\\p{L}*|raeum\\p{L}*|leer\\p{L}*");
+const FILE_OBJECT = new RegExp(`(?:^|\\s)(?:~/|/|\\./|\\.\\./)\\S|${B}(?:files?|folders?|directory|directories|dir|ordner|verzeichnis(?:se)?|datei(?:en)?|repo|repository)${E}`, "iu");
+const SHELL_LEAD = leading("rm|mv|cp|mkdir|rmdir|touch|chmod|chown|ln|ls|cat|tar|unzip|git|npm|npx|pnpm|yarn|brew|pip3?|cargo|make|swift|node|python3?|ruby|go|docker|kubectl|ssh|scp|rsync|curl|wget");
 const OPEN_LEAD = leading("open|launch|start|switch to|bring up|öffne|oeffne|starte|wechsel(?:e)? zu|mach(?:e)? .{1,40}? auf");
 
 // --- code / write / act / browse -------------------------------------------
@@ -134,6 +141,8 @@ const MEDIUM = anywhere("explain|why|how does|how do|how can|how to|erklär\\p{L
 export interface ClassifyContext {
   surface?: SurfaceClass;
   browserCdp?: boolean;
+  /** A full pi session (macOS trusted mode): file and terminal tasks are pi's coding work, routed past the quick lane. */
+  fullSession?: boolean;
 }
 
 /** Lowercase, NFC, straight apostrophes, single spaces. */
@@ -183,6 +192,9 @@ function intentOf(text: string, words: number, ctx: ClassifyContext): { intent: 
   if (OPEN_LEAD.test(strip)) {
     if (docObject && words > 3) return { intent: "search_computer", confidence: 0.75 }; // find, then open
     if (words <= 6) return { intent: "open_launch", confidence: 0.85 };
+  }
+  if (ctx.fullSession && (SHELL_LEAD.test(strip) || (FILE_VERB.test(strip) && FILE_OBJECT.test(strip)))) {
+    return { intent: "code", confidence: 0.75 };
   }
   const code = (CODE_WORDS.test(strip) || CODE_LANGUAGE.test(strip)) && !NOT_CODE.test(strip);
   if (code) return { intent: "code", confidence: 0.8 };

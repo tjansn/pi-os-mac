@@ -17,6 +17,8 @@ export interface RouteContext {
   browserCdp: boolean;
   /** Host context scope (contracts/context.ts ContextWire.scope); absent = legacy request. */
   scope?: ContextScope;
+  /** A full pi session: file and terminal tasks classify as coding work (heuristics ClassifyContext.fullSession). */
+  fullSession?: boolean;
 }
 
 /** System prompt + tool schemas + context summary, before the user's words and image. */
@@ -48,7 +50,7 @@ export interface BuildRouteInputOptions {
 }
 
 export function buildRouteInput(text: string, context: RouteContext, options: BuildRouteInputOptions = {}): RouteInput {
-  const heuristic = classifyUtterance(text, { surface: context.surface, browserCdp: context.browserCdp });
+  const heuristic = classifyUtterance(text, { surface: context.surface, browserCdp: context.browserCdp, ...(context.fullSession ? { fullSession: true } : {}) });
   const scope: ContextScope | undefined = context.scope && options.pulled ? "window" : context.scope;
   const images = (context.hasScreenshot ? 1 : 0) + (options.hasImageAttachment ? 1 : 0);
   return {

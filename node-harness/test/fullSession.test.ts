@@ -140,6 +140,10 @@ test("prompt variant: quick and fast lanes keep the lean prompt; standard and up
   assert.equal(fullPromptVariant("fix the failing unit tests in this repo"), "coding");
   assert.equal(fullPromptVariant("fix the failing unit tests in this repo", { tier: "quick" }), "coding", "a coding turn on a light lane");
   assert.equal(fullPromptVariant("hello", { resume: true }), "coding");
+  // A file or terminal task is coding work in a full session, also on a manually chosen model (no route input).
+  assert.equal(fullPromptVariant("Lösche den Ordner ~/pi-os-dcg-probe mit allem Inhalt"), "coding");
+  assert.equal(fullPromptVariant("move ~/Downloads/report.pdf to ~/Documents", { tier: "quick" }), "coding");
+  assert.equal(fullPromptVariant("git status"), "coding");
   assert.equal(fullPromptVariant("open Safari"), "lean");
   // A pi command runs on pi's own prompt, as in terminal pi, whatever lane it routes to.
   assert.equal(fullPromptVariant("/skill:fixture-global-skill hi"), "coding");

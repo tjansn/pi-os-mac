@@ -145,6 +145,29 @@ test("EN/DE corpus: intent accuracy >= 0.9 overall and per-row flags are exact",
   assert.ok(accuracy >= 0.9, `accuracy ${accuracy.toFixed(3)}; misses:\n${misses.join("\n")}`);
 });
 
+test("full pi session: file and terminal tasks are coding work past the quick lane; other sessions and plain asks are unchanged", () => {
+  const tasks = [
+    "Lösche den Ordner ~/pi-os-dcg-probe mit allem Inhalt", "delete the folder ~/old-builds", "move ~/Downloads/report.pdf to ~/Documents",
+    "Verschiebe die Datei ~/a.txt nach ~/b", "rename the file notes.txt to ideas.txt", "erstelle einen Ordner ~/projekte/neu",
+    "kopiere den Ordner ./assets nach ./backup", "rm -r ~/tmp-build", "git status", "npm run build", "run the tests in ~/dev/Projects/pi-os",
+  ];
+  for (const text of tasks) {
+    const full = classifyUtterance(text, { fullSession: true });
+    assert.equal(full.intent, "code", text);
+    const route = buildRouteInput(text, { surface: "other", hasScreenshot: false, browserCdp: false, fullSession: true });
+    assert.ok(tierRank(intrinsicTier(route.classification)) > tierRank("fast"), `${text}: past the quick and fast lanes`);
+  }
+  // Outside a full session the same words classify exactly as before.
+  for (const text of tasks) {
+    assert.deepEqual(classifyUtterance(text, {}), classifyUtterance(text), text);
+    assert.deepEqual(buildRouteInput(text, { surface: "other", hasScreenshot: false, browserCdp: false }).classification, classifyUtterance(text), text);
+  }
+  // Questions and asks without a file target stay where they were, even in a full session.
+  for (const text of ["what is a folder", "wie spät ist es in Tokio", "explain recursion", "create a haiku about autumn", "leere Gedanken sind schön"]) {
+    assert.deepEqual(classifyUtterance(text, { fullSession: true }), classifyUtterance(text), text);
+  }
+});
+
 test("calculate rows are 100% correct and confident (instant-lane eligible)", () => {
   for (const row of CORPUS.filter(r => r.intent === "calculate")) {
     const c = classify(row);

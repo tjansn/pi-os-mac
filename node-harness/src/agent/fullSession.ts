@@ -170,7 +170,9 @@ export interface PromptVariantInput {
 export function fullPromptVariant(text: string, input: PromptVariantInput = {}): FullPromptVariant {
   // A pi command (`/skill:…`, a prompt template, an extension command) runs on pi's own prompt, as in terminal pi.
   if (input.resume || text.trim().startsWith("/")) return "coding";
-  const classification = input.classification ?? classifyUtterance(text, input.surface ? { surface: input.surface } : {});
+  // Only full sessions pick a variant, so file and terminal tasks classify as coding work here too (a manually chosen
+  // model has no route input to carry it).
+  const classification = input.classification ?? classifyUtterance(text, { ...(input.surface ? { surface: input.surface } : {}), fullSession: true });
   if (classification.intent === "code") return "coding";
   const tier = input.tier ?? intrinsicTier(classification);
   return tier === "instant" || tier === "quick" || tier === "fast" ? "lean" : "coding";
