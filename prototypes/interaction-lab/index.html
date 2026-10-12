@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; media-src 'none'; font-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>pi-os · Interaction studies</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="state.js" defer></script>
+  <script src="lab.js" defer></script>
+</head>
+<body>
+  <header class="masthead"><a class="brand" href="index.html" aria-label="Interaction studies home"><span class="pi">π</span> pi-os <span class="separator">/</span> interaction studies</a><span class="sandbox"><span class="dot"></span> Offline sandbox · no microphone</span></header>
+  <main>
+    <section class="intro"><div class="eyebrow">RESEARCH, NOT A PRODUCT CHANGE</div><h1>Less interface.<br>More shared understanding.</h1><p>Three small experiments in giving the computer your attention, composing your habits, and knowing when <em>not</em> to act.</p></section>
+    <nav class="studies" aria-label="Choose a study">
+      <button class="study active" data-study="attention" aria-pressed="true"><span class="index">01</span><span><strong>Point, then speak</strong><small>Give “this” a precise meaning</small></span></button>
+      <button class="study" data-study="recipes" aria-pressed="false"><span class="index">02</span><span><strong>Compose a habit</strong><small>One recipe, many entry points</small></span></button>
+      <button class="study" data-study="ambient" aria-pressed="false"><span class="index">03</span><span><strong>Listen without interrupting</strong><small>Ambient attention, gated action</small></span></button>
+    </nav>
+    <div class="workspace">
+      <section class="stage" id="attention-stage" aria-labelledby="attention-title">
+        <div class="window-toolbar"><span class="window-dots" aria-hidden="true">● ● ●</span><span id="target-name">Notes · mock window</span><span>Local fixture</span></div>
+        <div class="paper"><div class="eyebrow">WORKING NOTE</div><h2 id="attention-title">A small update</h2><p class="paper-muted">A fictional document. Nothing here touches your real apps.</p><div class="paragraph" id="paragraph-region"><span class="point-label" id="point-status">Point to include this paragraph</span><p id="paragraph-text"></p><button class="target-control" id="point" aria-describedby="paragraph-text point-status" aria-pressed="false">Include this paragraph</button></div><p class="paper-muted closing">What if the selection—not the whole screen—was the unit of conversation?</p></div>
+        <div class="draft" id="draft" hidden><div class="eyebrow">CANNED PREVIEW · NO MODEL</div><p id="draft-text" tabindex="-1" aria-label="Canned draft preview"></p><div class="actions"><button class="primary" id="apply">Apply to mock note</button><button id="discard">Discard</button></div></div>
+        <div class="command-strip"><span class="pi">π</span><span class="utterance">“Make this shorter.”</span><button class="primary" id="preview">Preview</button></div>
+      </section>
+      <section class="stage" id="recipes-stage" hidden aria-labelledby="recipes-title">
+        <div class="window-toolbar"><span>Recipe workbench</span><span>No links are opened</span></div>
+        <div class="recipe-body"><div class="eyebrow">THE SAME WIRING, MORE REACH</div><h2 id="recipes-title">A habit, not another app.</h2><p class="paper-muted">Selection → validated argument → bounded result. The entry point shouldn’t change what the recipe can do.</p>
+          <label for="recipe">Recipe</label><select id="recipe"><option value="ticket">Find a ticket</option><option value="followup">A reply that knows the date</option></select>
+          <label for="argument">Selected text (mock input)</label><input id="argument" value="PI-218" maxlength="1000" autocomplete="off" spellcheck="false" aria-describedby="recipe-value" aria-invalid="false">
+          <fieldset><legend>Try an entry point</legend><div class="triggers"><button data-trigger="Keyboard">Keyboard route · fixture</button><button data-trigger="Voice">Voice route · fixture</button><button data-trigger="Selection">Selection route · fixture</button></div></fieldset>
+          <div class="recipe-result" id="recipe-result" role="status" aria-live="polite"><span class="eyebrow">RESULT PREVIEW</span><p id="recipe-value">Choose an entry point to compile the recipe.</p></div>
+        </div>
+      </section>
+      <section class="stage" id="ambient-stage" hidden aria-labelledby="ambient-title">
+        <div class="window-toolbar"><span>Ambient replay</span><span>Scripted, not recognition</span></div>
+        <div class="ambient-body"><div class="eyebrow">ALWAYS AVAILABLE ≠ ALWAYS OBEYING</div><h2 id="ambient-title">Knowing when to stay quiet.</h2><p class="paper-muted">Choose a synthetic speech event. This study illustrates the UX; the separate ambient-gate study replays fixture policy, not real recognition or native safety.</p>
+          <div class="mic-status" id="mic-status"><span class="status-mark"></span><div><strong id="listen-title">Listening · simulated</strong><small>No device is open. No audio or transcripts leave this page.</small></div><button id="mute" aria-pressed="false">Mute simulation</button></div>
+          <div class="speech-events" aria-label="Synthetic speech events">
+            <button data-event="room"><span class="event-origin">ROOM CONVERSATION</span>“We should open the report tomorrow.”</button>
+            <button data-event="addressed"><span class="event-origin">EXPLICIT ADDRESS</span>“Pi, open the report.”</button>
+            <button data-event="media"><span class="event-origin">VIDEO PLAYBACK</span>“Pi, open the report.”</button>
+            <button data-event="unclear"><span class="event-origin">AMBIGUOUS REFERENCE</span>“Pi, send it.”</button>
+            <button data-event="partial"><span class="event-origin">INCOMPLETE UTTERANCE</span>“Pi, open the… actually, don’t.”</button>
+          </div>
+          <div class="ambient-result" id="ambient-result" role="status"><span class="result-label" id="ambient-label">No action</span><p id="ambient-reason">Start with room conversation. Not every command-shaped sentence addresses the computer.</p></div>
+          <p class="micro-note">Origin labels are fixture ground truth, not something an ASR engine can guarantee. No trained decision model is running.</p>
+        </div>
+      </section>
+      <aside class="inspector" aria-labelledby="inspector-title"><div class="eyebrow">WHAT THE COMPUTER KNOWS</div><h2 id="inspector-title">A visible attention contract.</h2><dl id="facts"></dl><div class="receipt" role="note" aria-live="polite"><span class="eyebrow">LAST RECEIPT</span><p id="receipt"></p></div><div class="failure-tools" id="failure-tools"><span class="eyebrow">TEST THE BOUNDARY</span><button id="switch-target">Simulate focus change</button><button id="user-edit">Simulate a human edit</button><button id="undo">Undo mock edit</button><button id="reset">Reset study</button></div></aside>
+    </div>
+    <footer><span>All actions are mock actions. No capture APIs, app-owned persistence, accounts, clipboard or OS control.</span><span>Escape: discard preview / mute replay</span></footer>
+  </main>
+</body>
+</html>

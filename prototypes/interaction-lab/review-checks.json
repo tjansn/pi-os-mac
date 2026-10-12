@@ -1,0 +1,67 @@
+{
+  "scope": "Disposable interaction-lab only; no native app or real audio/actions",
+  "browser": "Isolated agent-browser session pi-os-interaction-lab",
+  "initialChecks": "Observed on the initial storyboard before independent review; not all rerun after v2 changes",
+  "v2CapturedAt": "2026-10-09T14:22:11Z",
+  "v2SourceSha256": {
+    "index.html": "f5b9e3f4443473737188ad064746f682577a6b8752b46a432ed12e6da2983d98",
+    "state.js": "c82ae4068e882b8c97812a4e3347c2813c1108462b4e47efd5900972c57b69dc",
+    "lab.js": "f2a37ea81e883ff0a79192a153d8f9a8bbe168c6c302ed743e2fd04f56d60a16",
+    "styles.css": "47635117a44e90897f70382c1b54cb4137220ab57648826878904b7598b32c60"
+  },
+  "v2Checks": [
+    {"steps":"Snapshot paragraph-region", "observed":"Original document appears as readable paragraph plus separate Include control"},
+    {"steps":"Include -> Preview", "observed":"Focus moves to draft summary"},
+    {"steps":"Preview summary -> Tab -> Enter", "observed":"Tab reaches Apply, Enter applies mock edit, focus returns to Preview"},
+    {"steps":"Apply -> Escape", "observed":"Receipt says no pending preview and earlier edits remain"},
+    {"steps":"Apply -> Include -> Preview -> Undo", "observed":"Body restores, context unbound and draft hidden"},
+    {"steps":"Include -> focus change -> Preview", "observed":"No preview; inspector labels historical context stale and target unbound"},
+    {"steps":"Apply -> human edit -> snapshot", "observed":"Undo unavailable with disabled state and reason"},
+    {"steps":"Compile ticket -> change argument", "observed":"Old URL and success receipt invalidated"},
+    {"steps":"Compile new PI-219 argument", "observed":"URL preview contains PI-219"},
+    {"steps":"Compile invalid argument", "observed":"aria-invalid=true with associated detailed error text"},
+    {"steps":"Preview -> Discard", "observed":"Focus returns to Preview"},
+    {"steps":"Ambient addressed event", "observed":"Would request a mock preview, not a completed action claim; duplicate receipt aria-live=off"},
+    {"steps":"390x844 viewport -> full screenshot -> DOM dimensions", "observed":"innerWidth/clientWidth/scrollWidth all 390; saved image raster 375px wide due capture behavior, not claimed viewport width"},
+    {"steps":"Read attention-v2 and narrow-v2 screenshots; errors command", "observed":"Visually inspected; errors command returned no entries"}
+  ],
+  "checks": [
+    {"name":"Unpointed Preview asks for a target", "status":"observed"},
+    {"name":"Pointed paragraph shows bounded inclusion", "status":"observed"},
+    {"name":"Preview leaves original mock text unchanged", "status":"observed"},
+    {"name":"Apply changes only the mock text", "status":"observed"},
+    {"name":"Exact Undo restores original mock text", "status":"observed"},
+    {"name":"Focus change invalidates Apply", "status":"observed"},
+    {"name":"Human edit invalidates Apply", "status":"observed"},
+    {"name":"Human edit prevents unsafe Undo and preserves added words", "status":"observed"},
+    {"name":"Stale pointing label asks to point again", "status":"observed"},
+    {"name":"Escape discards draft preview", "status":"observed"},
+    {"name":"Three recipe invocation-fixture buttons yield identical URL preview", "status":"observed"},
+    {"name":"Query-string injection input rejected", "status":"observed"},
+    {"name":"Dynamic date fixture renders 2026-10-16", "status":"observed"},
+    {"name":"HTML-looking snippet input rendered as text, no child elements", "status":"observed"},
+    {"name":"Room speech ignored", "status":"observed"},
+    {"name":"Explicit address produces scripted would-preview receipt (completion wording corrected in v2)", "status":"observed"},
+    {"name":"Fixture media origin ignored", "status":"observed"},
+    {"name":"Ambiguous send asks for target, no action", "status":"observed"},
+    {"name":"Incomplete/cancelled speech ignored", "status":"observed"},
+    {"name":"Muted simulation ignores explicit address", "status":"observed"},
+    {"name":"Escape mutes simulation", "status":"observed"},
+    {"name":"390px layout has pageWidth equal to viewport width", "status":"observed"},
+    {"name":"Reduced-motion media preference enabled", "status":"observed"},
+    {"name":"Desktop and narrow screenshots visually inspected", "status":"observed"}
+  ],
+  "syntaxChecks": {
+    "commands": ["node --check prototypes/interaction-lab/state.js", "node --check prototypes/interaction-lab/lab.js", "node --check prototypes/interaction-lab/state.test.mjs"],
+    "status": "passed_syntax_only",
+    "testAssertionsExecuted": false
+  },
+  "unitTests": {
+    "command": "node --test prototypes/interaction-lab/state.test.mjs",
+    "status": "blocked_not_run",
+    "reason": "dcg heredoc.script_files:unverified: test/watch runners select additional sources dynamically",
+    "humanApprovalReceipt": "dcg allow-once 850485 (may expire)",
+    "guardBypassed": false
+  },
+  "notVerified": ["ASR", "trained decision model", "acoustic playback/echo rejection", "native AX/focus binding", "microphone", "real-world latency and power", "VoiceOver", "Safari", "physical keyboard", "all OS accessibility preferences"]
+}
