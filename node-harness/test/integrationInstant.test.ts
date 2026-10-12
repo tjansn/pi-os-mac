@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
-import { test } from "node:test";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { after, test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { EcbRateStore } from "../src/instant/index.js";
 import { createInstantDispatcher } from "../src/instant/index.js";
@@ -15,8 +16,12 @@ import { captureLogs, fakeHost, fauxRuntimes, seen, start, type SeenRequest } fr
 
 const apps = (JSON.parse(await readFile(resolve("../shared/fixtures/launcher/list-apps-response.json"), "utf8")) as { result: AppIndexResult }).result;
 const files = (JSON.parse(await readFile(resolve("../shared/fixtures/launcher/search-files-response.json"), "utf8")) as { result: FileSearchResult }).result;
-// ECB fetches are injected and fail closed: the guard would block the real endpoint anyway.
-const noRates = () => new EcbRateStore({ fetch: (async () => { throw new Error("offline fixture"); }) as typeof fetch, file: "/nonexistent-dir/fx.json", log: () => {} });
+// ECB fetches are injected and fail closed: the guard would block the real endpoint anyway. Rate caches live in a
+// temp folder of this run (never outside it: a sandboxed trial of the suite counts any other write as unsafe), one
+// file per store kind so the fixture rates one test persists never reach a store that must have none.
+const fxDir = await mkdtemp(join(tmpdir(), "pi-os-fx-"));
+after(() => rm(fxDir, { recursive: true, force: true }));
+const noRates = () => new EcbRateStore({ fetch: (async () => { throw new Error("offline fixture"); }) as typeof fetch, file: join(fxDir, "none.json"), log: () => {} });
 
 /** Minimal transport: answers every prompt with a fixed text (no SDK, no model). */
 class EchoSession {
@@ -290,7 +295,7 @@ test("/invoke with a takeId skips the instant lane (the host ran /instant itself
 test("instant cards from the dispatcher validate strictly against the catalog (B1 × B2)", async () => {
   const dispatcher = createInstantDispatcher({
     fx: new EcbRateStore({ fetch: (async () => new Response(await readFile(resolve("../shared/fixtures/instant-cases/ecb-2026-10-02.xml"), "utf8"))) as typeof fetch,
-      file: "/nonexistent-dir/fx.json", log: () => {} }),
+      file: join(fxDir, "ecb.json"), log: () => {} }),
     searchFiles: async () => files,
     budgets: { networkMs: 2_000 },
   });
