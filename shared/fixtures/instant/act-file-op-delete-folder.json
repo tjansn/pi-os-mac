@@ -1,0 +1,51 @@
+{
+  "seq": 7,
+  "elapsedMs": 3,
+  "source": "grammar",
+  "decision": "act",
+  "intent": "file_op",
+  "title": "Löschen: Radfotos",
+  "action": {
+    "type": "fileOp",
+    "opId": "op_7Hq2Lr9xVb4Nc8Ws1Ke5Ty"
+  },
+  "confirm": false,
+  "card": {
+    "format": "pi-os-ui/1",
+    "root": "root",
+    "elements": {
+      "root": {
+        "type": "Answer",
+        "props": {
+          "summary": "Löschen: Radfotos"
+        },
+        "children": [
+          "n1"
+        ]
+      },
+      "n1": {
+        "type": "ItemList",
+        "props": {},
+        "children": [
+          "n2"
+        ]
+      },
+      "n2": {
+        "type": "Item",
+        "props": {
+          "title": "Radfotos",
+          "subtitle": "in Desktop",
+          "icon": {
+            "kind": "file",
+            "uti": "public.folder"
+          }
+        }
+      }
+    }
+  },
+  "voice": {
+    "heard": "radfotos",
+    "source": "apple-dt/de-DE",
+    "via": "file"
+  }
+}

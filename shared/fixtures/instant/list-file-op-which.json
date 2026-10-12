@@ -1,0 +1,74 @@
+{
+  "seq": 11,
+  "elapsedMs": 4,
+  "source": "grammar",
+  "decision": "list",
+  "intent": "file_op",
+  "title": "Welches „test“ meinst du?",
+  "card": {
+    "format": "pi-os-ui/1",
+    "root": "root",
+    "elements": {
+      "root": {
+        "type": "Answer",
+        "props": {
+          "summary": "Welches „test“ meinst du?"
+        },
+        "children": [
+          "n1"
+        ]
+      },
+      "n1": {
+        "type": "ItemList",
+        "props": {},
+        "children": [
+          "n2",
+          "n3"
+        ]
+      },
+      "n2": {
+        "type": "Item",
+        "props": {
+          "title": "test",
+          "subtitle": "in Projekte",
+          "icon": {
+            "kind": "file",
+            "uti": "public.folder"
+          }
+        },
+        "on": {
+          "primary": {
+            "action": "fileOp",
+            "params": {
+              "opId": "op_Xa4Gc7Np2Vd9Rk5Tm8Jw3Eb"
+            }
+          }
+        }
+      },
+      "n3": {
+        "type": "Item",
+        "props": {
+          "title": "test.txt",
+          "subtitle": "in Desktop",
+          "icon": {
+            "kind": "file",
+            "uti": "public.plain-text"
+          }
+        },
+        "on": {
+          "primary": {
+            "action": "fileOp",
+            "params": {
+              "opId": "op_Lf6Hy1Qs8Bz3Wn7Cu2Ki5Do"
+            }
+          }
+        }
+      }
+    }
+  },
+  "voice": {
+    "heard": "test",
+    "source": "apple-dt/de-DE",
+    "via": "file"
+  }
+}

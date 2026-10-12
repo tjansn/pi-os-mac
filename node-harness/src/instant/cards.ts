@@ -150,3 +150,36 @@ export function choiceRowsCard(summary: string, rows: readonly ChoiceRow[]): Car
 export function openItemCard(title: string, row: ItemRow): CardSpec {
   return choiceRowsCard(title, [{ item: row }]);
 }
+
+/**
+ * One row of a file-command card (intent `file_op`): an item the op acts on ("Radfotos", "in Desktop") or a
+ * destination folder ("Dokumente", "~/Documents"). Display only: the row binds the staged op's id, never a path.
+ */
+export interface FileOpRow {
+  /** The staged op this row runs (`fileOp {opId}`); absent on an act's record row. */
+  opId?: string;
+  name: string;
+  /** "in Desktop" (an item's containing folder) or "~/Documents" (a destination). */
+  subtitle: string;
+  /** UTI for the icon ("public.folder"). */
+  contentType?: string;
+}
+
+/**
+ * `file_op` rows under one untitled list: "Which “test” do you mean?", "did you mean …?", "Where should “test” be
+ * copied?" or a one-row "Delete “test.txt” permanently?". Each row's primary binding runs its staged op; there is
+ * no secondary or tertiary action. Matches shared/fixtures/instant/list-file-op-which.json.
+ */
+export function fileOpRowsCard(summary: string, rows: readonly FileOpRow[]): CardSpec {
+  const items = rows.slice(0, MAX_LIST_ITEMS).map((row) => ui.item({
+    title: truncate(row.name),
+    subtitle: truncate(row.subtitle, 1_024),
+    icon: { kind: "file", ...(row.contentType ? { uti: row.contentType } : {}) },
+  }, row.opId ? { primary: { type: "fileOp", opId: row.opId } } : undefined));
+  return buildCard(ui.answer({ summary: truncate(summary) }, [ui.itemList({}, items)]));
+}
+
+/** The reader's record of a `file_op` act ("Löschen: Radfotos"): the one row, without a binding (the act runs the op once). */
+export function fileOpActCard(title: string, row: Omit<FileOpRow, "opId">): CardSpec {
+  return fileOpRowsCard(title, [row]);
+}

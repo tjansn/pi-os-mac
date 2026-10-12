@@ -89,7 +89,7 @@ HTTP statuses used:
 | 403 | browser-originated request (`forbidden_origin`, Node harness) |
 | 404 | unknown route or closed/expired thread |
 | 409 | duplicate invocation, busy thread or retained-thread capacity reached |
-| 413 | request body too large (`POST /instant`, `/invocations/prepare`, `/dictionary/edit` > 4 KB, `/settings/routing`, `/settings/classifier`, `/dictionary/learn` > 16 KB, others > 1 MB) |
+| 413 | request body too large (`POST /instant`, `/invocations/prepare`, `/dictionary/edit`, `/fileops/run` > 4 KB, `/settings/routing`, `/settings/classifier`, `/dictionary/learn` > 16 KB, others > 1 MB) |
 | 415 | request body that is not `application/json` (`unsupported_media_type`, Node harness) |
 | 500 | unexpected server failure |
 
@@ -423,7 +423,7 @@ in `LauncherPolicy.swift`); fixtures `shared/fixtures/launcher/visible-items.*.j
 ```ts
 interface VisibleItemsRequest { contextId: string; maxResults?: number /* 1..200, default 100 */ }
 interface VisibleItemsResult {
-  sources: { kind: "desktop" | "finderWindow"; via: "ax" | "spotlight"; complete: boolean }[]; // ≤ 1 per kind
+  sources: { kind: "desktop" | "finderWindow"; via: "ax" | "spotlight"; complete: boolean; path?: string }[]; // ≤ 1 per kind
   items: (FileCandidate & { source: "desktop" | "finderWindow" })[];  // ≤ maxResults, tokens unique
   truncated: boolean;  // the host stopped at maxResults
   elapsedMs: number;
@@ -439,6 +439,13 @@ interface VisibleItemsResult {
   target → no sources and no items. Never FileManager enumeration of `~/Desktop` (that raises the
   Desktop-folder privacy prompt). `complete: false` means the host stopped early (AX budget, Spotlight
   deadline), so a miss may be a false negative. At most 200 items; hidden files are never listed.
+- `path` (optional, BUILD6 file commands; fixture `launcher/visible-items.with-path.json`, bad ones
+  `launcher/invalid/visible-items.response-source-path-*.json`): the absolute path of the folder the source shows —
+  the desktop surface: the user's Desktop folder; a Finder window: its target folder. `/`-rooted, no NUL or other
+  control character, ≤ 1024 UTF-16 units; one bad `path` rejects the whole result like any bad source. User content:
+  never logged. File commands need it to create in an empty folder and for "hier"/"here" destinations. Without it
+  Node assumes `~/Desktop` for the desktop and knows no folder for a Finder window (create and close-folder then
+  answer "I can't tell which folder that is."). Older hosts omit it.
 - Items are ordinary `FileCandidate`s plus `source`: `name` single-line, ≤ 255 UTF-16 units; `path`
   absolute (≤ 1024 UTF-8 bytes, no empty, `.` or `..` components); `contentType` a UTI; tokens as for
   searches (`tok_` + 32 hex, TTL 10 min), minted with the request's `contextId` only for the items returned
@@ -472,9 +479,28 @@ type HostAction =
   | { type: "openApp"; bundleId: string }                 // from the host app index
   | { type: "openFile" | "revealFile" | "copyPath"; token: string } // host-minted tokens only
   | { type: "system"; op: SystemOp; value?: number | boolean | "dark" | "light" } // instant lane only
-  | { type: "askAgent"; prompt: string };                 // ≤ 500 chars; seeds a fresh /invoke
+  | { type: "askAgent"; prompt: string }                  // ≤ 500 chars; seeds a fresh /invoke
+  | { type: "fileOp"; opId: string }                      // instant lane only; ^[A-Za-z0-9_-]{16,64}$; see File commands
+  | { type: "quitApp"; bundleId: string }                 // instant lane only; openApp's bundle id rule
+  | { type: "closeFinderWindow"; contextId: string };     // instant lane only; ^[A-Za-z0-9_-]{1,128}$
 type SystemOp = "appearance.set" | "appearance.toggle" | "volume.set" | "volume.step" | "volume.mute" | "display.sleep";
 ```
+
+File-command actions (BUILD6; Swift mirror `HostAction` in `CardContracts.swift`; fixtures
+`instant/act-file-op-*.json`, `instant/act-close-*.json`, `instant/list-file-op-which.json`, bad shapes in
+`instant/invalid-action/act-file-op-*`, `act-quit-app-*`, `act-close-finder-window-*`, and a model card that binds
+them in `cards/invalid/model-card-file-op.json`). All three are **instant lane only**: never a model-card binding
+(`MODEL_CARD_ACTION_TYPES`), never an agent `launcher.open` action (`AGENT_OPEN_ACTION_TYPES`); strict parsing,
+unknown keys dropped (`{type: "fileOp", token}` without `opId` is rejected).
+
+- `fileOp {opId}` names an operation **Node** staged for the take; it carries no path, name or command. The host
+  performs it by calling `POST /fileops/run {opId}` (see below), shows "Deleting “test”…" / "Lösche „test“…" at once
+  ("Waiting for your approval…" while dcg's own dialog is up), then a toast with the returned `line`. Rows that bind
+  it work like file rows (Return, click, 1–3, spoken picks); nothing is learned from them.
+- `quitApp {bundleId}`: `NSRunningApplication.terminate()` of that exact bundle (graceful: the app asks about unsaved
+  work; never a force quit), toast "Safari beendet" / "Quit Safari".
+- `closeFinderWindow {contextId}`: the AX close (the window's AXCloseButton) of the take's captured Finder window,
+  only while that window is still a Finder window; never another window.
 
 `typeIntoPinned.submit` (continuity fills only: `act` intent `fill`, see `POST /instant`): a literal `true`
 (`false` and `null` read as absent; anything else rejects the action, as does `submit` with a text that
@@ -492,7 +518,9 @@ types one line whether or not it submits: no control or line-separator character
 of its own, a Tab would move focus). Swift's `InstantResponse` decoder rejects anything else; TS
 `fillActConsistent`.
 
-There is no delete, trash, move, rename, write, power, lock or logout action. `volume.set`
+There is no delete, trash, move, rename, write, power, lock or logout action: a file command's
+delete, move or rename is a `fileOp` that Node runs as argv after dcg reviewed it, never a host
+effect on a path. `volume.set`
 takes a 0…1 fraction, `volume.step` a signed fraction within ±1, `volume.mute` a boolean,
 `display.sleep` nothing; the macOS host refuses `appearance.*` with `unsupported` in v1.
 Model-authored cards may bind only `copyText | openURL | openApp | openFile | revealFile |
@@ -536,18 +564,19 @@ interface VoiceHypothesis { text: string /* 1..200, single line */; source: stri
   role: "primary" | "peer" | "secondary"; confidence?: number /* 0..1 */; minConfidence?: number /* 0..1 */; locale?: string /* BCP 47 */ }
 type InstantResponse = { seq: number; elapsedMs: number; source: "grammar" | "classifier"; scope?: InstantScope } & (
   | { decision: "answer"; intent: InstantIntent; title: string; subtitle?: string; card: CardSpec }
-  | { decision: "list"; intent: "file_search" | "open_app" | "open_item"; title: string; card: CardSpec; relaxed?: boolean; voice?: VoiceMeta }
+  | { decision: "list"; intent: "file_search" | "open_app" | "open_item" | "file_op"; title: string; card: CardSpec; relaxed?: boolean; voice?: VoiceMeta }
   | { decision: "act"; intent: InstantIntent; title: string; action: HostAction; confirm: boolean; card?: CardSpec; voice?: VoiceMeta }
   | { decision: "refuse"; code: "file_deletion_blocked"; message: string; card: CardSpec }
   | { decision: "fallthrough"; reason: "no_match" | "deictic" | "compound" | "low_confidence" | "timeout" | "unknown_place" | "disabled";
       hints?: ClassifierHints; voice?: VoiceMeta });
 interface InstantScope { window: number /* 0..1 */; reasons: string[] /* ≤ 8 codes, ^[a-z][a-z0-9-]{0,31}$ */ }
 interface VoiceMeta { heard?: string /* ≤ 80, the open target as heard */; source?: string /* recognizer id */;
-  via?: "exact" | "alias" | "learned" | "sound" | "peer" | "secondary" | "url" | "visible" | "field" /* open set */;
+  via?: "exact" | "alias" | "learned" | "sound" | "peer" | "secondary" | "url" | "visible" | "field" | "file" /* open set */;
   didYouMean?: boolean /* list */; check?: boolean /* fallthrough low_confidence */;
   learnedEntryId?: string /* dictionary entry that decided */; correctsTakeId?: string /* "No, I meant X" */;
   fill?: "offer" /* with check only; open set */ }
-// InstantIntent adds "fill": an act { action: { type: "typeIntoPinned"; text; submit?: true } } (see Continuity).
+// InstantIntent adds "fill": an act { action: { type: "typeIntoPinned"; text; submit?: true } } (see Continuity),
+// "file_op" (act fileOp, list of fileOp rows, answer) and "close" (act quitApp / closeFinderWindow) (see File commands).
 ```
 
 Voice additions (DESIGN4 §4.5, §5.3, §8). Every field is optional and additive: a request without
@@ -752,6 +781,72 @@ voice finals and `accept` for the gated kinds, and sends `voice` on voice decisi
     sends neither and gets byte-identical responses; the Windows host never calls `/instant` and never sends
     `target` or `context.target`, so nothing changes there.
 
+- **File commands** (DESIGN6 with BUILD6; Node `instant/grammar/fileCommands.ts`, `instant/fileLane.ts`,
+  `instant/fileOps.ts`; fixtures `instant/act-file-op-delete-folder.json`, `act-file-op-delete-file-confirm.json`,
+  `act-close-quit-app.json`, `act-close-finder-window.json`, `list-file-op-which.json`,
+  `answer-file-op-not-found.json`). "lösche test" on the desktop resolves "test" against what the take shows and
+  runs `rm -r -- /Users/…/Desktop/test` after the user's command guard (dcg) reviewed it.
+  - **Active only** when all of these hold, otherwise every decision is exactly today's: a full pi session (the
+    check deletions use: macOS, `trustedGlobal`, no read-only launch), the bash guard is `dcg` (resource status
+    `guard`; Node refreshes it at each take's `prepare`, and the lane stays off until it is known), the dcg executable
+    resolves (`PI_OS_DCG` when set — absolute and executable, else off — else `~/.local/bin/dcg`, else `dcg` on
+    `PATH`), and the request's `contextId` has visible items from the desktop or a Finder window (`sources` not empty).
+  - **Grammar** (closed EN/DE lists over the whole utterance): delete "lösche/lösch/entferne/delete/remove X", "X
+    löschen/entfernen"; create "erstelle/mach (einen neuen) Ordner|Datei X", "lege einen Ordner X an", "neuer Ordner
+    X", "neue Datei X", "create/make (a new) folder|file X", "new folder X"; copy "kopiere/copy X nach|in|to Y", "X nach Y
+    kopieren", "dupliziere/duplicate X" (next to it as "X Kopie"/"X copy", then " 2", " 3" …); move "verschiebe/move X
+    nach|in|to Y", "X nach Y verschieben"; rename "benenne/nenne X in Y um", "X in Y umbenennen", "rename X to Y";
+    close "schließe/schliesse/close X", "beende/quit X". Folder/file nouns narrow the match ("den Ordner test").
+    Today's handling keeps: trash phrases (there is no trash op), compounds, bare edits and deixis ("lösche das",
+    "close this", "schließe das Fenster"), a source given as a path, wildcards, quantifiers and age words ("alle",
+    "all", "everything", "alte", "old"), text-edit objects, "… to the clipboard", questions and "frag pi …".
+    Open stays the visible-first open above.
+  - **Resolution** on the take's visible items with their matching keys (case, accents, spaces, hyphens ignored;
+    extension optional, a said extension narrows): exactly one exact match → `act`; several → `list` "Which “test”
+    do you mean?" / "Welches „test“ meinst du?" (one row per item, "in Desktop"); none exact → sound-alikes ≥ 0.66 as
+    a `list` "Couldn't find “test” — did you mean…?" / "„test“ nicht gefunden – meintest du …?" (≤ 3 rows, **never an
+    act**, for every op that names an existing item); nothing → `answer` "There's nothing called “test” on the
+    Desktop." / "Auf dem Schreibtisch gibt es nichts namens „test“." (a voice final adds the heard text as
+    `subtitle`). Without an exact match, a generic class word ("Fotos", "PDFs", "Downloads") or a source that was
+    incomplete or truncated keeps today's handling instead of claiming nothing is there. An app bundle (`.app`) is
+    never a file-command target (deleting an app stays today's uninstall handling).
+  - **Delete**: a directory on disk (packages included) acts at once — dcg reviews `rm -r` with its own dialog; a
+    file or symlink (dcg allows `rm` silently) is an `act` with `confirm: true` "Delete “test.txt” permanently?" /
+    "„test.txt“ endgültig löschen?" for hosts that accept `confirm`, else a one-row `list` with that title whose row
+    must be picked. A file is never deleted without one explicit user step after the command.
+  - **Copy/move destinations**: standard folders by EN/DE name (Schreibtisch/Desktop, Dokumente/Documents,
+    Downloads, Bilder/Pictures, Musik/Music, Filme/Movies, Benutzerordner/Home → their real paths), "hier"/"here"
+    (the shown folder's `path`), a visible folder (exact key), a `~/…` or absolute path that is an existing
+    directory. Unresolved or missing → `list` "Where should “test” be copied?" / "Wohin soll „test“ kopiert
+    werden?" with the standard folders as rows; never a guess. The item's own folder: copy duplicates, move answers
+    "“test” is already in Desktop."; into itself is refused.
+  - **New names** (create, rename): the literal words, trimmed; one path component (no `/`, NUL or control
+    character, not `.`/`..`, no leading `.`), ≤ 255 UTF-8 bytes; invalid → `answer` "“a/b” isn't a valid name.",
+    taken by a visible item → `answer` "“test” already exists here.". Create without a known folder (a Finder window
+    without `path`) answers "I can't tell which folder that is."
+  - **Close**: the take's Finder-window folder name → `act` intent `close` `closeFinderWindow {contextId}`; else an
+    installed app with exactly that name (the app index) → `act` `quitApp {bundleId}` "Quit Safari" / "Safari
+    beenden"; else today's handling.
+  - **Voice**: the host's pick decides. Recognizer doubt (lowest word confidence < 0.2, or disagreeing first-tier
+    readings at a low mean), another first-tier hypothesis that is a refusal, deixis or compound, or a different file
+    command keep today's handling (the check state where today has one); a lone peer below 0.4 acts only behind one
+    Return (`confirm: true`, hosts with `confirm`; else today's handling). Every decision carries `voice.via: "file"`:
+    no "Not this", nothing is learned, `/dictionary/learn` refuses every gesture against the take, and "No, I meant X"
+    never aims at or past it. Typing and partial phases only preview the plan (`answer` "Löschen: test"); ops are
+    staged on finals only. A recognized file command is a command: it is never typed into a focused field (any
+    `accept`), and the fill lane's step 6 never types one.
+  - **Safety** (each a test): targets are only the resolved items (and the shown folder for create); never the shown
+    folder or one of its ancestors, the home folder or its standard folders, `~/Library`, `/`, a volume root,
+    anything under `/System`, `/Library`, `/usr`, `/bin`, `/sbin`, `/private`, `/etc`, `/var`, `/tmp`, `/dev` except
+    the user's temp folder, nor a path with a hidden component (`~/.Trash`); such a target answers "pi-os won't
+    touch “X”." Symlinks are acted on as links. Every op runs as argv with an absolute binary, `--` always, no `-f`,
+    no `-p`: `/bin/rm -r -- <abs>` (folder), `/bin/rm -- <abs>` (file, symlink), `/bin/mkdir -- <abs>`,
+    `/usr/bin/touch -- <abs>`, `/bin/cp -R -n -- <abs> <destDir>/<name>`, `/bin/mv -n -- <abs> <destDir>/<name>`,
+    `/bin/mv -n -- <abs> <sameDir>/<newName>`.
+  - **Staged ops** live in Node only: bound to the take (`takeId`, `contextId`), single-use, 2 minutes, run only by
+    the host's `POST /fileops/run`. The source's identity (device, inode, mtime, kind) is read when the op is staged
+    and must still hold when it runs, before and after dcg's review.
+
 - `scope` (optional, any phase and decision): how likely the text refers to the active window
   (Node rules, < 0.01 ms; reasons are content-free codes such as `pronoun`, `ui-verb`,
   `definite-noun`, `inline-content`; unknown codes must be accepted). Advisory: a host with a
@@ -777,7 +872,8 @@ voice finals and `accept` for the gated kinds, and sends `voice` on voice decisi
   approval dialog); previews show nothing. Everything else stays: it is never filled into a
   focused field (a dictated deletion and a `confirm` field are still refused), never learned, never an
   instant act, and a peer's deletion still keeps the take from acting. Isolated mode and Windows refuse
-  as before.
+  as before. Exception: with dcg as the guard and a desktop or Finder-window context, "lösche <a visible
+  name>" is a file command first (see File commands): a staged `fileOp` that dcg reviews when the host runs it.
 - `act` only on `phase: "final"`; `typing`/`partial` return previews (`answer`/`list`) or
   `fallthrough`. Node never performs effects: the host executes `action` after its own
   `LauncherPolicy` check. Budgets: 60 ms; 250 ms for the first rate download; file search
@@ -820,6 +916,39 @@ voice finals and `accept` for the gated kinds, and sends `voice` on voice decisi
   `takeId` they are kept briefly so the following `/invoke` can raise (never lower) the
   routed tier or request the screenshot. The classifier receives the cleaned utterance
   (wake word and politeness removed); neither text nor hints are logged.
+
+### `POST /fileops/run`
+
+Runs one staged file operation (File commands under `POST /instant`; contracts `parseFileOpRunRequest`,
+`parseFileOpRunResponse`, `FILE_OP_OUTCOMES` in `node-harness/src/contracts/actions.ts`; fixtures
+`shared/fixtures/fileops/*.json`). The macOS host calls it when it performs a `fileOp` action (an act, its one
+Return, or a picked row). Token-authed like every route, body ≤ 4 KB, `Content-Type: application/json`; it never
+needs the agent stack.
+
+```text
+POST /fileops/run   {"opId": "op_7Hq2Lr9xVb4Nc8Ws1Ke5Ty"}
+→ 200 {"ok": true,  "outcome": "done" | "denied" | "failed" | "expired", "line": "<user copy, one line, ≤ 300>"}
+→ 400 {"ok": false, "error": "<no echo of input>"}
+```
+
+- Order: the op is taken (single-use) → unknown, used or expired (2 minutes) is `expired` → off (no full pi session
+  any more) is `failed` → the source's identity (device, inode, mtime, kind, read when the op was staged) and every
+  safety rule are checked again (changed or gone: `expired`) → the target of create/copy/move/rename must not exist
+  (`failed`) → dcg reviews the command → the identity is checked once more → the argv runs (`execFile`, absolute
+  binary, never a shell) → the effect is verified (source gone, target there) and anything else is `failed`.
+- dcg is called exactly as Tom's pi bridge (`~/.pi/agent/extensions/dcg-guard.ts`) calls it: `spawn(dcg,
+  ["--desktop-review", "--no-color", "--agent", "pi"], {cwd: <shown folder>, shell: false})`, stdin
+  `{"tool_name":"Bash","tool_input":{"command":<the same argv shell-quoted, bare binary name>},"cwd":<shown
+  folder>,"dcg_explicit_verdict":true}`; allowed only on exit 0 with `dcg_verdict == "allow"`; `denied` when
+  `hookSpecificOutput.permissionDecision == "deny"` (the `line` carries `permissionDecisionReason`, one line, ≤ 200);
+  anything else (spawn error, timeout after 140 s, more than 1 MB of output, garbage) fails closed (`failed`). Every
+  op (create, copy, move, rename, delete) goes through this review; a dcg that no longer resolves is `failed`.
+- `line` is the user copy in the take's language: "„test“ gelöscht." / "Deleted “test”.", "„test“ nach Dokumente
+  kopiert.", "dcg hat das Löschen abgelehnt: …" / "dcg blocked deleting “test”: …".
+- The call takes as long as dcg's dialog stays open: the host waits up to 180 s and shows "Waiting for your
+  approval…". When the host disconnects first, Node kills dcg and runs nothing.
+- Logs are content-free: `[perf] stage=fileops.run op=<kind> outcome=<outcome> verdict=<allow|deny|error|none>
+  ms=<n>`; never a name, path, command or dcg reason.
 
 ### Personal dictionary (`/dictionary/*`)
 
@@ -1555,7 +1684,10 @@ normal terminal pi session:
   working-directory checks nor the native checks claim to be one. A deletion or trash request reaches
   pi: `/instant` answers it with `fallthrough` `no_match` instead of `refuse` (see `POST /instant`), and
   the prompt tells pi to delete or move files only with `bash`, never through Finder, the Trash or other
-  desktop UI.
+  desktop UI. With dcg as the guard, an explicit file command on what the desktop or a Finder window shows
+  ("lösche test", "kopiere test nach Dokumente") is decided by the instant lane instead and runs as a shell
+  command (argv) that dcg reviews (see File commands and `POST /fileops/run`); desktop/GUI deletion stays
+  prohibited.
 - **Prompt**: the first turn of a thread decides and its follow-ups keep it (prompt caching). The
   Auto router's quick and fast lanes and short general questions keep the lean `PI_OS_SYSTEM_PROMPT`;
   standard, deep and max, every coding or task turn, and a first turn that is a pi command (below)

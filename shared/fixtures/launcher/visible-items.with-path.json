@@ -1,0 +1,16 @@
+{
+  "ok": true,
+  "result": {
+    "sources": [
+      { "kind": "finderWindow", "via": "ax", "complete": true, "path": "/Users/fixture/Documents/Projekte" },
+      { "kind": "desktop", "via": "ax", "complete": true, "path": "/Users/fixture/Desktop" }
+    ],
+    "items": [
+      { "token": "tok_6c2e8a4f0b1d", "name": "test", "path": "/Users/fixture/Documents/Projekte/test", "contentType": "public.folder", "isDirectory": true, "isPackage": false, "source": "finderWindow" },
+      { "token": "tok_3b9d5f1a7c2e", "name": "test.txt", "path": "/Users/fixture/Desktop/test.txt", "contentType": "public.plain-text", "modifiedMs": 1783209600000, "isDirectory": false, "isPackage": false, "source": "desktop" },
+      { "token": "tok_0e4c8a2b6d9f", "name": "Archiv", "path": "/Users/fixture/Desktop/Archiv", "contentType": "public.folder", "isDirectory": true, "isPackage": false, "source": "desktop" }
+    ],
+    "truncated": false,
+    "elapsedMs": 9.1
+  }
+}

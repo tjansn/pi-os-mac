@@ -10,7 +10,9 @@ import { CARD_COMPONENTS, CARD_EVENTS, CARD_FORMAT, type CardComponent } from ".
  * and its Zod props; the native hosts only render validated, static specs.
  * Version 1 is deliberately static: no `$`-expressions, visible, repeat, watch
  * or state, and bindings are plain HostAction descriptors. There is no delete,
- * trash, move, rename or write action (AGENTS.md computer-use policy).
+ * trash, move, rename or write action (AGENTS.md computer-use policy); an instant
+ * file-command row binds only `fileOp {opId}`, an operation Node staged and dcg
+ * reviews, and model cards never bind it (MODEL_CARD_ACTION_TYPES).
  *
  * Never ship json-render's default catalog.prompt(): it asks for "realistic
  * sample data", which would make the model invent files and numbers. The
@@ -107,6 +109,9 @@ export const CARD_ACTION_PARAMS = {
   copyPath: z.strictObject({ token: z.string() }),
   system: z.strictObject({ op: z.enum(SYSTEM_OPS), value: z.union([z.number(), z.boolean(), z.enum(["dark", "light"])]).optional() }),
   askAgent: z.strictObject({ prompt: z.string() }),
+  fileOp: z.strictObject({ opId: z.string() }),
+  quitApp: z.strictObject({ bundleId: z.string() }),
+  closeFinderWindow: z.strictObject({ contextId: z.string() }),
 } satisfies Record<HostActionType, z.ZodType>;
 
 const ACTION_DESCRIPTIONS: Record<HostActionType, string> = {
@@ -119,6 +124,9 @@ const ACTION_DESCRIPTIONS: Record<HostActionType, string> = {
   copyPath: "Copy the path of a file found by a host search.",
   system: "Volume / display system operation (instant lane only).",
   askAgent: "Send a follow-up prompt to the agent.",
+  fileOp: "Run a file operation Node staged for this take (instant lane only; dcg reviews it).",
+  quitApp: "Quit an app gracefully (instant lane only).",
+  closeFinderWindow: "Close the take's Finder window (instant lane only).",
 };
 
 /** Compact catalog listing (one line per component). Replaces json-render's ~18 K-char default prompt. */

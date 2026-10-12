@@ -22,6 +22,12 @@ import type { InstantScope } from "./context.js";
  * and `voice.fill: "offer"` on the check card. All optional and additive: a request without `target` and
  * without `"fill"` gets exactly today's decisions. Fixtures: `shared/fixtures/instant/requests/request-target-*`,
  * `instant/act-fill*.json`, `instant/fallthrough-check-fill-offer.json`, `instant/invalid-action/`.
+ *
+ * File commands (DESIGN6 with BUILD6): in a full pi session with dcg as the bash guard, a final whose context shows the
+ * desktop or a Finder window may answer intent `file_op` (an `act` `fileOp {opId}`, a `list` of `fileOp` rows, an
+ * `answer`) or `close` (`quitApp`, `closeFinderWindow`) with `voice.via: "file"`. Additive: every other request gets
+ * today's decisions. Fixtures: `instant/act-file-op-*.json`, `act-close-*.json`, `list-file-op-which.json`,
+ * `answer-file-op-not-found.json`, and the bad actions in `instant/invalid-action/`.
  */
 
 export type InstantPhase = "typing" | "partial" | "final";
@@ -250,7 +256,15 @@ export type InstantIntent =
   | "system"
   | "refuse"
   /** Continuity: an `act` that types the take's words into the bound focused field (`typeIntoPinned`). */
-  | "fill";
+  | "fill"
+  /**
+   * File commands (DESIGN6/BUILD6, full pi sessions with dcg): an `act` (`fileOp {opId}`), a `list` whose rows bind
+   * `fileOp` ("Which “test” do you mean?", "did you mean …?", "Where to?") or an `answer` (nothing found, a name that
+   * is taken, a preview of the plan) about a delete, create, copy, move or rename on what the take shows.
+   */
+  | "file_op"
+  /** File commands: an `act` that quits an app (`quitApp`) or closes the take's Finder window (`closeFinderWindow`). */
+  | "close";
 
 export type FallthroughReason =
   | "no_match"
@@ -279,9 +293,10 @@ interface InstantBase {
  * `secondary`: a gated secondary hypothesis. `url`: a spoken domain (the voice URL guard).
  * `visible`: a visible item of the take's target context (`open_item`); hosts offer no "Not this" for it
  * and nothing is learned from it. `field`: a fill into the bound focused field (intent `fill`); no "Not
- * this" (a bare "nein/no" within 5 s undoes the typing instead) and nothing is learned from it.
+ * this" (a bare "nein/no" within 5 s undoes the typing instead) and nothing is learned from it. `file`: a file
+ * command decided (intents `file_op` and `close`); no "Not this", nothing is learned from it.
  */
-export const VOICE_VIAS = ["exact", "alias", "learned", "sound", "peer", "secondary", "url", "visible", "field"] as const;
+export const VOICE_VIAS = ["exact", "alias", "learned", "sound", "peer", "secondary", "url", "visible", "field", "file"] as const;
 export type VoiceVia = (typeof VOICE_VIAS)[number];
 
 /**
@@ -323,7 +338,7 @@ export type VoiceFill = (typeof VOICE_FILLS)[number];
 export type InstantResponse = InstantBase &
   (
     | { decision: "answer"; intent: InstantIntent; title: string; subtitle?: string; card: CardSpec }
-    | { decision: "list"; intent: "file_search" | "open_app" | "open_item"; title: string; card: CardSpec; relaxed?: boolean; voice?: VoiceMeta }
+    | { decision: "list"; intent: "file_search" | "open_app" | "open_item" | "file_op"; title: string; card: CardSpec; relaxed?: boolean; voice?: VoiceMeta }
     | { decision: "act"; intent: InstantIntent; title: string; action: HostAction; confirm: boolean; card?: CardSpec; voice?: VoiceMeta }
     | { decision: "refuse"; code: "file_deletion_blocked"; message: string; card: CardSpec }
     | { decision: "fallthrough"; reason: FallthroughReason; hints?: ClassifierHints; voice?: VoiceMeta }

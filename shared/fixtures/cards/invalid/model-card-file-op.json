@@ -1,0 +1,66 @@
+{
+  "format": "pi-os-ui/1",
+  "root": "root",
+  "elements": {
+    "root": {
+      "type": "Answer",
+      "props": {
+        "summary": "Files on your Desktop"
+      },
+      "children": [
+        "n1"
+      ]
+    },
+    "n1": {
+      "type": "ItemList",
+      "props": {},
+      "children": [
+        "n2",
+        "n3",
+        "n4"
+      ]
+    },
+    "n2": {
+      "type": "Item",
+      "props": {
+        "title": "Radfotos"
+      },
+      "on": {
+        "primary": {
+          "action": "fileOp",
+          "params": {
+            "opId": "op_7Hq2Lr9xVb4Nc8Ws1Ke5Ty"
+          }
+        }
+      }
+    },
+    "n3": {
+      "type": "Item",
+      "props": {
+        "title": "Safari"
+      },
+      "on": {
+        "primary": {
+          "action": "quitApp",
+          "params": {
+            "bundleId": "com.apple.Safari"
+          }
+        }
+      }
+    },
+    "n4": {
+      "type": "Item",
+      "props": {
+        "title": "Downloads"
+      },
+      "on": {
+        "primary": {
+          "action": "closeFinderWindow",
+          "params": {
+            "contextId": "ctx-3f2a"
+          }
+        }
+      }
+    }
+  }
+}

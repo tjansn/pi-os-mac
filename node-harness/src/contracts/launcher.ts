@@ -100,6 +100,8 @@ export const VISIBLE_ITEMS_LIMITS = {
   maxNameChars: 255,
   /** `FileCandidate.contentType` (a UTI). */
   maxContentTypeChars: 255,
+  /** `VisibleSource.path`. */
+  maxSourcePathChars: 1_024,
 } as const;
 
 /**
@@ -124,6 +126,13 @@ export interface VisibleSource {
   via: VisibleSourceVia;
   /** False when the host stopped early (AX budget, Spotlight deadline): a miss may be a false negative. */
   complete: boolean;
+  /**
+   * Optional (BUILD6 file commands): the absolute path of the folder this source shows — the desktop surface: the
+   * user's Desktop folder; a Finder window: its target folder. `/`-rooted, no NUL or other control characters, at most
+   * 1024 UTF-16 units. User content: never logged. Absent from older hosts (Node then assumes `~/Desktop` for the
+   * desktop and knows no folder for a Finder window).
+   */
+  path?: string;
 }
 
 /** A file or folder the user can see in the take's target context, as a host file token. */
@@ -207,6 +216,15 @@ export function parseFileCandidate(value: unknown): LauncherParse<FileCandidate>
   return { ok: true, value: candidate };
 }
 
+/**
+ * `VisibleSource.path` (BUILD6): `/`-rooted, 1..1024 UTF-16 units, no NUL or other control character, well-formed.
+ * Lexical only; the file-command lane applies its own normalization and safety rules before it uses one.
+ */
+export function isSourcePath(value: unknown): value is string {
+  return typeof value === "string" && value.startsWith("/") && value.length <= VISIBLE_ITEMS_LIMITS.maxSourcePathChars
+    && !CONTROL.test(value) && !LONE_SURROGATE.test(value);
+}
+
 /** `{arguments}` of POST /tools/launcher.visibleItems (the host answers 400 on failure). */
 export function parseVisibleItemsRequest(value: unknown): LauncherParse<VisibleItemsRequest> {
   if (!isRecord(value) || typeof value.contextId !== "string" || !CONTEXT_ID.test(value.contextId)) return { ok: false, error: "contextId is required" };
@@ -239,7 +257,12 @@ export function parseVisibleItemsResult(value: unknown): LauncherParse<VisibleIt
     }
     if (kinds.has(source.kind)) return { ok: false, error: `sources[${index}] repeats a kind` };
     kinds.add(source.kind);
-    result.sources.push({ kind: source.kind, via: source.via, complete: source.complete });
+    const parsed: VisibleSource = { kind: source.kind, via: source.via, complete: source.complete };
+    if (present(source.path)) {
+      if (!isSourcePath(source.path)) return { ok: false, error: `sources[${index}].path must be an absolute path` };
+      parsed.path = source.path;
+    }
+    result.sources.push(parsed);
   }
   const tokens = new Set<string>();
   for (const [index, item] of items.entries()) {

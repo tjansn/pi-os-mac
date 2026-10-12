@@ -5,6 +5,12 @@
  * them as descriptors; the native host validates each one against its own
  * launcher policy before acting. There is deliberately no delete, trash, move,
  * rename, write, power, lock or logout action (AGENTS.md computer-use policy).
+ *
+ * File commands (DESIGN6/BUILD6, instant lane only, full pi sessions): `fileOp` names an operation Node
+ * staged for one take, never a path or a command. The host only asks Node to run it (POST /fileops/run);
+ * Node runs it as argv after the user's command guard (dcg) reviewed it. `quitApp` terminates an app
+ * gracefully and `closeFinderWindow` closes the take's captured Finder window. None of the three is ever a
+ * model-card or agent binding (MODEL_CARD_ACTION_TYPES, AGENT_OPEN_ACTION_TYPES).
  */
 
 export const SYSTEM_OPS = [
@@ -35,7 +41,13 @@ export type HostAction =
   | { type: "openFile" | "revealFile" | "copyPath"; token: string }
   /** Instant lane only. */
   | { type: "system"; op: SystemOp; value?: number | boolean | "dark" | "light" }
-  | { type: "askAgent"; prompt: string };
+  | { type: "askAgent"; prompt: string }
+  /** Instant lane only: run the operation Node staged for the take (POST /fileops/run {opId}). */
+  | { type: "fileOp"; opId: string }
+  /** Instant lane only: graceful terminate of the app with this bundle id (never a force quit). */
+  | { type: "quitApp"; bundleId: string }
+  /** Instant lane only: close the take's captured Finder window, only while it is still that Finder window. */
+  | { type: "closeFinderWindow"; contextId: string };
 
 export type HostActionType = HostAction["type"];
 
@@ -49,6 +61,9 @@ export const HOST_ACTION_TYPES: readonly HostActionType[] = [
   "copyPath",
   "system",
   "askAgent",
+  "fileOp",
+  "quitApp",
+  "closeFinderWindow",
 ];
 
 /** Actions a model-authored card may bind. File actions additionally need a ledger token. */
@@ -79,6 +94,14 @@ export function isOneLineText(text: string): boolean {
 }
 const TOKEN = /^[A-Za-z0-9_-]{8,128}$/;
 const BUNDLE_ID = /^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/;
+/** A staged file operation's id (Node mints it per take; the host only hands it back). */
+export const FILE_OP_ID = /^[A-Za-z0-9_-]{16,64}$/;
+/** The take's context (the visible-items route's rule). */
+const CONTEXT_ID = /^[A-Za-z0-9_-]{1,128}$/;
+
+function isBundleIdValue(value: unknown): value is string {
+  return typeof value === "string" && value.length <= 255 && BUNDLE_ID.test(value);
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -124,9 +147,7 @@ export function parseHostAction(value: unknown): HostAction | null {
     case "openURL":
       return isHttpUrl(value.url) ? { type: "openURL", url: value.url } : null;
     case "openApp":
-      return typeof value.bundleId === "string" && value.bundleId.length <= 255 && BUNDLE_ID.test(value.bundleId)
-        ? { type: "openApp", bundleId: value.bundleId }
-        : null;
+      return isBundleIdValue(value.bundleId) ? { type: "openApp", bundleId: value.bundleId } : null;
     case "openFile":
     case "revealFile":
     case "copyPath":
@@ -142,7 +163,49 @@ export function parseHostAction(value: unknown): HostAction | null {
     }
     case "askAgent":
       return boundedString(value.prompt, MAX_ACTION_PROMPT) ? { type: "askAgent", prompt: value.prompt } : null;
+    case "fileOp":
+      return typeof value.opId === "string" && FILE_OP_ID.test(value.opId) ? { type: "fileOp", opId: value.opId } : null;
+    case "quitApp":
+      return isBundleIdValue(value.bundleId) ? { type: "quitApp", bundleId: value.bundleId } : null;
+    case "closeFinderWindow":
+      return typeof value.contextId === "string" && CONTEXT_ID.test(value.contextId) ? { type: "closeFinderWindow", contextId: value.contextId } : null;
     default:
       return null;
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// File operations (protocol.md "POST /fileops/run"; DESIGN6 §5, BUILD6)
+
+/** Outcome of POST /fileops/run: `denied` = dcg said no (or the user declined its dialog); `expired` = unknown, used or expired opId, or the source changed. */
+export const FILE_OP_OUTCOMES = ["done", "denied", "failed", "expired"] as const;
+export type FileOpOutcome = (typeof FILE_OP_OUTCOMES)[number];
+
+export interface FileOpRunRequest { opId: string }
+
+/** 200 body: one line of user copy (≤ 300 UTF-16 units, no control characters). A 400 is `{ok: false, error}` (never echoes the input). */
+export interface FileOpRunResponse { ok: true; outcome: FileOpOutcome; line: string }
+
+export const FILE_OP_LIMITS = {
+  /** `line` (one line of user copy). */
+  maxLine: 300,
+  /** dcg's reason inside a `denied` line. */
+  maxReason: 200,
+  /** The host waits this long for an answer (dcg's dialog may stay open up to 140 s). */
+  hostTimeoutMs: 180_000,
+} as const;
+
+export type FileOpParse<T> = { ok: true; value: T } | { ok: false; error: string };
+
+/** Strict `{opId}` (unknown keys dropped). The error never echoes a value. */
+export function parseFileOpRunRequest(value: unknown): FileOpParse<FileOpRunRequest> {
+  if (!isRecord(value) || typeof value.opId !== "string" || !FILE_OP_ID.test(value.opId)) return { ok: false, error: "opId is required" };
+  return { ok: true, value: { opId: value.opId } };
+}
+
+/** Structural check of a 200 body (hosts drop anything else and show a generic failure). */
+export function parseFileOpRunResponse(value: unknown): FileOpRunResponse | null {
+  if (!isRecord(value) || value.ok !== true || typeof value.outcome !== "string" || !(FILE_OP_OUTCOMES as readonly string[]).includes(value.outcome)) return null;
+  if (!boundedString(value.line, FILE_OP_LIMITS.maxLine) || !isOneLineText(value.line)) return null;
+  return { ok: true, outcome: value.outcome as FileOpOutcome, line: value.line };
 }

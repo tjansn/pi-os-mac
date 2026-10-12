@@ -1,0 +1,13 @@
+{
+  "seq": 10,
+  "elapsedMs": 2,
+  "source": "grammar",
+  "decision": "act",
+  "intent": "close",
+  "title": "Fenster „Downloads“ schließen",
+  "action": {
+    "type": "closeFinderWindow",
+    "contextId": "ctx 3f2a/../other"
+  },
+  "confirm": false
+}

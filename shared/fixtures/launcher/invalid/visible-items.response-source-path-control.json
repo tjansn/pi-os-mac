@@ -1,0 +1,1 @@
+{ "ok": true, "result": { "sources": [{ "kind": "finderWindow", "via": "ax", "complete": true, "path": "/Users/someone/Docu\u0000ments" }], "items": [], "truncated": false, "elapsedMs": 1 } }

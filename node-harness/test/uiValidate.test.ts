@@ -49,10 +49,15 @@ test("every shared valid card fixture passes strict validation unchanged (and js
   }
 });
 
-test("every instant fixture card passes strict validation", () => {
+test("every instant fixture card passes strict validation (instant cards: the full action set, as server.ts checks them)", () => {
   for (const file of jsonFiles("instant")) {
     const response = readJson(file);
-    if (response.card) assert(strict(response.card).ok, file);
+    if (!response.card) continue;
+    assert(strict(response.card, { allowedActions: HOST_ACTION_TYPES }).ok, file);
+    // Only file-command cards (fileOp rows) need more than a model card may bind.
+    const instantOnly = Object.values(response.card.elements as Record<string, { on?: Record<string, { action: string }> }>)
+      .some(element => Object.values(element.on ?? {}).some(binding => !(MODEL_CARD_ACTION_TYPES as readonly string[]).includes(binding.action)));
+    assert.equal(strict(response.card).ok, !instantOnly, file);
   }
 });
 
@@ -64,6 +69,8 @@ test("every shared invalid card fixture fails with a meaningful issue", () => {
     "missing-child.json": "missing_child",
     "unknown-component.json": "unknown_component",
     "wrong-format.json": "invalid_format",
+    // fileOp, quitApp and closeFinderWindow are instant-lane actions: a model card never binds them.
+    "model-card-file-op.json": "action_not_allowed",
   };
   const files = jsonFiles("cards/invalid");
   assert(files.length >= Object.keys(expected).length);

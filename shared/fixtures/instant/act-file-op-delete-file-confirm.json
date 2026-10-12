@@ -1,0 +1,51 @@
+{
+  "seq": 8,
+  "elapsedMs": 3,
+  "source": "grammar",
+  "decision": "act",
+  "intent": "file_op",
+  "title": "„Notizen.txt“ endgültig löschen?",
+  "action": {
+    "type": "fileOp",
+    "opId": "op_Qm3Zt8Rw2Yk6Pd1Lx9Fv4Hs"
+  },
+  "confirm": true,
+  "card": {
+    "format": "pi-os-ui/1",
+    "root": "root",
+    "elements": {
+      "root": {
+        "type": "Answer",
+        "props": {
+          "summary": "„Notizen.txt“ endgültig löschen?"
+        },
+        "children": [
+          "n1"
+        ]
+      },
+      "n1": {
+        "type": "ItemList",
+        "props": {},
+        "children": [
+          "n2"
+        ]
+      },
+      "n2": {
+        "type": "Item",
+        "props": {
+          "title": "Notizen.txt",
+          "subtitle": "in Desktop",
+          "icon": {
+            "kind": "file",
+            "uti": "public.plain-text"
+          }
+        }
+      }
+    }
+  },
+  "voice": {
+    "heard": "notizen",
+    "source": "parakeet-v3",
+    "via": "file"
+  }
+}

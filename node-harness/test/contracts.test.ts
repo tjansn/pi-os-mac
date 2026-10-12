@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { test } from "node:test";
-import { HOST_ACTION_TYPES, parseHostAction } from "../src/contracts/actions.js";
+import {
+  AGENT_OPEN_ACTION_TYPES, FILE_OP_LIMITS, FILE_OP_OUTCOMES, HOST_ACTION_TYPES, MODEL_CARD_ACTION_TYPES, parseFileOpRunRequest, parseFileOpRunResponse, parseHostAction,
+} from "../src/contracts/actions.js";
 import { bindingToHostAction, buildCard, type CardSpec, ui } from "../src/contracts/cards.js";
 import { parseContext } from "../src/contracts/context.js";
 import {
@@ -12,10 +14,10 @@ import {
   type InstantRequest, type InstantResponse,
 } from "../src/contracts/instant.js";
 import {
-  LAUNCHER_ROUTES, parseFileCandidate, parseVisibleItemsRequest, parseVisibleItemsResult, VISIBLE_ITEMS_LIMITS, VISIBLE_SOURCE_KINDS,
-  VISIBLE_SOURCE_VIAS, type VisibleItem,
+  isSourcePath, LAUNCHER_ROUTES, parseFileCandidate, parseVisibleItemsRequest, parseVisibleItemsResult, VISIBLE_ITEMS_LIMITS, VISIBLE_SOURCE_KINDS,
+  VISIBLE_SOURCE_VIAS, type VisibleItem, type VisibleItemsResult,
 } from "../src/contracts/launcher.js";
-import { choiceRowsCard, openItemCard } from "../src/instant/cards.js";
+import { choiceRowsCard, fileOpActCard, fileOpRowsCard, noticeCard, openItemCard } from "../src/instant/cards.js";
 import { MAX_INSTANT_TEXT } from "../src/instant/dispatcher.js";
 import { validateCard } from "../src/ui/validate.js";
 
@@ -48,6 +50,55 @@ test("host actions: closed vocabulary, http(s) only, host tokens only", () => {
   }
   for (const submit of ["yes", 1, {}]) assert.equal(parseHostAction({ type: "typeIntoPinned", text: "x", submit }), null, JSON.stringify(submit));
   assert.deepEqual(parseHostAction({ type: "copyText", text: "x", submit: true }), { type: "copyText", text: "x" }, "copyText never submits");
+});
+
+test("file-command host actions: fileOp names a staged op only, quitApp a bundle id, closeFinderWindow a context; strict, unknown keys dropped", () => {
+  const opId = "op_7Hq2Lr9xVb4Nc8Ws1Ke5Ty";
+  assert.deepEqual(parseHostAction({ type: "fileOp", opId, path: "/Users/fixture/Desktop/x", command: "rm -rf ~" }), { type: "fileOp", opId });
+  assert.deepEqual(parseHostAction({ type: "fileOp", opId: "a".repeat(16) }), { type: "fileOp", opId: "a".repeat(16) });
+  assert.deepEqual(parseHostAction({ type: "fileOp", opId: "a".repeat(64) }), { type: "fileOp", opId: "a".repeat(64) });
+  for (const bad of ["a".repeat(15), "a".repeat(65), "op_../../etc/passwd", "op 7Hq2Lr9xVb4Nc8Ws1Ke5Ty", "", 7, null]) {
+    assert.equal(parseHostAction({ type: "fileOp", opId: bad }), null, JSON.stringify(bad));
+  }
+  assert.equal(parseHostAction({ type: "fileOp", token: "tok_7c1e0a9f3b2d" }), null, "a host token is no staged op");
+  assert.deepEqual(parseHostAction({ type: "quitApp", bundleId: "com.apple.Safari", force: true }), { type: "quitApp", bundleId: "com.apple.Safari" });
+  for (const bundleId of ["Safari", "com.apple.Safari ", "../x.y", "", 1]) assert.equal(parseHostAction({ type: "quitApp", bundleId }), null, JSON.stringify(bundleId));
+  assert.deepEqual(parseHostAction({ type: "closeFinderWindow", contextId: "ctx-3f2a", windowId: 4 }), { type: "closeFinderWindow", contextId: "ctx-3f2a" });
+  for (const contextId of ["", "ctx 3f2a", "c".repeat(129), "ctx/1", 3]) assert.equal(parseHostAction({ type: "closeFinderWindow", contextId }), null, JSON.stringify(contextId));
+  // Instant lane only: never a model-card binding, never an agent launcher.open action.
+  for (const type of ["fileOp", "quitApp", "closeFinderWindow"] as const) {
+    assert.ok(HOST_ACTION_TYPES.includes(type), type);
+    assert.ok(!MODEL_CARD_ACTION_TYPES.includes(type), type);
+    assert.ok(!AGENT_OPEN_ACTION_TYPES.includes(type), type);
+  }
+  const model = readJson(join(fixtures, "cards", "invalid", "model-card-file-op.json")) as CardSpec;
+  assert.deepEqual(validateCard(model, { mode: "strict" }).ok, false, "a model card never binds them");
+  const issues = validateCard(model, { mode: "strict", allowedActions: MODEL_CARD_ACTION_TYPES });
+  assert.ok(!issues.ok && issues.issues.filter((issue) => issue.code === "action_not_allowed").length === 3, JSON.stringify(issues));
+  assert.ok(validateCard(model, { mode: "strict", allowedActions: HOST_ACTION_TYPES }).ok, "the shapes themselves are valid bindings (instant cards)");
+});
+
+test("POST /fileops/run fixtures: the request is exactly {opId}; responses carry a closed outcome and one line; a 400 never echoes", () => {
+  assert.deepEqual(FILE_OP_OUTCOMES, ["done", "denied", "failed", "expired"]);
+  const request = readJson(join(fixtures, "fileops", "run-request.json"));
+  assert.deepEqual(parseFileOpRunRequest(request), { ok: true, value: request });
+  assert.deepEqual(parseFileOpRunRequest({ opId: "op_7Hq2Lr9xVb4Nc8Ws1Ke5Ty", takeId: "t" }), { ok: true, value: { opId: "op_7Hq2Lr9xVb4Nc8Ws1Ke5Ty" } });
+  for (const bad of [null, [], {}, { opId: "short" }, { token: "tok_7c1e0a9f3b2d" }, { opId: "op_7Hq2Lr9xVb4Nc8Ws1Ke5Ty\n" }]) {
+    const parsed = parseFileOpRunRequest(bad);
+    assert.equal(parsed.ok, false, JSON.stringify(bad));
+    if (!parsed.ok) for (const value of ["short", "tok_", "op_7Hq"]) assert.ok(!parsed.error.includes(value), parsed.error);
+  }
+  for (const name of ["run-response-done.json", "run-response-denied.json", "run-response-expired.json", "run-response-failed.json"]) {
+    const body = readJson(join(fixtures, "fileops", name));
+    assert.deepEqual(parseFileOpRunResponse(body), body, name);
+  }
+  const invalid = readJson(join(fixtures, "fileops", "run-response-invalid.json")) as { ok: boolean; error: string };
+  assert.equal(parseFileOpRunResponse(invalid), null);
+  assert.deepEqual([invalid.ok, typeof invalid.error], [false, "string"]);
+  assert.equal(parseFileOpRunResponse({ ok: true, outcome: "done", line: "a\nb" }), null, "one line");
+  assert.equal(parseFileOpRunResponse({ ok: true, outcome: "done", line: "x".repeat(FILE_OP_LIMITS.maxLine + 1) }), null, "≤ 300");
+  assert.equal(parseFileOpRunResponse({ ok: true, outcome: "maybe", line: "x" }), null);
+  assert.equal(FILE_OP_LIMITS.hostTimeoutMs, 180_000);
 });
 
 test("buildCard flattens deterministically and binds actions as json-render bindings", () => {
@@ -238,7 +289,7 @@ test("visible-items fixtures: valid bodies parse to exactly their wire value, in
       assert.equal(body.error?.code, "not_found", file);
     }
   }
-  assert.equal(results, 4);
+  assert.equal(results, 5);
   const invalid = jsonFiles("launcher/invalid").filter((file) => file.includes("visible-items."));
   assert.ok(invalid.length >= 20);
   for (const file of invalid) {
@@ -311,9 +362,75 @@ test("open_item fixtures: an act on a visible folder and a did-you-mean with a f
   const desktop = readJson(join(fixtures, "launcher", "visible-items.response-desktop.json")) as { result: { items: VisibleItem[] } };
   const tokens = new Set(desktop.result.items.map((entry) => entry.token));
   assert.ok(tokens.has("tok_7c1e0a9f3b2d") && tokens.has("tok_2b8d4f6a1c3e"));
-  // Older vias keep parsing exactly as before; "visible" and "field" are more open-set values.
-  assert.deepEqual(VOICE_VIAS, ["exact", "alias", "learned", "sound", "peer", "secondary", "url", "visible", "field"]);
+  // Older vias keep parsing exactly as before; "visible", "field" and "file" are more open-set values.
+  assert.deepEqual(VOICE_VIAS, ["exact", "alias", "learned", "sound", "peer", "secondary", "url", "visible", "field", "file"]);
   assert.deepEqual(parseVoiceMeta({ via: "visible", heard: "radfotos" }), { heard: "radfotos", via: "visible" });
+});
+
+// ---------------------------------------------------------------- file commands (DESIGN6, BUILD6)
+
+test("visible source path: optional, absolute, no control characters, ≤ 1024 UTF-16 units; null is absent", () => {
+  const withPath = readJson(join(fixtures, "launcher", "visible-items.with-path.json")) as { result: VisibleItemsResult };
+  const parsed = parseVisibleItemsResult(withPath.result);
+  assert.ok(parsed.ok);
+  if (parsed.ok) assert.deepEqual(parsed.value.sources.map((source) => source.path), ["/Users/fixture/Documents/Projekte", "/Users/fixture/Desktop"]);
+  const result = (path: unknown) => ({ sources: [{ kind: "desktop", via: "ax", complete: true, path }], items: [], truncated: false, elapsedMs: 1 });
+  assert.deepEqual(parseVisibleItemsResult(result(null)), { ok: true, value: { sources: [{ kind: "desktop", via: "ax", complete: true }], items: [], truncated: false, elapsedMs: 1 } });
+  assert.equal(parseVisibleItemsResult(result("/")).ok, true, "the volume root is a folder a window can show");
+  assert.equal(parseVisibleItemsResult(result(`/${"a".repeat(1023)}`)).ok, true, "1024 units");
+  for (const bad of ["", "Desktop", "~/Desktop", `/${"a".repeat(1024)}`, "/Users/x\u0000y", "/Users/x\ny", "/Users/\uD83D", 7, {}]) {
+    const checked = parseVisibleItemsResult(result(bad));
+    assert.equal(checked.ok, false, JSON.stringify(bad));
+    if (!checked.ok) assert.ok(!checked.error.includes("Users") && !checked.error.includes("Desktop"), checked.error);
+  }
+  assert.equal(isSourcePath("/Users/fixture/Desktop"), true);
+  assert.equal(VISIBLE_ITEMS_LIMITS.maxSourcePathChars, 1_024);
+});
+
+test("file-command fixtures: acts, the which-list and the not-found answer are exactly what the shared card builders make", () => {
+  const read = (name: string) => readJson(join(fixtures, "instant", name)) as InstantResponse;
+  const folder = read("act-file-op-delete-folder.json");
+  assert.ok(folder.decision === "act");
+  if (folder.decision !== "act") return;
+  assert.deepEqual([folder.intent, folder.title, folder.action, folder.confirm], ["file_op", "Löschen: Radfotos", { type: "fileOp", opId: "op_7Hq2Lr9xVb4Nc8Ws1Ke5Ty" }, false]);
+  assert.deepEqual(folder.card, fileOpActCard("Löschen: Radfotos", { name: "Radfotos", subtitle: "in Desktop", contentType: "public.folder" }));
+  assert.deepEqual(folder.voice, { heard: "radfotos", source: "apple-dt/de-DE", via: "file" });
+
+  const file = read("act-file-op-delete-file-confirm.json");
+  assert.ok(file.decision === "act" && file.confirm === true && file.intent === "file_op" && file.action.type === "fileOp");
+  if (file.decision !== "act") return;
+  assert.deepEqual(file.card, fileOpActCard("„Notizen.txt“ endgültig löschen?", { name: "Notizen.txt", subtitle: "in Desktop", contentType: "public.plain-text" }));
+
+  const quit = read("act-close-quit-app.json");
+  assert.ok(quit.decision === "act" && quit.intent === "close");
+  if (quit.decision === "act") assert.deepEqual([quit.action, quit.confirm, quit.card], [{ type: "quitApp", bundleId: "com.apple.Safari" }, false, undefined]);
+  const finderWindow = read("act-close-finder-window.json");
+  assert.ok(finderWindow.decision === "act" && finderWindow.intent === "close");
+  if (finderWindow.decision === "act") assert.deepEqual([finderWindow.action, finderWindow.voice?.via], [{ type: "closeFinderWindow", contextId: "ctx-3f2a" }, "file"]);
+
+  const which = read("list-file-op-which.json");
+  assert.ok(which.decision === "list");
+  if (which.decision !== "list") return;
+  assert.deepEqual([which.intent, which.title, which.voice], ["file_op", "Welches „test“ meinst du?", { heard: "test", source: "apple-dt/de-DE", via: "file" }]);
+  assert.deepEqual(which.card, fileOpRowsCard("Welches „test“ meinst du?", [
+    { opId: "op_Xa4Gc7Np2Vd9Rk5Tm8Jw3Eb", name: "test", subtitle: "in Projekte", contentType: "public.folder" },
+    { opId: "op_Lf6Hy1Qs8Bz3Wn7Cu2Ki5Do", name: "test.txt", subtitle: "in Desktop", contentType: "public.plain-text" },
+  ]));
+  // Every row binds exactly one fileOp; no reveal, no copy path, no app.
+  for (const element of Object.values(which.card.elements).filter((entry) => entry.type === "Item")) {
+    assert.deepEqual(Object.keys(element.on ?? {}), ["primary"]);
+    assert.equal(element.on?.primary?.action, "fileOp");
+  }
+  // No didYouMean: a file-command list is never reported to /dictionary/learn.
+  assert.equal(which.voice?.didYouMean, undefined);
+
+  const missing = read("answer-file-op-not-found.json");
+  assert.ok(missing.decision === "answer" && missing.intent === "file_op");
+  if (missing.decision === "answer") assert.deepEqual(missing.card, noticeCard("info", missing.title, missing.title));
+
+  for (const response of [folder, file, quit, finderWindow, which, missing]) {
+    if ("card" in response && response.card) assert.ok(validateCard(response.card, { mode: "strict", allowedActions: HOST_ACTION_TYPES }).ok);
+  }
 });
 
 // ---------------------------------------------------------------- continuity (DESIGN5 §8, TOM-ANSWERS)

@@ -1,0 +1,13 @@
+{
+  "seq": 9,
+  "elapsedMs": 2,
+  "source": "grammar",
+  "decision": "act",
+  "intent": "close",
+  "title": "Quit Safari",
+  "action": {
+    "type": "quitApp",
+    "bundleId": "Safari"
+  },
+  "confirm": false
+}

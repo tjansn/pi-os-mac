@@ -1,0 +1,13 @@
+{
+  "seq": 7,
+  "elapsedMs": 3,
+  "source": "grammar",
+  "decision": "act",
+  "intent": "file_op",
+  "title": "Löschen: Radfotos",
+  "action": {
+    "type": "fileOp",
+    "opId": "op/../short"
+  },
+  "confirm": false
+}

@@ -1,0 +1,31 @@
+{
+  "seq": 12,
+  "elapsedMs": 3,
+  "source": "grammar",
+  "decision": "answer",
+  "intent": "file_op",
+  "title": "Auf dem Schreibtisch gibt es nichts namens „tset“.",
+  "subtitle": "Gehört: „Lösche tset“",
+  "card": {
+    "format": "pi-os-ui/1",
+    "root": "root",
+    "elements": {
+      "root": {
+        "type": "Answer",
+        "props": {
+          "summary": "Auf dem Schreibtisch gibt es nichts namens „tset“."
+        },
+        "children": [
+          "n1"
+        ]
+      },
+      "n1": {
+        "type": "Notice",
+        "props": {
+          "tone": "info",
+          "text": "Auf dem Schreibtisch gibt es nichts namens „tset“."
+        }
+      }
+    }
+  }
+}
