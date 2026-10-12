@@ -342,7 +342,7 @@ actor FlowVoiceJournal: VoiceJournaling {
         let resend = try XCTUnwrap(harness.requests.last)
         XCTAssertEqual(resend.phase, .final); XCTAssertEqual(resend.takeId, first.takeId, "the same takeId")
         XCTAssertGreaterThan(resend.seq, first.seq, "a newer seq"); XCTAssertEqual(resend.inputMode, "text")
-        XCTAssertNil(resend.hypotheses); XCTAssertNil(resend.accept)
+        XCTAssertNil(resend.hypotheses); XCTAssertEqual(resend.accept, [.confirm], "a typed final: one-Return confirms only")
         XCTAssertEqual(host.performed.first?.action, .openApp(bundleId: "com.figma.Desktop"))
         let edit = try XCTUnwrap(dictionary.learned.first)
         XCTAssertEqual(edit.kind, .edit); XCTAssertEqual(edit.correctedText, "open figma"); XCTAssertEqual(edit.takeId, "take-1")

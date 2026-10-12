@@ -19,6 +19,16 @@ and clicks are no longer vetoed by OS-wide Secure Keyboard Entry; only clearly m
 username/password fields are default-blocked, with explicit Settings opt-in. No OS
 security feature was disabled. See [BROWSER_INTEGRATION.md](BROWSER_INTEGRATION.md).
 
+## File commands on what you see — 2026-10-12 (offline-built, not installed)
+
+| Feature | macOS | Windows |
+| --- | --- | --- |
+| "lösche/kopiere/verschiebe/benenne … um/erstelle …" on the desktop or a Finder window | Full pi session only: Node stages the op, the host runs `fileOp` through `POST /fileops/run` (dcg reviews every op) | Not planned; Node never stages one for a Windows request |
+| "schließe/beende …" | `quitApp` (graceful terminate) or `closeFinderWindow` (the take's own Finder window) | Not planned |
+| `VisibleSource.path` | Sent (the desktop's folder, a Finder window's folder) | Not sent (no visible items route) |
+
+Windows decodes nothing new and sends nothing new; its requests are parsed exactly as before.
+
 ## General by default, context shelf, pointing, Brave access — 2026-10-05 (offline-tested, not installed)
 
 | Feature | macOS | Windows |

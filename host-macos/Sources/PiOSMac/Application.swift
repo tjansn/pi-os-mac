@@ -226,6 +226,9 @@ import PiOSCore
             controller.journal = journal
             controller.timingLog = timingLog
             controller.fills = FillSession(input: service)
+            // Staged file commands (BUILD6): Node runs them after dcg's review; the bar says so while dcg's dialog is open.
+            controller.fileOps = harness
+            controller.guardPending = { [weak self] in GuardProcess.dcgPending(under: self?.harness?.ownedPID) }
             controller.voiceTakeFinished = { [weak self] in self?.retryDeferredSpeechModels() }
             let voiceSystem = voiceSystem
             let hint = VoiceOffHint { !voiceSettings.enabled && voiceSystem.engineAvailable }

@@ -1329,6 +1329,9 @@ final class ListeningIndicator: NSView {
     public func presentConfirmation(_ text: String) { presentCapsule(text, symbol: "checkmark.circle.fill") }
     /// "Opening Pages…" at once: the same quiet non-key capsule, with the app-launch glyph (the launch is not awaited).
     public func presentActing(_ text: String) { presentCapsule(text, symbol: "arrow.up.forward.app") }
+    /// A file command at once ("Delete test…"): the same capsule with a working glyph; it never takes keys, so dcg's own
+    /// approval dialog can come up over it.
+    public func presentWorking(_ text: String) { presentCapsule(text, symbol: "hourglass") }
     private func presentCapsule(_ text: String, symbol: String) {
         activity.stringValue = text; activity.toolTip = text
         confirmIcon.image = PanelStyle.symbol(symbol, size: 18)
@@ -1405,7 +1408,9 @@ final class ListeningIndicator: NSView {
         case .ask: "questionmark.circle"
         case .undone: "arrow.uturn.backward.circle"
         case .typed: "keyboard"
-        case .notTyped: "exclamationmark.circle"
+        case .notTyped, .notDone: "exclamationmark.circle"
+        case .done: "checkmark.circle.fill"
+        case .waiting: "hourglass"
         }
         let actions: [(title: String, handler: () -> Void)] = toast.actions.enumerated().map { index, title in
             (title, { onAction(index) })

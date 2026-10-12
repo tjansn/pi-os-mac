@@ -18,6 +18,39 @@ import PiOSCore
 }
 extension HarnessClient: InstantHarness {}
 
+/// What a staged file command needs from the harness (BUILD6: POST /fileops/run). HarnessClient conforms; tests inject a
+/// fake. Throws `FileOpErrors` only.
+@MainActor public protocol FileOpHarness: AnyObject {
+    func runFileOp(_ run: FileOpRunRequest) async throws -> FileOpRunResult
+}
+extension HarnessClient: FileOpHarness {}
+
+/// A run that brought no result back: whether anything may have run decides the copy. Never retried.
+public enum FileOpErrors {
+    /// Node refused the request (a 4xx): nothing ran.
+    public static let notRun = DomainError("file_op_not_run", "The file command didn’t run.")
+    /// No answer within 180 s, a server error or an unreadable answer: it may have run.
+    public static let unknown = DomainError("file_op_unknown", "No answer from the file command — check the folder before trying again.")
+}
+
+/// The bar's file-command copy (English UI, as the rest of the bar). Node's titles, questions and outcome lines are its
+/// own localized copy and are shown as they come; they may name the file, so nothing here logs them.
+public enum FileOpCopy {
+    /// No title known (a row clicked in a reader list).
+    public static let working = "Working…"
+    /// An act's own title, at once: "Delete test" → "Delete test…", "„test.txt“ endgültig löschen?" → "„test.txt“ endgültig löschen…".
+    public static func working(_ title: String) -> String {
+        var stem = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        while let last = stem.last, "?….".contains(last) { stem.removeLast() }
+        return stem.isEmpty ? working : stem + "…"
+    }
+    /// A picked row of a "which one?" list (the row is the item's name): "Working on “test”…".
+    public static func working(row: String) -> String { "Working on “\(row)”…" }
+    /// While dcg's own approval dialog is open (`ApprovalWait.label`, as for pi's bash calls).
+    public static let waiting = "Waiting for your approval…"
+    public static let unavailable = "File commands aren’t available here."
+}
+
 /// Preparation split (CRITIC §3.1 item 5; DESIGN2 C2): `warm` (Node ready, then POST
 /// /invocations/prepare) starts at key-down. The window capture is lazy: it starts the first time the
 /// take's context becomes window (a suggestion, Tab, the ⇧ chord, the menu, "Always"), never for a
@@ -162,7 +195,9 @@ public enum InstantPreview: Equatable {
         case .answer(let intent, let title, _, let card):
             let computed = valueIntents.contains(intent) && card.elements.values.contains { $0.type == .resultCard }
             return computed ? .value(title) : .hint(title)
-        case .list(_, let title, let card, _): return inputMode == "voice" ? .hint(title) : .list(card)
+        // A file command's list is never an actionable preview: only its final's own decision may run a row (DESIGN6 §1:
+        // previews show the plan, never act).
+        case .list(_, let title, let card, _): return inputMode == "voice" || response.runsFileOp ? .hint(title) : .list(card)
         case .act(_, let title, _, _, _): return .hint(title)
         // The full refusal is in the card on Return; the bar only needs the gist.
         case .refuse: return .warning("Deleting files is blocked")
@@ -263,7 +298,8 @@ public struct VoiceDecisionPresentation: Equatable {
 /// A short non-activating note after the bar went away: "Not this", the learned footer with Undo, "Remember …?".
 public struct VoiceToast: Equatable {
     /// `typed`: a continuity fill's note (Undo · Ask pi); `notTyped`: a fill or its Undo was refused (Copy, or none).
-    public enum Kind: String, Equatable, Sendable { case notThis, learned, ask, undone, typed, notTyped }
+    /// `done`, `notDone`, `waiting`: a file command's outcome line, and "Waiting for your approval…" while dcg's dialog is open.
+    public enum Kind: String, Equatable, Sendable { case notThis, learned, ask, undone, typed, notTyped, done, notDone, waiting }
     public var kind: Kind
     public var text: String
     /// Button titles in order; the handler gets the index.
@@ -291,11 +327,14 @@ public enum VoiceCopy {
         titles.count == 1 ? "Did you mean \(titles[0])?" : "Did you mean…"
     }
     public static func heard(_ text: String) -> String { "Heard “\(VoiceText.clipped(VoiceText.singleLine(text), max: InstantLimits.maxHeardChars))”" }
-    public static func choicesFooter(rows: Int) -> String {
-        rows > 1 ? "1–\(min(rows, 3)) or ↩ Open  ·  ⌥↩ Ask pi instead" : "↩ Open  ·  ⌥↩ Ask pi instead"
+    /// `verb`: what ↩ does to the row ("Open"; a file command's "which one?" list: "Choose", its row then runs).
+    public static func choicesFooter(rows: Int, verb: String = VoiceCopy.open) -> String {
+        rows > 1 ? "1–\(min(rows, 3)) or ↩ \(verb)  ·  ⌥↩ Ask pi instead" : "↩ \(verb)  ·  ⌥↩ Ask pi instead"
     }
-    /// The one-Return confirm: "Open Numbers? ↩".
-    public static func confirmHint(_ title: String) -> String { title + "? ↩" }
+    public static let open = "Open"
+    public static let choose = "Choose"
+    /// The one-Return confirm: "Open Numbers? ↩" (a title that already asks keeps its own "?").
+    public static func confirmHint(_ title: String) -> String { title + (title.hasSuffix("?") ? " ↩" : "? ↩") }
     /// What an act shows at once: "Open Pages" → "Opening Pages…".
     public static func acting(_ title: String) -> String { "Opening \(subject(title))…" }
     /// "Open Pages" → "Pages".
@@ -424,6 +463,11 @@ public enum SpokenPick: Equatable {
         public var undoToast: TimeInterval = 4
         /// A spoken (or typed) bare "no" this soon after a sound-alike, learned or other-engine act counts as "Not this".
         public var rejectWindow: TimeInterval = 5
+        /// A file command's outcome line stays this long.
+        public var fileOpToast: TimeInterval = 5
+        /// A file command still running this long checks whether dcg's approval dialog is open (`ApprovalWait.delay`, as for
+        /// pi's bash calls), then every `ApprovalWait.poll`.
+        public var fileOpApprovalDelay: TimeInterval = 2
         public init() {}
     }
     /// DESIGN §3.3: /instant accepts ≤ 500 characters (UTF-16 units, as Node counts them);
@@ -431,6 +475,9 @@ public enum SpokenPick: Equatable {
     public static let maximumInstantText = 500
     /// Decision kinds this host presents for voice finals (`InstantRequest.accept`).
     public static let voiceAccepts: [InstantAccept] = [.suggest, .check, .confirm]
+    /// Decision kinds this host presents for typed finals (and the check card's resend): `confirm`, so a one-Return confirm
+    /// (BUILD6: deleting a file) works typed as well as spoken; the composer's next Return on the same text confirms it.
+    public static let typedAccepts: [InstantAccept] = [.confirm]
     /// Acts after which "Not this" is offered (DESIGN4 §6.6 #6).
     public static let undoableVias: Set<VoiceVia> = [.sound, .learned, .alias, .peer, .secondary]
     /// The Mac's formatting locale as a plain BCP 47 tag for typed /instant and /invoke: language,
@@ -477,6 +524,10 @@ public enum SpokenPick: Equatable {
     public var fillSwitch: () -> Bool = { FillSettings.enabled() }
     /// Settings → General's credential-field opt-in (AGENTS.md): credential and code fields take explicit input only with it.
     public var credentialInput: () -> Bool = { CredentialFields.allowed }
+    /// POST /fileops/run (BUILD6). nil (tests, echo mode): a `fileOp` act is refused with a note.
+    var fileOps: FileOpHarness?
+    /// dcg's own approval dialog is open (its process under the harness): a running file command says it waits for you.
+    public var guardPending: () -> Bool = { false }
     public private(set) var gesture: TalkGesture
     public private(set) var listening = false
     /// A released take (or a Return) is resolving: the hotkey treats the surface as working.
@@ -525,8 +576,9 @@ public enum SpokenPick: Equatable {
     private var transcript = VoiceTranscript()
     private var preview: (text: String, response: InstantResponse)?
     /// `fill`: the act is a continuity fill held for one Return (a code field, deletion words): it types through FillSession
-    /// into `field`, the control its final bound (a later take's context has no binding of its own).
-    private var pendingConfirmation: (text: String, action: HostAction, fill: Bool, field: BoundField?)?
+    /// into `field`, the control its final bound (a later take's context has no binding of its own). `title`: the act's own
+    /// (a file command shows it at once when confirmed).
+    private var pendingConfirmation: (text: String, action: HostAction, fill: Bool, field: BoundField?, title: String)?
     /// The ⇧ chord or the menu started this take: its context chip opens on (an explicit choice).
     private var includeNextTake = false
     /// The ⇧ chord turned the chip on over an open composer; its release edge is not a gesture.
@@ -842,7 +894,7 @@ public enum SpokenPick: Equatable {
         case .choices(let choices)?: surface?.setComposerText(choices.masked ? FillCopy.secretMask : choices.take.utterance)
         case .confirm(let confirm)?:
             surface?.setComposerText(confirm.masked ? FillCopy.secretMask : confirm.text)
-            pendingConfirmation = (confirm.text, confirm.action, confirm.take.response?.isFill == true, confirm.field)
+            pendingConfirmation = (confirm.text, confirm.action, confirm.take.response?.isFill == true, confirm.field, confirm.title)
         case .check?, .secret?, nil: break
         }
     }
@@ -1027,10 +1079,17 @@ public enum SpokenPick: Equatable {
         case .choices(let choices):
             guard let answer = SpokenPick.match(spoken.utterance, rows: choices.rows.map(\.title)) else { return false }
             finalizing = false
+            // A file command's "which one?" (DESIGN6 §3): only a row named by its place or name runs; a bare "ja" picks
+            // none of several rows (the question stays), and "nein" drops the command instead of handing it to pi.
+            let fileCommand = choices.rows.contains { Self.isFileCommand($0.action) }
+            if fileCommand, answer == .yes, choices.rows.count > 1 { return true }
             noteDecision("pick", response: nil); writeTiming(otherwise: "pick")
             switch answer {
             case .yes: pick(choices.rows[0], from: choices)
             case .row(let index): pick(choices.rows[index], from: choices)
+            case .no where fileCommand:
+                journalUpdate(choices.take.takeId, .cancelled)
+                resetTake(); host?.finishInstant()
             case .no: askPiInstead(spoken.utterance)
             }
             return true
@@ -1115,7 +1174,10 @@ public enum SpokenPick: Equatable {
                     }
                     return
                 }
-                Task { await self.perform(pending.action, confirmed: true, origin: .instantAct) }
+                // A typed file command's one Return (BUILD6 #2): it says what runs at once, as an act does.
+                var acting: String?
+                if case .fileOp = pending.action { acting = FileOpCopy.working(pending.title); surface?.presentWorking(acting!) }
+                Task { await self.perform(pending.action, confirmed: true, origin: .instantAct, acting: acting) }
                 return
             }
             // DESIGN5 H0, typed: a bare "nein/no/undo" right after a fill undoes it, a bare "frag pi/ask pi" asks pi.
@@ -1293,7 +1355,7 @@ public enum SpokenPick: Equatable {
         switch mode {
         case .typed:
             request = InstantRequest(text: trimmed, phase: .final, seq: mine, takeId: take.takeId, contextId: contextId,
-                                     locale: input.locale, inputMode: input.mode, accept: fill ? [.fill] : nil, target: target)
+                                     locale: input.locale, inputMode: input.mode, accept: Self.typedAccepts + (fill ? [.fill] : []), target: target)
         case .voice(let spoken):
             let full = InstantRequest(text: trimmed, phase: .final, seq: mine, takeId: take.takeId, contextId: contextId,
                                       locale: input.locale, inputMode: "voice", hypotheses: spoken.final.wireHypotheses,
@@ -1303,7 +1365,7 @@ public enum SpokenPick: Equatable {
             if takeTiming?.takeId == take.takeId { takeTiming?.finals += 1 }
         case .checkResend(let check, _):
             request = InstantRequest(text: trimmed, phase: .final, seq: mine, takeId: check.take.takeId, contextId: contextId,
-                                     locale: input.locale, inputMode: "text", accept: fill ? [.fill] : nil, target: target)
+                                     locale: input.locale, inputMode: "text", accept: Self.typedAccepts + (fill ? [.fill] : []), target: target)
         }
         let response = try? await harness.instant(request)
         guard self.take?.takeId == take.takeId, mine == seq else { return false }
@@ -1350,7 +1412,7 @@ public enum SpokenPick: Equatable {
                 // Never performed implicitly: the next Return on the same text (or a spoken "yes") confirms it.
                 writeTiming(otherwise: "act")
                 let held = response.isFill ? host?.boundField(contextId: contextId) : nil
-                pendingConfirmation = (trimmed, action, response.isFill, held)
+                pendingConfirmation = (trimmed, action, response.isFill, held, title)
                 if let spoken {
                     let masked = secretKind(spoken.takeId) != nil
                     decision = .confirm(Confirm(take: spoken, text: trimmed, action: action, title: title, field: held, masked: masked))
@@ -1379,7 +1441,7 @@ public enum SpokenPick: Equatable {
             present(question: trimmed, card: card, answer: title, focusCard: false)
         case .list(let intent, let title, let card, _):
             writeTiming(otherwise: "list")
-            if let spoken, intent == "open_app" || intent == "open_item" || response.isDidYouMean,
+            if let spoken, intent == "open_app" || intent == "open_item" || response.isDidYouMean || response.runsFileOp,
                presentChoices(spoken, response: response, card: card, title: title) { return true }
             present(question: trimmed, card: card, answer: ([title] + card.itemTitles.prefix(8)).joined(separator: "\n"), focusCard: true)
         case .refuse(_, let message, let card):
@@ -1435,20 +1497,26 @@ public enum SpokenPick: Equatable {
     /// sound-alike, learned or other-engine act instead hides the bar and offers "Not this" (DESIGN4 §6.6 #6, §7).
     private func act(_ action: HostAction, title: String, response: InstantResponse, mode: Mode, spoken: VoiceTake?, utterance: String) async {
         let corrects = response.voice?.correctsTakeId
-        // A file or folder (a visible item, `open_item`) is never undoable: "Not this" would teach the dictionary.
-        let undoable = spoken != nil && corrects == nil && !Self.isFile(action) && response.voice?.via.map(Self.undoableVias.contains) == true
+        // A file or folder (a visible item, `open_item`) and a file command are never undoable: "Not this" would teach the
+        // dictionary.
+        let undoable = spoken != nil && corrects == nil && Self.teaches(action) && response.voice?.via.map(Self.undoableVias.contains) == true
         var acting: String?
         if !undoable, Self.opens(action) {
             acting = VoiceCopy.acting(title)
             surface?.presentActing(acting!)
+        } else if case .fileOp = action {
+            acting = FileOpCopy.working(title)
+            surface?.presentWorking(acting!)
         }
         let done = await perform(action, confirmed: false, origin: .instantAct, acting: acting, quiet: undoable)
         guard done else { writeTiming(otherwise: "act"); return }
         if let corrects {
-            correction(of: corrects, utterance: spoken?.correctingText ?? utterance, learns: !Self.isFile(action))
+            correction(of: corrects, utterance: spoken?.correctingText ?? utterance, learns: Self.teaches(action))
         } else if !undoable { supersedeRecentAct() }
         if undoable, let spoken { offerNotThis(spoken, response: response, action: action, title: title); return }
-        if case .checkResend(let check, let edited) = mode { checkAccepted(check, text: utterance, edited: edited) }
+        if case .checkResend(let check, let edited) = mode {
+            checkAccepted(check, text: utterance, edited: edited, learns: !Self.isFileCommand(action))
+        }
     }
     /// Acts that show "Opening …" at once: an app, a link, or a file or folder (`open_item`).
     static func opens(_ action: HostAction) -> Bool {
@@ -1469,6 +1537,16 @@ public enum SpokenPick: Equatable {
         default: false
         }
     }
+    /// A file command (BUILD6): a staged file operation, an app's quit or a Finder window's close.
+    static func isFileCommand(_ action: HostAction) -> Bool {
+        switch action {
+        case .fileOp, .quitApp, .closeFinderWindow: true
+        default: false
+        }
+    }
+    /// May a gesture on this action teach the dictionary ("Not this", a confirm, "No, I meant")? Never a file or folder,
+    /// and never a file command (nothing deletion-related is ever learned).
+    static func teaches(_ action: HostAction) -> Bool { !isFile(action) && !isFileCommand(action) }
     /// "No, I meant X" (X acted, at once, after one Return or as a picked row): the wrong take is undone, then the correction
     /// asks once to be remembered (DESIGN4 §6.6 #5). `utterance` resolves to X ("No, I meant Notion").
     /// `learns` false (the correction opened a file or folder): the wrong take is undone, nothing is learned.
@@ -1528,32 +1606,41 @@ public enum SpokenPick: Equatable {
 
     // MARK: Choices, confirm and check (DESIGN4 §6.6 #1–#4)
 
-    /// A spoken did-you-mean or app list above the bar. False when it has no app rows (then it is an ordinary list).
+    /// A spoken did-you-mean or app list above the bar. False when it has no app rows (then it is an ordinary list). A file
+    /// command's list ("Welches „test“ meinst du?", "meintest du …?") keeps Node's own question, and its rows run.
     private func presentChoices(_ spoken: VoiceTake, response: InstantResponse, card: CardSpec, title: String) -> Bool {
         showChoices(spoken, card: card, kind: response.isDidYouMean ? .didYouMean : .choices,
-                    title: response.isDidYouMean ? nil : title, heard: response.voice?.heard)
+                    title: response.isDidYouMean && !response.runsFileOp ? nil : title, heard: response.voice?.heard,
+                    verb: response.runsFileOp ? VoiceCopy.choose : VoiceCopy.open)
     }
-    private func showChoices(_ spoken: VoiceTake, card: CardSpec, kind: VoiceDecisionPresentation.Kind, title: String?, heard: String?) -> Bool {
+    private func showChoices(_ spoken: VoiceTake, card: CardSpec, kind: VoiceDecisionPresentation.Kind, title: String?, heard: String?,
+                             verb: String = VoiceCopy.open) -> Bool {
         let rows = card.choiceRows.map { ChoiceRow(action: $0.action, title: $0.title) }
         guard !rows.isEmpty else { return false }
         let masked = secretKind(spoken.takeId) != nil
         let presentation = VoiceDecisionPresentation(
             kind: kind, title: title ?? VoiceCopy.didYouMean(rows.map(\.title)),
             subtitle: masked ? FillCopy.secretSubtitle : VoiceCopy.heard(heard ?? spoken.utterance),
-            card: card.choiceCard(numbered: rows.count > 1), footer: VoiceCopy.choicesFooter(rows: rows.count))
+            card: card.choiceCard(numbered: rows.count > 1), footer: VoiceCopy.choicesFooter(rows: rows.count, verb: verb))
         preview = nil; pendingConfirmation = nil; shownPreview = nil
         decision = .choices(Choices(take: spoken, presentation: presentation, rows: rows, masked: masked))
         surface?.presentVoiceDecision(presentation, onChip: nil)
         return true
     }
     /// A row of a shown choice list (Return, a click, 1–3, or spoken): performs the row's own action (an app: LauncherPolicy
-    /// validates the bundle id; a file or folder: its host token, executables revealed instead), then learns an app pick.
-    /// A file row is never learned.
+    /// validates the bundle id; a file or folder: its host token, executables revealed instead; a file command: its staged
+    /// op), then learns an app pick. A file or file-command row is never learned.
     private func pick(_ row: ChoiceRow, from choices: Choices) {
         decision = nil
         surface?.presentVoiceDecision(nil, onChip: nil)
-        let acting = VoiceCopy.acting("Open " + row.title)
-        surface?.presentActing(acting)
+        let acting: String
+        if case .fileOp = row.action {
+            acting = FileOpCopy.working(row: row.title)
+            surface?.presentWorking(acting)
+        } else {
+            acting = VoiceCopy.acting("Open " + row.title)
+            surface?.presentActing(acting)
+        }
         Task { [weak self] in
             guard let self, await self.perform(row.action, confirmed: false, origin: .instantAct, acting: acting) else { return }
             self.supersedeRecentAct()
@@ -1586,13 +1673,14 @@ public enum SpokenPick: Equatable {
         }
         var acting: String?
         if Self.opens(confirm.action) { acting = VoiceCopy.acting(confirm.title); surface?.presentActing(acting!) }
+        else if case .fileOp = confirm.action { acting = FileOpCopy.working(confirm.title); surface?.presentWorking(acting!) }
         var bundleId: String?
         if case .openApp(let id) = confirm.action { bundleId = id }
         Task { [weak self] in
             guard let self, await self.perform(confirm.action, confirmed: true, origin: .instantAct, acting: acting) else { return }
             self.supersedeRecentAct()
-            // A file or folder behind one Return (a visible sound-alike): performed, never learned.
-            if Self.isFile(confirm.action) {
+            // A file or folder behind one Return (a visible sound-alike), or a file command's one Return: performed, never learned.
+            if !Self.teaches(confirm.action) {
                 if let corrects = confirm.take.corrects { self.correction(of: corrects, utterance: confirm.title, learns: false) }
                 self.journalUpdate(confirm.take.takeId, .confirmed)
                 return
@@ -1685,9 +1773,10 @@ public enum SpokenPick: Equatable {
         }
         finalTask = Task { [weak self] in await self?.resolve(text, input: input, mode: .checkResend(check, edited: edited)) }
     }
-    /// The check state's text acted: an edit asks once to be remembered (DESIGN4 §6.6 #4).
-    private func checkAccepted(_ check: Check, text: String, edited: Bool) {
-        guard edited else { journalUpdate(check.take.takeId, .confirmed); return }
+    /// The check state's text acted: an edit asks once to be remembered (DESIGN4 §6.6 #4); never one that ran a file command
+    /// (`learns` false: the edit is only journaled).
+    private func checkAccepted(_ check: Check, text: String, edited: Bool, learns: Bool = true) {
+        guard edited, learns else { journalUpdate(check.take.takeId, .confirmed, corrected: edited ? text : nil); return }
         learn(.edit(takeId: check.take.takeId, correctedText: text), commits: true) { [weak self] _ in
             self?.journalUpdate(check.take.takeId, .confirmed, corrected: text)
         }
@@ -2154,6 +2243,7 @@ public enum SpokenPick: Equatable {
     /// `quiet`: the caller presents the outcome itself. True when the action was performed.
     @discardableResult
     private func perform(_ action: HostAction, confirmed: Bool, origin: Origin, acting: String? = nil, quiet: Bool = false) async -> Bool {
+        if case .fileOp(let opId) = action { return runFileOp(opId, origin: origin, acting: acting) }
         let contextId = take?.contextId
         // A typed list previewed above the bar has no reader footer for a notice: confirm in the
         // bar ("✓ Copied path") and show failures there, as for an instant act.
@@ -2187,6 +2277,69 @@ public enum SpokenPick: Equatable {
         cancelPreview()
         surface?.presentConfirmation(status)
         startDwell()
+    }
+
+    /// One running file command: whether its outcome is in, and its watch for dcg's approval dialog.
+    private final class FileOpRun {
+        var settled = false
+        var waiting = false
+        var watch: CommandTimer?
+    }
+    /// A staged file command (DESIGN6 §6, BUILD6): Node runs the op it staged for this take after the user's dcg guard
+    /// reviewed it (POST /fileops/run; dcg's own dialog may wait for the user, ≤ 180 s). The take never waits for it: the
+    /// working line shows at once (`acting`, else "Working…"), the bar goes after the dwell like other acts so dcg's dialog
+    /// comes up on its own, "Waiting for your approval…" follows while that dialog is open, and the run's line arrives as a
+    /// note (done, denied, failed, expired, or the host's own copy when no answer came). Never retried, never learned, never
+    /// from an agent card. True when the run was sent.
+    private func runFileOp(_ opId: String, origin: Origin, acting: String?) -> Bool {
+        do {
+            guard origin != .agentCard else { throw DomainError("policy_blocked", "File commands come only from the command bar.") }
+            _ = try LauncherPolicy.plan(.fileOp(opId: opId))
+            guard fileOps != nil else { throw DomainError("unsupported", FileOpCopy.unavailable) }
+        } catch {
+            surface?.presentFailure(error)
+            return false
+        }
+        guard let fileOps else { return false }
+        cancelPreview()
+        if acting == nil { surface?.presentWorking(FileOpCopy.working) }
+        let run = FileOpRun(), started = clock()
+        watchApproval(run, after: timing.fileOpApprovalDelay)
+        startDwell()
+        Task { [weak self] in
+            let outcome: Result<FileOpRunResult, DomainError>
+            do { outcome = .success(try await fileOps.runFileOp(FileOpRunRequest(opId: opId))) }
+            catch { outcome = .failure(error as? DomainError ?? FileOpErrors.unknown) }
+            run.settled = true; run.watch?.cancel(); run.watch = nil
+            self?.fileOpFinished(outcome, started: started)
+        }
+        return true
+    }
+    /// While the run is pending: once dcg's process (its dialog) is up under the harness, the note says it waits for you.
+    private func watchApproval(_ run: FileOpRun, after seconds: TimeInterval) {
+        run.watch = scheduler.after(seconds) { [weak self] in
+            guard let self, !run.settled else { return }
+            if !run.waiting, self.guardPending() {
+                run.waiting = true
+                self.surface?.presentVoiceToast(VoiceToast(kind: .waiting, text: FileOpCopy.waiting, dwell: FileOpLimits.runTimeout)) { _ in }
+            }
+            self.watchApproval(run, after: ApprovalWait.poll)
+        }
+    }
+    /// The run's outcome as a note (it replaces "Waiting for your approval…"). The line is Node's user copy and is never
+    /// logged; the perf line carries the outcome and the duration only.
+    private func fileOpFinished(_ outcome: Result<FileOpRunResult, DomainError>, started: TimeInterval) {
+        let toast: VoiceToast, label: String
+        switch outcome {
+        case .success(let result):
+            toast = VoiceToast(kind: result.outcome == .done ? .done : .notDone, text: result.line, dwell: timing.fileOpToast)
+            label = result.outcome.rawValue
+        case .failure(let error):
+            toast = VoiceToast(kind: .notDone, text: error.message, dwell: timing.fileOpToast)
+            label = error.code
+        }
+        if perf { print("[perf] fileop outcome=\(label) ms=\(Int((clock() - started) * 1000))"); fflush(stdout) }
+        surface?.presentVoiceToast(toast) { _ in }
     }
     private func startDwell() {
         confirmationTimer?.cancel()
@@ -2274,6 +2427,8 @@ public enum SpokenPick: Equatable {
     func presentInstant(_ result: InstantResult)
     /// An act in progress ("Opening Pages…"): the small non-key capsule, shown at once.
     func presentActing(_ text: String)
+    /// A file command in progress ("Delete test…"): the same non-key capsule with a working glyph (nothing opens).
+    func presentWorking(_ text: String)
     func presentConfirmation(_ text: String)
     func presentFailure(_ error: Error)
     /// A short outcome under a card that stays visible ("Copied path", "That file is no longer there").
@@ -2288,6 +2443,11 @@ public enum SpokenPick: Equatable {
     /// "Speak to type into Safari · Search" under the transcript while the hotkey is held (DESIGN5 §3.7); nil removes it.
     /// Shown only while listening.
     func setFillCaption(_ caption: FillCaption?)
+}
+
+public extension CommandSurface {
+    /// Surfaces without a working glyph show the acting capsule.
+    func presentWorking(_ text: String) { presentActing(text) }
 }
 
 extension CardSpec {
@@ -2324,8 +2484,8 @@ extension CardSpec {
         visit(root)
         return rows
     }
-    /// Item rows whose primary action opens an app or a file or folder (host token), in display order: the rows of a
-    /// did-you-mean or choice list (`open_app`, `open_item`).
+    /// Item rows whose primary action opens an app or a file or folder (host token), or runs a staged file command, in
+    /// display order: the rows of a did-you-mean or choice list (`open_app`, `open_item`, `file_op`).
     public var choiceRows: [(key: String, action: HostAction, title: String)] {
         var rows: [(key: String, action: HostAction, title: String)] = []
         var seen: [HostAction] = []
@@ -2333,7 +2493,7 @@ extension CardSpec {
             guard let element = elements[key] else { return }
             if case .item(let title, _, _, _) = element.props, let primary = element.on["primary"], !seen.contains(primary) {
                 switch primary {
-                case .openApp, .openFile: seen.append(primary); rows.append((key, primary, title))
+                case .openApp, .openFile, .fileOp: seen.append(primary); rows.append((key, primary, title))
                 default: break
                 }
             }

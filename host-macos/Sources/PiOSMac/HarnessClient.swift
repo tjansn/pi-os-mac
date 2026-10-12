@@ -155,6 +155,9 @@ private final class OwnedChild {
     /// SSE only (GET /invocations/{id}/events): long-lived, so it never shares the 10 s resource
     /// timeout of the request session. Pings arrive every 15 s; silence for 45 s fails over to polling.
     private let streamSession: URLSession
+    /// POST /fileops/run only: the run waits while dcg's own approval dialog is open, so it gets 180 s, never the
+    /// request session's 10 s.
+    private let fileOpSession: URLSession
     private var child: OwnedChild?
     private var starting: Task<Void, Error>?
     private var retention: Task<Void, Never>?
@@ -181,6 +184,10 @@ private final class OwnedChild {
         stream.timeoutIntervalForRequest = 45; stream.timeoutIntervalForResource = 7_200
         stream.connectionProxyDictionary = [:]; stream.httpMaximumConnectionsPerHost = 2
         streamSession = URLSession(configuration: stream)
+        let fileOps = URLSessionConfiguration.ephemeral
+        fileOps.timeoutIntervalForRequest = FileOpLimits.runTimeout; fileOps.timeoutIntervalForResource = FileOpLimits.runTimeout
+        fileOps.connectionProxyDictionary = [:]
+        fileOpSession = URLSession(configuration: fileOps)
     }
     public func warm() async throws {
         retention?.cancel(); retention = nil
@@ -588,6 +595,33 @@ private final class OwnedChild {
     /// write's `revision` changes, never on key-down.
     public func recognizerTerms(max: Int = DictionaryLimits.recognizerTerms) async throws -> RecognizerTermsResponse {
         try JSONDecoder().decode(RecognizerTermsResponse.self, from: await request("GET", DictionaryRoutes.recognizerTerms(max: max)))
+    }
+    // MARK: File commands (BUILD6): token-authed like /instant; the op was staged by the /instant answer just shown.
+    /// POST /fileops/run: Node runs the op it staged for the take after the user's dcg guard reviewed it, and answers one
+    /// line of copy. Never warms Node and is never retried: a 4xx answer or a refused connection means nothing ran
+    /// (`file_op_not_run`); no answer within 180 s, a server error or an unreadable answer may have run (`file_op_unknown`).
+    public func runFileOp(_ run: FileOpRunRequest) async throws -> FileOpRunResult {
+        var req = URLRequest(url: URL(string: "http://127.0.0.1:\(config.nodePort)" + FileOpRoutes.run)!)
+        req.httpMethod = "POST"
+        req.timeoutInterval = FileOpLimits.runTimeout
+        req.setValue(config.token, forHTTPHeaderField: "X-Harness-Token")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONEncoder().encode(run)
+        let answer: (Data, URLResponse)
+        do { answer = try await fileOpSession.data(for: req) }
+        // Node was not there to take the request: nothing ran. Anything later (a timeout, a dropped connection) may have run.
+        catch let error as URLError where [.cannotConnectToHost, .cannotFindHost].contains(error.code) { throw FileOpErrors.notRun }
+        catch { throw FileOpErrors.unknown }
+        return try Self.fileOpResult(data: answer.0, status: (answer.1 as? HTTPURLResponse)?.statusCode ?? 0)
+    }
+    /// The run's answer: a 2xx with a valid body is the result; a 4xx means Node refused the request before anything ran;
+    /// anything else may have run.
+    nonisolated static func fileOpResult(data: Data, status: Int) throws -> FileOpRunResult {
+        if (400..<500).contains(status) { throw FileOpErrors.notRun }
+        guard (200..<300).contains(status), let result = try? JSONDecoder().decode(FileOpRunResult.self, from: data) else {
+            throw FileOpErrors.unknown
+        }
+        return result
     }
     private func request(_ method: String, _ path: String, payload: [String: Any]? = nil, authenticated: Bool = true) async throws -> Data {
         try await request(method, path, body: payload.map { try JSONSerialization.data(withJSONObject: $0) }, authenticated: authenticated)

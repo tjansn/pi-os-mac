@@ -3,6 +3,53 @@
 2026-09-15. Target machine: Apple Silicon, macOS 26.5.2, Xcode 26.6 / Swift 6.3.3,
 Node 24.15.0. Deployment target is macOS 14; that OS has not been exercised here.
 
+## 2026-10-12 file commands on what you see — Mac side, built offline, NOT installed
+
+Branch `feat/file-commands-host` (DESIGN6 with BUILD6; the Node side — grammar, resolver, staged operations under dcg,
+`POST /fileops/run`, shared fixtures, protocol.md — is its own branch). Tom: "lösche test" on the desktop deletes the
+desktop's `test` through his dcg guard; also create, copy, move, rename, close. The host never sees a path or a
+command for these: it performs Node's acts.
+
+- **Contracts** (`PiOSCore/CardContracts.swift`, `InstantContracts.swift`, `LauncherPolicy.swift`, `FileOpContracts.swift`):
+  HostAction `fileOp {opId}` (`^[A-Za-z0-9_-]{16,64}$`), `quitApp {bundleId}` (the bundle-id rule) and
+  `closeFinderWindow {contextId}` (the context-id rule); strict decode, unknown keys dropped, instant lane only (not in
+  `CardSpec.modelActionTypes` or `LauncherPolicy.agentOpenTypes`; `launcher.open` refuses them as policy). VoiceVia
+  `file` (no "Not this", nothing learned). `VisibleSource.path` (optional; absolute, one line, ≤ 1024 UTF-16 units;
+  checked again before the route replies). `FileOpRunRequest` / `FileOpRunResult` (`{ok: true, outcome: done | denied |
+  failed | expired, line ≤ 300}`).
+- **The visible folder** (`VisibleItems.swift`): every capture's source names its folder — the desktop's (the window's
+  shell folder, else the user's Desktop URL; lexical only) or the Finder window's AXDocument folder the capture already
+  reads. A desktop capture still running answers its folder too. No new read, no FileManager enumeration, no prompt.
+- **fileOp** (`CommandController.swift`, `HarnessClient.swift`): what runs shows at once in the non-key capsule (the
+  act's title plus "…", a picked row "Working on “test”…", hourglass glyph); `POST /fileops/run {opId}` with the session
+  token on its own 180 s session (never warms Node, never retried); the bar goes after 0.4 s so dcg's dialog comes up
+  on its own; after 2 s, while a `dcg` process runs under the harness, the note "Waiting for your approval…"; then a
+  note with Node's line (done ✓; denied, failed, expired !). No answer, a 5xx or an unreadable answer: "No answer from
+  the file command — check the folder before trying again."; a 4xx: "The file command didn’t run." Never learned,
+  never "Not this"; agent cards and LauncherService never run one.
+- **One Return** for `confirm: true` (a file's delete): the same text's next Return, or a spoken "ja" on the next hold.
+  Typed finals and the check card's resend now declare `accept: ["confirm"]` (with `fill` when that is declared).
+- **"Which one?" lists:** spoken → the choice decision with Node's own question, numbered rows and *1–2 or ↩ Choose ·
+  ⌥↩ Ask pi instead*; a row runs by Return, click, 1–3, ordinal or name; a bare "ja" picks none of several rows; "nein"
+  drops the command (never handed to pi). A typing preview never shows such a list as actionable (hint only); a typed
+  final shows it in the reader, where a click runs its row.
+- **quitApp** (`LauncherService.swift`): pi-os itself, Finder and macOS's own UI processes (loginwindow, Dock,
+  SystemUIServer, Control Center, Notification Center, WindowManager, Spotlight, the wallpaper agent) are refused in
+  `LauncherPolicy.plan`; otherwise every regular running app with exactly that bundle id gets `terminate()` (never a
+  force quit): "Asked Safari to quit", "Safari isn't running", or `quit_failed`.
+- **closeFinderWindow** (`FinderWindowClose.swift`, `Application.swift`): only the request's own context, with computer
+  control on; the pinned window still on screen with the same id and owner, still Finder, the exact AX window, its
+  AXDocument the folder captured at key-down, at most one tab → AXPress on its AXCloseButton, gone within 0.6 s.
+  Anything else closes nothing and says so.
+- **Verified offline:** `swift build` and `swift build --build-tests`, 0 warnings. `swift test` not run (the dcg hook
+  blocks test runners for agents). Until the Node branch is merged these fail by design: the shared-fixture tests
+  (`act-file-op-delete-folder.json`, `act-file-op-delete-file-confirm.json`, `act-close-quit-app.json`,
+  `act-close-finder-window.json`, `list-file-op-which.json`, `answer-file-op-not-found.json`,
+  `launcher/visible-items.with-path.json`, five visible-items results) and `testVisibleVocabulariesMatchNode`
+  (VOICE_VIAS must end with "file").
+- **Not verified live:** dcg's dialog over the bar and the waiting note; `terminate()` without an Automation prompt;
+  AXCloseButton on Finder windows (tabs, full screen, other Spaces); the desktop folder for a non-default Desktop.
+
 ## 2026-10-08 continuity — Mac side; stage A installed (main e9ab5ca), the rest built and tested offline, NOT installed
 
 Branch `feat/continuity`. Tom: after "open Safari", the next command acts in that Safari window, and the next words go

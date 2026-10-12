@@ -442,7 +442,7 @@ import XCTest
         controller.composerSubmitted("tippe Hallo Welt", intent: .plain)
         await eventually("typed") { self.field.typed == ["Hallo Welt"] }
         let final = try XCTUnwrap(finalRequests.last)
-        XCTAssertEqual(final.inputMode, "text"); XCTAssertEqual(final.accept, [.fill]); XCTAssertEqual(final.target, host.target)
+        XCTAssertEqual(final.inputMode, "text"); XCTAssertEqual(final.accept, [.confirm, .fill]); XCTAssertEqual(final.target, host.target)
         XCTAssertNil(final.hypotheses)
     }
 

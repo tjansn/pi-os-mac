@@ -1,5 +1,20 @@
 # Native UI polish
 
+## 2026-10-12 file commands in the bar (offline only)
+
+DESIGN6 §6 with BUILD6. No new component: the acting capsule and the voice notes carry the file commands. Node's own
+copy (titles, the "which one?" question, outcome lines) is localized there and shown as it comes; the host's few
+words stay English like the rest of the bar.
+
+| Severity | Location | Before | After | Why |
+| --- | --- | --- | --- | --- |
+| HIGH | `PromptPanel.swift` (working) | — | *Delete test…* (or *Working on “test.txt”…* for a picked row) at once in the non-key capsule with an hourglass glyph; gone after 0.4 s | dcg's own approval dialog comes up over nothing of pi-os's and takes keys |
+| HIGH | `ShelfToastView.swift` (file notes) | — | *Waiting for your approval…* (hourglass) while dcg's dialog is open; then Node's line, ✓ for done (*„test“ gelöscht.*), ! for denied, failed or expired (*dcg hat das Löschen abgelehnt: …*); 5 s | The outcome is honest and reaches the user after the bar is gone |
+| MEDIUM | `PromptPanel.swift` (which one?) | — | Node's question as the title (*Welches „test“ meinst du?*), numbered rows, *1–2 or ↩ Choose · ⌥↩ Ask pi instead* | ↩ chooses the row it runs; "Open" would be wrong |
+| LOW | `PromptPanel.swift` (confirm) | *„test.txt“ endgültig löschen?? ↩* | A title that already asks keeps its own question mark: *„test.txt“ endgültig löschen? ↩* | Node's confirm titles are questions |
+
+Not verified: any live window; the note's place relative to dcg's dialog; VoiceOver with the new notes.
+
 ## 2026-10-07 Settings → Voice languages and Recognition, Settings → Dictionary, Recent takes (offscreen-verified only)
 
 DESIGN4 §4.2, §4.4, §6.7, §6.8, D-T1, D-T7. The Settings window keeps its 560 × 708 size, its tabs and its manual
