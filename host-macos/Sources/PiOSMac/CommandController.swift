@@ -393,8 +393,10 @@ public enum SpokenPick: Equatable {
     /// A bare "no" (EN/DE): the spoken "Not this" within a few seconds of an act.
     public static func isNo(_ text: String) -> Bool { noWords.contains(core(text)) }
 
-    /// `rows`: the decision's row titles in order (empty for a confirm).
-    public static func match(_ text: String, rows: [String]) -> SpokenPick? {
+    /// `rows`: the decision's row titles in order (empty for a confirm). `unique`: a name picks a row only when it names
+    /// no other row, by title or key (a file command's "which one?" lists items that share the name said, so repeating it
+    /// picks none; numbers and "the last one" still do).
+    public static func match(_ text: String, rows: [String], unique: Bool = false) -> SpokenPick? {
         let core = core(text)
         guard !core.isEmpty else { return nil }
         if yesWords.contains(core) { return .yes }
@@ -404,15 +406,32 @@ public enum SpokenPick: Equatable {
         }
         if last.contains(core), !rows.isEmpty { return .row(rows.count - 1) }
         guard !rows.isEmpty else { return nil }
-        var name = core
-        for verb in openVerbs where name.hasPrefix(verb) { name = String(name.dropFirst(verb.count)) }
-        for suffix in openSuffixes where name.hasSuffix(suffix) { name = String(name.dropLast(suffix.count)) }
+        if unique {
+            let named = namedRows(core: core, rows: rows)
+            return named.count == 1 ? .row(named[0]) : nil
+        }
+        let name = rowName(core)
         let folded = rows.map { DictionaryPhrase.fold($0) }
         if let index = folded.firstIndex(of: name) { return .row(index) }
         // A file or folder row by its name as spoken: "Rad Fotos" is "Radfotos", "Rad-Tour 2026" is "Rad-Tour 2026.pdf".
         let spoken = name.replacingOccurrences(of: " ", with: "")
         guard !spoken.isEmpty else { return nil }
         return rows.map(key).firstIndex(of: spoken).map { .row($0) }
+    }
+    /// The rows a spoken name names, by folded title or by key ("test" names both "test" and "test.txt").
+    public static func namedRows(_ text: String, rows: [String]) -> [Int] { namedRows(core: core(text), rows: rows) }
+    private static func namedRows(core: String, rows: [String]) -> [Int] {
+        let name = rowName(core)
+        let spoken = name.replacingOccurrences(of: " ", with: "")
+        guard !name.isEmpty else { return [] }
+        return rows.indices.filter { DictionaryPhrase.fold(rows[$0]) == name || (!spoken.isEmpty && key(rows[$0]) == spoken) }
+    }
+    /// The words without an open verb or suffix ("open Radfotos" → "radfotos").
+    private static func rowName(_ core: String) -> String {
+        var name = core
+        for verb in openVerbs where name.hasPrefix(verb) { name = String(name.dropFirst(verb.count)) }
+        for suffix in openSuffixes where name.hasSuffix(suffix) { name = String(name.dropLast(suffix.count)) }
+        return name
     }
     /// A row title as a matching key: without a file extension, folded, letters and digits only.
     static func key(_ title: String) -> String {
@@ -1077,11 +1096,17 @@ public enum SpokenPick: Equatable {
         guard let decision else { return false }
         switch decision {
         case .choices(let choices):
-            guard let answer = SpokenPick.match(spoken.utterance, rows: choices.rows.map(\.title)) else { return false }
-            finalizing = false
-            // A file command's "which one?" (DESIGN6 §3): only a row named by its place or name runs; a bare "ja" picks
-            // none of several rows (the question stays), and "nein" drops the command instead of handing it to pi.
+            // A file command's "which one?" (DESIGN6 §3): only a row named by its number or by a name no other row has
+            // runs; repeating the name the rows share or a bare "ja" picks none of several rows (the question stays), and
+            // "nein" drops the command instead of handing it to pi.
             let fileCommand = choices.rows.contains { Self.isFileCommand($0.action) }
+            let titles = choices.rows.map(\.title)
+            guard let answer = SpokenPick.match(spoken.utterance, rows: titles, unique: fileCommand) else {
+                guard fileCommand, SpokenPick.namedRows(spoken.utterance, rows: titles).count > 1 else { return false }
+                finalizing = false
+                return true
+            }
+            finalizing = false
             if fileCommand, answer == .yes, choices.rows.count > 1 { return true }
             noteDecision("pick", response: nil); writeTiming(otherwise: "pick")
             switch answer {
@@ -1430,7 +1455,18 @@ public enum SpokenPick: Equatable {
                 return true
             }
             await act(action, title: title, response: response, mode: mode, spoken: spoken, utterance: trimmed)
-        case .answer(_, let title, _, let card):
+        case .answer(let intent, let title, let subtitle, let card):
+            // A file command's answer ("nothing called “tset” here", "already exists", "pi-os won't touch …") is the whole
+            // answer, shown with what was heard (the question line): never handed to pi, whose bash could guess at a
+            // misheard name. A credential or code field's take shows "•••" instead of the words.
+            if Self.fileCommandIntents.contains(intent) {
+                if case .checkResend(let check, let edited) = mode { journalUpdate(check.take.takeId, .confirmed, corrected: edited ? trimmed : nil) }
+                writeTiming(otherwise: "answer")
+                let masked = spoken.map { secretKind($0.takeId) != nil } ?? false
+                present(question: masked ? FillCopy.secretMask : trimmed, card: card,
+                        answer: ([title] + (subtitle.map { [$0] } ?? [])).joined(separator: "\n"), focusCard: false)
+                return true
+            }
             // As /invoke does: only a real result replaces the agent. A Notice-only answer (rates
             // still downloading, an unknown currency) is a preview hint, not an answer to this request.
             guard card.elements.values.contains(where: { $0.type == .resultCard }) else {
@@ -1537,6 +1573,8 @@ public enum SpokenPick: Equatable {
         default: false
         }
     }
+    /// Node's file-command intents: an answer of these is shown as it is, never handed to pi.
+    static let fileCommandIntents: Set<String> = ["file_op", "close"]
     /// A file command (BUILD6): a staged file operation, an app's quit or a Finder window's close.
     static func isFileCommand(_ action: HostAction) -> Bool {
         switch action {

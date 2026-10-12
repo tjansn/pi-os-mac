@@ -319,9 +319,24 @@ import XCTest
         XCTAssertEqual(panel.composerFrame.height, before, "the bar returns to one row")
         XCTAssertEqual(panel.placeholderText, "Ask anything…")
     }
-    private func key(_ code: UInt16, _ characters: String) -> NSEvent {
+    private func key(_ code: UInt16, _ characters: String, repeated: Bool = false) -> NSEvent {
         NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
-                         characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code)!
+                         characters: characters, charactersIgnoringModifiers: characters, isARepeat: repeated, keyCode: code)!
+    }
+
+    /// Holding Return after a typed command submits it once: the auto-repeats never submit again (a held delete's
+    /// confirm is a fresh Return) and never type a newline. Local events handed to the editor, never posted.
+    func testAHeldReturnSubmitsOnce() throws {
+        let panel = panel(); defer { panel.hide() }
+        panel.setDraft("lösche notes.txt")
+        var submitted: [CommandController.SubmitIntent] = []
+        panel.onCommand = { _, intent in submitted.append(intent) }
+        let editor = try XCTUnwrap(allViews(panel.snapshotRoot).compactMap { $0 as? NSTextView }.first { $0.string == "lösche notes.txt" })
+        editor.keyDown(with: key(36, "\r"))
+        editor.keyDown(with: key(36, "\r", repeated: true))
+        editor.keyDown(with: key(76, "\u{3}", repeated: true))
+        XCTAssertEqual(submitted, [.plain])
+        XCTAssertEqual(panel.composerText, "lösche notes.txt")
     }
 
     func testTheReaderNamesTheAppOnlyWhenTheWindowWasUsedAndShowsPointing() {

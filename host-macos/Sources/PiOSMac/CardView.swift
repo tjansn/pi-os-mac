@@ -349,8 +349,10 @@ public enum CardCommand: Equatable { case primary, secondary, tertiary, next, pr
     }
     @objc private func keyWindowChanged() { refreshSelection() }
     /// Arrows move the selection, Return = primary, ⌘Return = secondary, Escape closes like the
-    /// composer does; anything else goes up the chain.
+    /// composer does; anything else goes up the chain. A held Return's auto-repeats are swallowed: a typed list
+    /// takes focus right after the Return that asked for it, and only a fresh press runs its row.
     public override func keyDown(with event: NSEvent) {
+        if ComposerKeyPolicy.swallowsRepeat(keyCode: event.keyCode, repeated: event.isARepeat) { return }
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
         let handled: Bool
         switch (event.keyCode, flags) {
@@ -368,7 +370,7 @@ public enum CardCommand: Equatable { case primary, secondary, tertiary, next, pr
     public override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard window?.firstResponder === self else { return super.performKeyEquivalent(with: event) }
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        if flags == [.command], [36, 76].contains(event.keyCode) { return perform(.secondary) }
+        if flags == [.command], [36, 76].contains(event.keyCode) { return event.isARepeat || perform(.secondary) }
         if flags == [.command, .shift], event.charactersIgnoringModifiers?.lowercased() == "c", perform(.tertiary) { return true }
         return super.performKeyEquivalent(with: event)
     }

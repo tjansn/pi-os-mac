@@ -769,6 +769,13 @@ import XCTest
         XCTAssertEqual(ComposerKeyPolicy.intent(keyCode: 76, modifiers: .command, composing: false), .secondary)
         XCTAssertNil(ComposerKeyPolicy.intent(keyCode: 36, modifiers: .shift, composing: false))
         XCTAssertNil(ComposerKeyPolicy.intent(keyCode: 36, modifiers: [], composing: true))
+        // A held Return (or Enter) auto-repeats: swallowed, so it never confirms the act its first press asked about.
+        XCTAssertTrue(ComposerKeyPolicy.swallowsRepeat(keyCode: 36, repeated: true))
+        XCTAssertTrue(ComposerKeyPolicy.swallowsRepeat(keyCode: 76, repeated: true))
+        XCTAssertFalse(ComposerKeyPolicy.swallowsRepeat(keyCode: 36, repeated: false))
+        XCTAssertFalse(ComposerKeyPolicy.swallowsRepeat(keyCode: 51, repeated: true), "a held ⌫ still deletes")
+        XCTAssertEqual(ComposerKeyPolicy.pickedRow(characters: "2", modifiers: [], composing: false), 1)
+        XCTAssertNil(ComposerKeyPolicy.pickedRow(characters: "2", modifiers: [], composing: false, repeated: true), "a held digit never picks")
     }
 
     func testVoiceKeepsNodeWarmButTheKnobWins() throws {

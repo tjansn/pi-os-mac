@@ -785,6 +785,29 @@ final class ContractFixturesTests: XCTestCase {
         }
     }
 
+    /// `fileops/*.json` (POST /fileops/run, Node's `parseFileOpRunRequest` / `parseFileOpRunResponse`): the request and
+    /// every 200 answer decode and re-encode to exactly their wire; the 400 body is never a result.
+    func testFileOpRunFixtures() throws {
+        let files = try jsonFiles("fileops")
+        XCTAssertEqual(files.map(\.lastPathComponent), ["run-request.json", "run-response-denied.json", "run-response-done.json",
+                                                         "run-response-expired.json", "run-response-failed.json", "run-response-invalid.json"])
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        func wire(_ file: URL) throws -> NSDictionary? { try JSONSerialization.jsonObject(with: data(file)) as? NSDictionary }
+        let request = files[0]
+        let run = try JSONDecoder().decode(FileOpRunRequest.self, from: data(request))
+        XCTAssertTrue(HostAction.isOpId(run.opId))
+        XCTAssertEqual(try JSONSerialization.jsonObject(with: encoder.encode(run)) as? NSDictionary, try wire(request))
+        var outcomes: [FileOpOutcome] = []
+        for file in files.dropFirst() where file.lastPathComponent != "run-response-invalid.json" {
+            let result = try JSONDecoder().decode(FileOpRunResult.self, from: data(file))
+            outcomes.append(result.outcome)
+            XCTAssertEqual(try JSONSerialization.jsonObject(with: encoder.encode(result)) as? NSDictionary, try wire(file), file.lastPathComponent)
+        }
+        XCTAssertEqual(Set(outcomes), Set(FileOpOutcome.allCases), "one fixture per outcome")
+        XCTAssertThrowsError(try JSONDecoder().decode(FileOpRunResult.self, from: data(fixtures.appendingPathComponent("fileops/run-response-invalid.json"))))
+    }
+
     /// `launcher/visible-items.with-path.json`: each source names its folder; the result re-encodes to exactly its wire.
     func testVisibleItemsFixtureWithPath() throws {
         let file = fixtures.appendingPathComponent("launcher/visible-items.with-path.json")

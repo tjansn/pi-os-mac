@@ -52,11 +52,17 @@ enum ComposerKeyPolicy {
                                   repeated: Bool = false) -> Bool {
         keyCode == 51 && modifiers.intersection([.command, .shift, .option, .control]).isEmpty && !composing && empty && !repeated
     }
-    /// 1, 2 or 3 (main row or keypad) without modifiers or marked text: the row a voice choice list picks (0-based).
-    static func pickedRow(characters: String?, modifiers: NSEvent.ModifierFlags, composing: Bool) -> Int? {
-        guard !composing, modifiers.intersection([.command, .option, .control]).isEmpty,
+    /// 1, 2 or 3 (main row or keypad) without modifiers or marked text: the row a voice choice list picks (0-based). Never
+    /// a key repeat: a held digit types, it never picks.
+    static func pickedRow(characters: String?, modifiers: NSEvent.ModifierFlags, composing: Bool, repeated: Bool = false) -> Int? {
+        guard !composing, !repeated, modifiers.intersection([.command, .option, .control]).isEmpty,
               let characters, characters.count == 1, let digit = Int(characters), (1...3).contains(digit) else { return nil }
         return digit - 1
+    }
+    /// Return or Enter auto-repeating while held: swallowed. Only a fresh press submits, confirms a held act or runs a
+    /// list's row — holding Return after "lösche notes.txt" must never confirm the delete it just asked about.
+    static func swallowsRepeat(keyCode: UInt16, repeated: Bool) -> Bool {
+        repeated && [UInt16(36), 76].contains(keyCode)
     }
 }
 private final class PromptEditor: NSTextView {
@@ -72,10 +78,12 @@ private final class PromptEditor: NSTextView {
     /// 1–3 while a voice choice list shows: pick that row. False = not handled (the digit is typed).
     var pickRow: ((Int) -> Bool)?
     override func keyDown(with event: NSEvent) {
+        if ComposerKeyPolicy.swallowsRepeat(keyCode: event.keyCode, repeated: event.isARepeat) { return }
         if let intent = ComposerKeyPolicy.intent(keyCode: event.keyCode, modifiers: event.modifierFlags, composing: hasMarkedText()) {
             submit?(intent); return
         }
-        if let row = ComposerKeyPolicy.pickedRow(characters: event.characters, modifiers: event.modifierFlags, composing: hasMarkedText()),
+        if let row = ComposerKeyPolicy.pickedRow(characters: event.characters, modifiers: event.modifierFlags, composing: hasMarkedText(),
+                                                 repeated: event.isARepeat),
            pickRow?(row) == true { return }
         if ComposerKeyPolicy.togglesContext(keyCode: event.keyCode, modifiers: event.modifierFlags, composing: hasMarkedText(),
                                             listPreview: listPreview?() == true), toggleContext?() == true { return }

@@ -188,6 +188,26 @@ final class CardViewTests: XCTestCase {
         }
     }
 
+    /// A typed list takes focus right after the Return that asked for it: a held Return's auto-repeats never run its row.
+    @MainActor func testAHeldReturnsAutoRepeatsNeverRunARow() throws {
+        _ = NSApplication.shared
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 436, height: 300), styleMask: [.borderless], backing: .buffered, defer: true)
+        let view = CardView(style: CardStyle())
+        window.contentView = view
+        view.update(spec: try card("file-list"), complete: true)
+        let fired = recording(view)
+        XCTAssertTrue(window.makeFirstResponder(view))
+        func repeated(_ code: UInt16, _ flags: NSEvent.ModifierFlags = []) -> NSEvent {
+            NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0, context: nil,
+                             characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: true, keyCode: code)!
+        }
+        view.keyDown(with: repeated(36)); view.keyDown(with: repeated(76))
+        XCTAssertTrue(view.performKeyEquivalent(with: repeated(36, .command)), "swallowed, not passed on")
+        XCTAssertEqual(fired().count, 0, "no auto-repeat runs, reveals or opens anything")
+        view.keyDown(with: key(36, "\r"))
+        XCTAssertEqual(fired().map(\.event), ["primary"], "a fresh press does")
+    }
+
     @MainActor func testKeyboardSelectionAndShortcutsMapToItemEvents() throws {
         _ = NSApplication.shared
         let spec = try card("file-list")

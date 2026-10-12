@@ -224,6 +224,59 @@ import XCTest
         XCTAssertTrue(dictionary.learned.isEmpty)
     }
 
+    func testRepeatingTheNameTheRowsShareKeepsTheQuestionAndOnlyANumberOrAnOwnNamePicks() async throws {
+        // "test" names both rows ("test" and "test.txt" share the name): no pick, the question stays.
+        finals(Self.which)
+        await say("lösche test")
+        await say("test")
+        await settle()
+        XCTAssertTrue(fileOps.runs.isEmpty, "“test” names both rows: never row 0 by default")
+        XCTAssertEqual(controller.decisionKind, .choices, "the question stays")
+        scheduler.advance(0.4); controller.interrupt(); surface.showsComposer = false
+        // The same name twice (the Desktop's and a Finder window's notes.txt): the name picks nothing, a number does.
+        let notes = #"{"seq":0,"elapsedMs":1,"source":"grammar","decision":"list","intent":"file_op","title":"Welches „notes“ meinst du?","card":{"format":"pi-os-ui/1","root":"root","elements":{"root":{"type":"Answer","props":{"summary":"Welches „notes“ meinst du?"},"children":["n1"]},"n1":{"type":"ItemList","props":{},"children":["n2","n3"]},"#
+            + Self.row("n2", "notes.txt", Self.folderOp) + "," + Self.row("n3", "notes.txt", Self.fileOp) + #"}},"voice":{"heard":"notes","source":"apple-dt/de-DE","via":"file"}}"#
+        finals(notes)
+        await say("lösche notes")
+        for repeated in ["notes", "notes.txt", "lösche notes"] {
+            await say(repeated)
+            await settle()
+            XCTAssertTrue(fileOps.runs.isEmpty, repeated)
+        }
+        await say("eins")
+        await eventually("picked by number") { self.fileOps.runs.count == 1 }
+        XCTAssertEqual(fileOps.runs, [FileOpRunRequest(opId: Self.folderOp)])
+        // Pure: an open list keeps today's first match; a file command's needs exactly one row.
+        let rows = ["test", "test.txt"]
+        XCTAssertEqual(SpokenPick.match("test", rows: rows), .row(0))
+        XCTAssertNil(SpokenPick.match("test", rows: rows, unique: true))
+        XCTAssertEqual(SpokenPick.namedRows("test", rows: rows), [0, 1])
+        XCTAssertEqual(SpokenPick.match("test.txt", rows: rows, unique: true), .row(1))
+        XCTAssertEqual(SpokenPick.match("die zweite", rows: rows, unique: true), .row(1))
+        XCTAssertEqual(SpokenPick.match("ja", rows: rows, unique: true), .yes)
+    }
+
+    // MARK: Node's answers
+
+    func testANodeFileAnswerIsShownWithWhatWasHeardAndNeverHandedToPi() async throws {
+        let notFound = try String(contentsOf: ScriptedHarness.fixtures.appendingPathComponent("answer-file-op-not-found.json"), encoding: .utf8)
+        finals(notFound)
+        await say("Lösche tset")
+        await eventually("shown") { self.surface.instant.count == 1 }
+        let shown = try XCTUnwrap(surface.instant.first)
+        XCTAssertTrue(shown.question.contains("tset"), "the heard words are the question: a mishearing shows")
+        XCTAssertEqual(shown.card, try ScriptedHarness.response(notFound, seq: 1).card)
+        XCTAssertTrue(host.agent.isEmpty, "a file command's answer is never handed to pi (whose bash could guess the name)")
+        XCTAssertTrue(fileOps.runs.isEmpty)
+        scheduler.advance(0.4); controller.interrupt(); surface.showsComposer = false
+        // Typed, and a close command's answer, too.
+        finals(#"{"seq":0,"elapsedMs":1,"source":"grammar","decision":"answer","intent":"close","title":"I can't tell which folder that is.","card":{"format":"pi-os-ui/1","root":"root","elements":{"root":{"type":"Answer","props":{"summary":"I can't tell which folder that is."},"children":["n1"]},"n1":{"type":"Notice","props":{"tone":"info","text":"I can't tell which folder that is."}}}}}"#)
+        type("close the Downloads window")
+        await eventually("typed answer") { self.surface.instant.count == 2 }
+        XCTAssertEqual(surface.instant.last?.question, "close the Downloads window")
+        XCTAssertTrue(host.agent.isEmpty)
+    }
+
     func testATypedWhichListIsNeverAnActionablePreviewAndOnlyAClickedRowRuns() async throws {
         harness.respond = { request in try ScriptedHarness.response(Self.which, seq: request.seq) }
         type("lösche test")
