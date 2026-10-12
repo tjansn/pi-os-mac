@@ -27,6 +27,7 @@ import {
 import { DictionaryStore, nonCountingLookup } from "./instant/dictionary.js";
 import { appRecords, applyEdit, createLearnLane, displayName, learnFromGesture, outcomeFields, type LearnLane } from "./instant/learned.js";
 import { InMemoryTakeMemo, takeDetailsOf, takeRecordFor } from "./instant/takeMemo.js";
+import { FileOpStore, resolveDcg, runFileOp, type PathGuard } from "./instant/fileOps.js";
 import { isCommonWord } from "./instant/lexicon.js";
 import {
   accepts, FILL_NEVER_KINDS, fillActConsistent, fillSubmitAllowed, parseInstantRequest,
@@ -34,7 +35,7 @@ import {
 } from "./contracts/instant.js";
 import { DICTIONARY_LIMITS, parseEditRequest, parseLearnRequest, parseRecognizerTermsMax } from "./contracts/dictionary.js";
 import type { AppRecord } from "./contracts/launcher.js";
-import { HOST_ACTION_TYPES } from "./contracts/actions.js";
+import { HOST_ACTION_TYPES, parseFileOpRunRequest } from "./contracts/actions.js";
 import { attachmentStats, parseAttachments, summarizeAttachments, type Attachment, type AttachmentIssue } from "./contracts/attachments.js";
 import { NO_CONTEXT_SCORER, parseContext, requestedContextRecord, SCOPE_THRESHOLDS, scopeBand, type ContextWire } from "./contracts/context.js";
 import { parseWorkingDirectory, type BashGuard, type ResourceStatus } from "./contracts/piSession.js";
@@ -165,6 +166,17 @@ export interface HarnessServerOptions {
   frecency?: FrecencyStore & { load?(): Promise<void> };
   /** Tests: replaces the agent stack import (e.g. to hold it back or fail it). */
   loadAgentModules?: () => Promise<AgentModules>;
+  /**
+   * File commands (DESIGN6/BUILD6) seams: the staged-op store, the dcg executable (default resolveDcg: `PI_OS_DCG`,
+   * `~/.local/bin/dcg`, `PATH`), the bash guard status (default the agent runner's cachedGlobalBashGuard) and the
+   * safety rules' home and temp folders. Tests pass a fake dcg in a temp dir here, never the real one.
+   */
+  fileCommands?: {
+    store?: FileOpStore;
+    dcg?: () => string | null;
+    bashGuard?: () => Promise<BashGuard>;
+    guard?: PathGuard;
+  };
 }
 
 /** Bookkeeping for one in-flight invocation (A.3: cancel + timeout). */
@@ -227,6 +239,10 @@ const LEARN_APPS_WAIT_MS = 300;
 const LEARN_RESOLVE_MS = 250;
 /** Warm-up starts after the first response (the host's readiness probe), or after this long without one. */
 const WARM_UP_FALLBACK_MS = 1_000;
+/** A take's prepare reads the full session's bash guard again (file commands) at most this often. */
+const GUARD_REFRESH_MS = 30_000;
+/** The dcg executable is looked up again after this long (file commands' gate); a run always looks it up. */
+const DCG_RESOLVE_MS = 5_000;
 /** Longest prefix of a prompt the telemetry rules score reads. */
 const MAX_SCORED_CHARS = 4_000;
 /** A 400 lists at most this many attachment issues (paths and codes only). */
@@ -369,6 +385,14 @@ export class HarnessServer {
   private appIndex?: { apps: AppRecord[]; bundles: ReadonlySet<string> };
   /** How learning sees the instant lane: the grammar plus a dispatcher without classifier or file search. */
   private readonly lane: LearnLane;
+  /** File commands' staged ops (DESIGN6): /instant finals stage them, POST /fileops/run runs one once. */
+  private readonly fileOps: FileOpStore;
+  /** The full session's bash guard as last read (cachedGlobalBashGuard); undefined until known: file commands stay off. */
+  private bashGuard?: BashGuard;
+  private guardRefresh?: Promise<void>;
+  /** When the guard was last read (a take's prepare reads it again at most every GUARD_REFRESH_MS). */
+  private guardReadAt = 0;
+  private dcgResolved?: { at: number; path: string | null };
 
   constructor(
     private readonly config: HarnessConfig = loadConfig(),
@@ -389,6 +413,7 @@ export class HarnessServer {
     const frecency = options.frecency ?? new FileFrecencyStore(join(this.supportDir, "instant-usage.json"));
     this.frecency = frecency;
     this.frecencyReady = (frecency.load?.() ?? Promise.resolve()).catch(() => {});
+    this.fileOps = options.fileCommands?.store ?? new FileOpStore();
 
     const host = () => this.options.hostClient;
     const deps: LaneDeps = {
@@ -438,6 +463,13 @@ export class HarnessServer {
       // A full pi session: deletion requests go to pi (bash under the user's command guard) instead of an instant refusal.
       // Only this dispatcher: /invoke's answers ignore refusals anyway, and learning checks the words with the grammar.
       deletionToAgent: () => this.fullSessionSelected(),
+      // File commands on what the take shows (DESIGN6): a full session with dcg as the guard; ops run via /fileops/run.
+      // Only this dispatcher: /invoke and learning never stage an op.
+      fileCommands: {
+        active: () => this.fileLaneActive(),
+        store: this.fileOps,
+        ...(options.fileCommands?.guard ? { guard: options.fileCommands.guard } : {}),
+      },
     });
     // /invoke answers pure results only (answerInstantly): app and file decisions can never answer
     // there, so it never calls the launcher read routes (which the Windows host does not have).
@@ -501,6 +533,8 @@ export class HarnessServer {
       classifyUtterance("warm");
       await yieldToRequests();
       if (!this.stopping) await this.agentStack().catch(() => {});
+      // A full session's bash guard, so the first file command after launch does not wait for a take's prepare.
+      if (!this.stopping && this.fullSessionSelected()) void this.refreshBashGuard();
     })();
   }
 
@@ -603,6 +637,11 @@ export class HarnessServer {
         return;
       }
 
+      if (route === "POST /fileops/run") {
+        await this.handleFileOpRun(request, response);
+        return;
+      }
+
       if (route === "POST /invocations/prepare") {
         await this.handlePrepare(request, response);
         return;
@@ -666,8 +705,13 @@ export class HarnessServer {
         }
         const previous = this.resourceSettings.get().mode;
         const current = this.resourceSettings.set(body.mode as "isolated" | "trustedGlobal", body.acknowledgeUnpinnedAccess === true);
-        // A mode change reloads the guard status (the extensions may have changed while it was off).
-        if (current.mode !== previous) this.stack?.modules.runner.forgetGlobalBashGuards();
+        // A mode change reloads the guard status (the extensions may have changed while it was off); file commands are
+        // off until it is known again.
+        if (current.mode !== previous) {
+          this.stack?.modules.runner.forgetGlobalBashGuards();
+          this.bashGuard = undefined;
+          void this.refreshBashGuard();
+        }
         return this.json(response, 200, { current });
       }
 
@@ -844,6 +888,91 @@ export class HarnessServer {
     }
   }
 
+  // ------------------------------------------------------------------ file commands (DESIGN6, BUILD6)
+
+  /**
+   * POST /fileops/run {opId} (protocol.md): runs one staged op at most once, after dcg's review. Token-authed like every
+   * route, never on the agent stack, as long as dcg's dialog stays open (the host waits ≤ 180 s). A host that disconnects
+   * first aborts it: dcg is killed and nothing runs. A bad body is `400 {ok: false, error}` that never echoes it. The
+   * log line is content-free (op kind, outcome, dcg verdict, ms).
+   */
+  private async handleFileOpRun(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    let body: unknown;
+    try {
+      body = await this.readJson(request, MAX_INSTANT_BODY);
+    } catch (error) {
+      // 413 and 415 keep their usual answers; malformed JSON is this route's 400.
+      if (error instanceof RequestError) throw error;
+      return this.json(response, 400, { ok: false, error: "Body must be a JSON object {opId}" });
+    }
+    const parsed = parseFileOpRunRequest(body);
+    if (!parsed.ok) return this.json(response, 400, { ok: false, error: parsed.error });
+    const controller = new AbortController();
+    response.once("close", () => { if (!response.writableFinished) controller.abort(); });
+    const result = await runFileOp(this.fileOps, parsed.value.opId, {
+      dcg: () => this.dcgPath(true),
+      enabled: () => this.fullSessionSelected(),
+      ...(this.options.fileCommands?.guard ? { guard: this.options.fileCommands.guard } : {}),
+      signal: controller.signal,
+      log: (fields, ms) => perfLog("fileops.run", ms, { op: fields.op, outcome: fields.outcome, verdict: fields.verdict }),
+    });
+    if (controller.signal.aborted && response.destroyed) return;
+    this.json(response, 200, { ok: true, outcome: result.outcome, line: result.line });
+  }
+
+  /**
+   * The dcg executable (test seam, else PI_OS_DCG, ~/.local/bin/dcg, PATH; resolved again after DCG_RESOLVE_MS, so a
+   * typed preview does not stat it per keystroke). `fresh`: resolve now (a run). Never throws.
+   */
+  private dcgPath(fresh = false): string | null {
+    const now = Date.now();
+    if (!fresh && this.dcgResolved && now - this.dcgResolved.at < DCG_RESOLVE_MS) return this.dcgResolved.path;
+    let path: string | null;
+    try {
+      path = (this.options.fileCommands?.dcg ?? (() => resolveDcg()))();
+    } catch {
+      path = null;
+    }
+    this.dcgResolved = { at: now, path };
+    return path;
+  }
+
+  /**
+   * File commands may decide (synchronous, read per file command): a full pi session, dcg as its bash guard and a dcg
+   * that resolves. The guard status is read in the background (refreshBashGuard); until it is known the lane is off.
+   */
+  private fileLaneActive(): boolean {
+    if (!this.fullSessionSelected()) return false;
+    if (this.bashGuard === undefined) void this.refreshBashGuard();
+    return this.bashGuard === "dcg" && this.dcgPath() !== null;
+  }
+
+  /**
+   * Reads the full session's bash guard exactly as GET /settings/resources reports it: `none` without the host's native
+   * input routes (no global extension code runs then), else cachedGlobalBashGuard (the global extensions load only while
+   * full sessions are on, and again only when they changed). One read at a time; a failure leaves the last value.
+   */
+  private refreshBashGuard(): Promise<void> {
+    if (!this.fullSessionSelected()) {
+      this.bashGuard = undefined;
+      return Promise.resolve();
+    }
+    if (this.guardRefresh) return this.guardRefresh;
+    const read = this.options.fileCommands?.bashGuard
+      ?? (async (): Promise<BashGuard> => {
+        if (!(await this.hostAllowsInput().catch(() => false))) return "none";
+        const stack = await this.agentStack();
+        return stack.modules.runner.cachedGlobalBashGuard(stack.services.agentDir);
+      });
+    this.guardRefresh = read().then((guard) => {
+      this.guardReadAt = Date.now();
+      if (this.fullSessionSelected()) this.bashGuard = guard;
+    }, () => {}).finally(() => {
+      this.guardRefresh = undefined;
+    });
+    return this.guardRefresh;
+  }
+
   /**
    * Defense in depth for continuity (protocol.md "Continuity"; the dispatcher already decides this way): a fill goes
    * only to a final that declared `fill` and sent a ready `target.field` it may type into, as one line
@@ -950,6 +1079,8 @@ export class HarnessServer {
       void this.instant.warm();
       void this.instantDeps.apps?.refresh();
     }
+    // File commands need the bash guard status by the take's final (a full session loads its extensions anyway).
+    if (this.fullSessionSelected() && (this.bashGuard === undefined || Date.now() - this.guardReadAt > GUARD_REFRESH_MS)) void this.refreshBashGuard();
     if (this.classifier.kind === "laya") this.classifier.warm();
     while (this.prepared.size >= MAX_PREPARED) {
       const oldest = this.prepared.keys().next().value;
@@ -1213,10 +1344,15 @@ export class HarnessServer {
     // Off: the next full-mode status loads the global extensions again (they may change meanwhile).
     if (mode !== "trustedGlobal") this.stack?.modules.runner.forgetGlobalBashGuards();
     if ((this.options.platform ?? process.platform) !== "darwin" || this.config.readOnly || mode !== "trustedGlobal") return off;
-    if (!(await this.hostAllowsInput().catch(() => false))) return off;
+    if (!(await this.hostAllowsInput().catch(() => false))) {
+      if (!this.options.fileCommands?.bashGuard) this.bashGuard = "none";
+      return off;
+    }
     let guard: BashGuard = "none";
     try { guard = await this.agent.modules.runner.cachedGlobalBashGuard(this.agent.services.agentDir); }
     catch { /* Extensions that cannot load guard nothing; Settings then warns. */ }
+    // File commands read the same status (fileLaneActive).
+    if (!this.options.fileCommands?.bashGuard) this.bashGuard = guard;
     return { fullSession: true, guard };
   }
 
