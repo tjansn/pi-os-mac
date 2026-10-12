@@ -1,4 +1,4 @@
-import { stat } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
 import { basename } from "node:path";
 import type { HostAction } from "../contracts/actions.js";
 import { isAbsoluteHostPath } from "../contracts/attachments.js";
@@ -8,7 +8,7 @@ import { SPOKEN, type AppMatcher } from "./apps.js";
 import { fileOpActCard, fileOpRowsCard, MAX_LIST_ITEMS, noticeCard, type FileOpRow } from "./cards.js";
 import {
   childPath, copyPlan, createPlan, defaultPathGuard, deletePlan, movePlan, nameProblem, needsOwnConfirm, parentPath, planProblem, renamePlan,
-  type FileOpPlan, type FileOpStore, type FileOpWords, type PathGuard,
+  type FileOpPlan, type FileOpStore, type FileOpWords, type PathGuard, type PlanItem,
 } from "./fileOps.js";
 import { truncate } from "./format.js";
 import { phraseLike, type FileCommand, type FileCommandSplit } from "./grammar/fileCommands.js";
@@ -27,10 +27,16 @@ import { matchKey, matchVisible, VISIBLE, visibleTarget, type VisibleEntry, type
  *   - Exact names only for every op that names an existing item: one exact match acts, several are a "which one?" list,
  *     none exact offers sound-alikes (≥ 0.66, ≤ 3, never an act), nothing is an answer — unless the name is a generic
  *     class word, reads like a phrase, or the visible items were incomplete (today's: never claim nothing is there).
- *   - Delete: a directory on disk acts at once (dcg's dialog confirms `rm -r`); a file or symlink needs one Return
- *     (`confirm: true`), or a one-row list for hosts without `confirm`.
- *   - Copy/move destinations: standard folders, "hier"/"here", a visible folder, an existing `~/…` or absolute directory;
- *     otherwise a "where to?" list of the standard folders. Never a guess.
+ *     A said extension must be the item's ("Bericht.pdf" is never the folder "Bericht"; "Entwurf 2.1" has none); an
+ *     item that differs only there is offered, never acted on. With an incomplete view a delete, move or rename of the
+ *     one match is a one-row list (another item of that name may not have been read).
+ *   - Delete: a directory on disk — a folder or a package — acts at once (dcg's dialog confirms `rm -r`); a file or
+ *     symlink needs one Return (`confirm: true`), or a one-row list for hosts without `confirm`.
+ *   - Copy/move destinations: standard folders, "hier"/"here", a visible folder, an existing `~/…` or absolute directory,
+ *     each by its real path; otherwise a "where to?" list of the standard folders. Never a guess.
+ *   - Close: a window noun ("das Safari-Fenster") only ever closes the take's Finder window, never quits an app.
+ *   - Voice: delete, move and rename take the words as said when only they name an item ("delete Backup Now"), the
+ *     spoken core otherwise; two readings that name different items act on neither (today's).
  *   - Previews (typing, partial) show an act's plan as an answer and stage nothing; finals stage.
  *
  * Every row binds `fileOp {opId}` only. Nothing here logs; names and paths are user content.
@@ -48,10 +54,17 @@ export interface FileCommandDeps {
   guard?: PathGuard;
   /** An existing directory (`~/…` and absolute destinations; default fs.stat). */
   isDirectory?: (path: string) => Promise<boolean>;
+  /** A destination folder's real path, or null when it cannot be resolved (then it is taken as named; default fs.realpath). */
+  realPath?: (path: string) => Promise<string | null>;
 }
 
 export interface FileLaneInput {
   command: FileCommand;
+  /**
+   * Voice: the words as said (not the spoken core) when they read as the same op on other names ("delete Backup Now"
+   * vs. the core's "delete Backup"). Delete, move and rename prefer it when it names an item.
+   */
+  said?: FileCommand;
   request: InstantRequest;
   visible: VisibleSnapshot;
   german: boolean;
@@ -161,8 +174,25 @@ function standardDestination(folder: StandardFolder, home: string, german: boole
   return { path: folder.dir ? childPath(home, folder.dir) : home, label: german ? folder.de : folder.en };
 }
 
-/** The destination as said, or null (unresolved: the lane asks "where to?"). Never a guess. */
+/**
+ * The destination as said, or null (unresolved: the lane asks "where to?"). Never a guess. Its path is the folder's
+ * real path (a symlinked "~/Link" to /Applications is /Applications), so the safety rules see where the op would go.
+ */
 async function destination(said: string, input: FileLaneInput, deps: FileCommandDeps): Promise<Destination | null> {
+  const named = await namedDestination(said, input, deps);
+  if (!named) return null;
+  const resolve = deps.realPath ?? ((path: string) => realpath(path).catch(() => null));
+  let real: string | null;
+  try {
+    real = await resolve(named.path);
+  } catch {
+    real = null;
+  }
+  const path = real ? folderPath(real) : undefined;
+  return path && path !== named.path ? { ...named, path } : named;
+}
+
+async function namedDestination(said: string, input: FileLaneInput, deps: FileCommandDeps): Promise<Destination | null> {
   const text = said.trim();
   if (!text) return null;
   const { german, home, visible } = input;
@@ -183,7 +213,7 @@ async function destination(said: string, input: FileLaneInput, deps: FileCommand
   const standard = STANDARD_FOLDERS.find((folder) => folder.keys.includes(key));
   if (standard) return standardDestination(standard, home, german);
   if (target) {
-    const folders = matchVisible(visible, { ...target, kind: "folder" }).filter((match) => match.exact && match.entry.folder);
+    const folders = matchVisible(visible, { ...target, kind: "folder" }).filter((match) => match.exact && match.entry.folder && laneExact(target, match.entry));
     const folder = folders[0];
     if (folder) return { path: folder.entry.item.path, label: quote(german, folder.entry.item.name) };
   }
@@ -200,6 +230,35 @@ type Resolution =
 /** An app's own bundle: never a file-command target (deleting an app is uninstalling: today's handling). */
 function isAppBundle(entry: VisibleEntry): boolean {
   return entry.item.isPackage && /\.app$/iu.test(entry.item.path);
+}
+
+/** The item as the plans see it: a package (`.rtfd`, `.key`) is a directory on disk, so `rm -r` like a folder. */
+function planItem(entry: VisibleEntry): PlanItem {
+  return { path: entry.item.path, isDirectory: entry.item.isDirectory || entry.item.isPackage };
+}
+
+/** A name's keys as the file lane compares them, and whether they say a file extension. */
+interface NameKeys { key: string; fullKey: string; extension: boolean }
+
+/** A numeric-only "extension" is part of the name ("Entwurf 2.1" is not "Entwurf 2" plus ".1"); any other one is said. */
+function nameKeys(key: string, fullKey: string): NameKeys {
+  if (fullKey === key) return { key, fullKey, extension: false };
+  const suffix = fullKey.startsWith(key) ? fullKey.slice(key.length) : "";
+  return /^\p{N}+$/u.test(suffix) ? { key: fullKey, fullKey, extension: false } : { key, fullKey, extension: true };
+}
+
+/**
+ * The item is the one named, exactly. A said extension must be the item's ("Bericht.pdf" is never the folder
+ * "Bericht", "notes.txt" never "notes.md"); without one the name matches with or without the item's extension, or as
+ * said with its articles and nouns. Stricter than the open lane's exact key (visible.ts), which stays as it is.
+ */
+function laneExact(target: VisibleTarget, entry: VisibleEntry): boolean {
+  const said = nameKeys(target.key, target.fullKey);
+  if (said.extension) return entry.fullKey === said.fullKey;
+  const name = nameKeys(entry.key, entry.fullKey);
+  return name.key === said.key || entry.fullKey === said.key
+    || (target.rawKey !== undefined && (name.key === target.rawKey || entry.fullKey === target.rawKey))
+    || (target.possessiveKey !== undefined && name.key === target.possessiveKey);
 }
 
 /**
@@ -221,19 +280,17 @@ function resolveItem(name: string, input: FileLaneInput): Resolution | null {
   const usable = all.filter((match) => !isAppBundle(match.entry));
   // An app's exact name: deleting, moving or renaming it is today's (uninstall) handling.
   if (all.some((match) => match.exact) && !usable.some((match) => match.exact)) return null;
-  let exact = usable.filter((match) => match.exact);
-  // A said extension narrows ("test.txt" is not the folder "test").
-  if (target.fullKey !== target.key) {
-    const said = exact.filter((match) => match.entry.fullKey === target.fullKey);
-    if (said.length) exact = said;
-  }
+  const exact = usable.filter((match) => match.exact && laneExact(target, match.entry));
   if (exact.length === 1) return { kind: "one", matches: exact, target };
   if (exact.length > 1) return { kind: "several", matches: exact.slice(0, MAX_LIST_ITEMS), target };
+  // The same name with another extension or version ("notes.md" for "notes.txt") is offered first, never acted on.
+  const near = usable.filter((match) => match.exact);
   const best = usable.find((match) => !match.exact);
   const sound = best
-    ? usable.filter((match) => !match.exact && match.score >= SPOKEN.offerScore && match.score >= best.score - SPOKEN.offerWindow).slice(0, VISIBLE.maxRows)
+    ? usable.filter((match) => !match.exact && match.score >= SPOKEN.offerScore && match.score >= best.score - SPOKEN.offerWindow)
     : [];
-  return sound.length ? { kind: "sound", matches: sound, target } : { kind: "none", matches: [], target };
+  const offers = [...near, ...sound].slice(0, VISIBLE.maxRows);
+  return offers.length ? { kind: "sound", matches: offers, target } : { kind: "none", matches: [], target };
 }
 
 function incomplete(visible: VisibleSnapshot): boolean {
@@ -312,14 +369,22 @@ function actOf(input: FileLaneInput, entry: VisibleEntry, plan: FileOpPlan, titl
   return { kind: "act", option: { plan, row: itemRow(entry) }, title, heard };
 }
 
+/**
+ * A delete, move or rename of the one match in an incomplete view (another item of that name may not have been read):
+ * a one-row "which one?" list whose row must be picked, never an act.
+ */
+function oneRowList(input: FileLaneInput, resolution: Resolution, name: string, entry: VisibleEntry, plan: FileOpPlan): Outcome {
+  if (planProblem(plan, guardOf(input))) return protectedAnswer(input, entry.item.name);
+  return { kind: "list", options: [{ plan, row: itemRow(entry) }], title: whichTitle(input, resolution, name), heard: resolution.target.heard };
+}
+
 /** "lösche test": the item's folder is where the take shows it. */
 async function deleteOutcome(input: FileLaneInput, name: string): Promise<Outcome | null> {
   const resolution = resolveItem(name, input);
   if (!resolution) return null;
-  const plan = (entry: VisibleEntry): FileOpPlan => deletePlan({ path: entry.item.path, isDirectory: entry.item.isDirectory }, parentPath(entry.item.path),
-    words(input, entry.item.name));
+  const plan = (entry: VisibleEntry): FileOpPlan => deletePlan(planItem(entry), parentPath(entry.item.path), words(input, entry.item.name));
   if (resolution.kind === "none") return missing(input, resolution, name);
-  if (resolution.kind !== "one") return listOf(input, resolution, name, plan);
+  if (resolution.kind !== "one" || incomplete(input.visible)) return listOf(input, resolution, name, plan);
   const entry = resolution.matches[0]!.entry;
   const planned = plan(entry);
   const title = needsOwnConfirm(planned)
@@ -390,8 +455,7 @@ async function duplicateOutcome(input: FileLaneInput, name: string): Promise<Out
   const plan = (entry: VisibleEntry): FileOpPlan | null => {
     const copy = copyName(entry, input.visible, input.german);
     const folder = parentPath(entry.item.path);
-    return copy ? copyPlan({ path: entry.item.path, isDirectory: entry.item.isDirectory }, folder, copy, folder,
-      words(input, entry.item.name, { newName: copy, duplicate: true })) : null;
+    return copy ? copyPlan(planItem(entry), folder, copy, folder, words(input, entry.item.name, { newName: copy, duplicate: true })) : null;
   };
   if (resolution.kind !== "one") return listOf(input, resolution, name, plan);
   const entry = resolution.matches[0]!.entry;
@@ -405,8 +469,8 @@ async function duplicateOutcome(input: FileLaneInput, name: string): Promise<Out
 function transferPlan(input: FileLaneInput, op: "copy" | "move", entry: VisibleEntry, dest: Destination): FileOpPlan | Outcome {
   const de = input.german;
   const folder = parentPath(entry.item.path);
-  const item = { path: entry.item.path, isDirectory: entry.item.isDirectory };
-  const same = (a: string, b: string): boolean => a.normalize("NFC").toLowerCase() === b.normalize("NFC").toLowerCase();
+  const item = planItem(entry);
+  const same =(a: string, b: string): boolean => a.normalize("NFC").toLowerCase() === b.normalize("NFC").toLowerCase();
   if (same(dest.path, entry.item.path) || dest.path.normalize("NFC").toLowerCase().startsWith(`${entry.item.path.normalize("NFC").toLowerCase()}/`)) {
     const verb = op === "copy" ? (de ? "kopiert" : "copied") : (de ? "verschoben" : "moved");
     return answer(de ? `${quote(true, entry.item.name)} kann nicht in sich selbst ${verb} werden.` : `${quote(false, entry.item.name)} can't be ${verb} into itself.`);
@@ -475,6 +539,7 @@ async function transferOutcome(input: FileLaneInput, op: "copy" | "move", splits
   }
   const planned = transferPlan(input, op, entry, dest);
   if (!isPlan(planned)) return planned;
+  if (op === "move" && incomplete(input.visible)) return oneRowList(input, resolution, split.name, entry, planned);
   return actOf(input, entry, planned, transferTitle(input, op, planned), resolution.target.heard);
 }
 
@@ -487,8 +552,7 @@ async function renameOutcome(input: FileLaneInput, name: string, newName: string
   const plan = (entry: VisibleEntry): FileOpPlan | null => {
     if (entry.item.name.normalize("NFC").toLowerCase() === newName.normalize("NFC").toLowerCase()) return null;
     if (taken(input.visible, parentPath(entry.item.path), newName, entry.item.path)) return null;
-    return renamePlan({ path: entry.item.path, isDirectory: entry.item.isDirectory }, newName, parentPath(entry.item.path),
-      words(input, entry.item.name, { newName }));
+    return renamePlan(planItem(entry), newName, parentPath(entry.item.path), words(input, entry.item.name, { newName }));
   };
   if (resolution.kind !== "one") return listOf(input, resolution, name, plan);
   const entry = resolution.matches[0]!.entry;
@@ -499,13 +563,18 @@ async function renameOutcome(input: FileLaneInput, name: string, newName: string
     return answer(de ? `${quote(true, newName)} gibt es hier schon.` : `${quote(false, newName)} already exists here.`);
   }
   const planned = plan(entry)!;
+  if (incomplete(input.visible)) return oneRowList(input, resolution, name, entry, planned);
   const title = de ? `${quote(true, entry.item.name)} in ${quote(true, newName)} umbenennen` : `Rename ${quote(false, entry.item.name)} to ${quote(false, newName)}`;
   return actOf(input, entry, planned, title, resolution.target.heard);
 }
 
-/** "schließe Downloads": the take's Finder window when it shows that folder, else an app of exactly that name, else today's. */
-async function closeOutcome(input: FileLaneInput, name: string): Promise<Outcome | null> {
+/**
+ * "schließe Downloads": the take's Finder window when it shows that folder, else an app of exactly that name, else
+ * today's. A window noun ("das Safari-Fenster", "the Safari window") names a window: it never quits an app.
+ */
+async function closeOutcome(input: FileLaneInput, command: Extract<FileCommand, { op: "close" }>): Promise<Outcome | null> {
   const de = input.german;
+  const { name } = command;
   const target = visibleTarget(name);
   if (!target) return null;
   const window = input.visible.sources.find((source) => source.kind === "finderWindow");
@@ -514,13 +583,15 @@ async function closeOutcome(input: FileLaneInput, name: string): Promise<Outcome
   if (window && folder && folder !== "/" && contextId) {
     const shown = basename(folder);
     const key = matchKey(shown);
-    if (key && (key === target.key || key === target.fullKey)) {
+    const said = nameKeys(target.key, target.fullKey);
+    if (key && (said.extension ? key === said.fullKey : key === said.key || key === said.fullKey)) {
       return {
         kind: "close", action: { type: "closeFinderWindow", contextId }, heard: target.heard,
         title: de ? `Fenster ${quote(true, shown)} schließen` : `Close the ${quote(false, shown)} window`,
       };
     }
   }
+  if (command.window) return window && !folder ? answer(de ? "Ich sehe nicht, welcher Ordner das ist." : "I can't tell which folder that is.") : null;
   const matcher = await input.apps();
   const exact = (matcher?.match(saidName(name), 8, input.nowMs) ?? []).filter((match) => match.score >= 1);
   const apps = [...new Map(exact.map((match) => [match.app.bundleId, match.app])).values()];
@@ -533,8 +604,38 @@ async function closeOutcome(input: FileLaneInput, name: string): Promise<Outcome
   return null;
 }
 
+/** The items a reading names exactly (every reading of a move counts), by path. */
+function namedItems(input: FileLaneInput, command: FileCommand): Set<string> {
+  const names = "splits" in command ? command.splits.map((split) => split.name) : [command.name];
+  const out = new Set<string>();
+  for (const name of names) {
+    const resolution = resolveItem(name, input);
+    if (resolution?.kind === "one" || resolution?.kind === "several") for (const match of resolution.matches) out.add(match.entry.item.path);
+  }
+  return out;
+}
+
+const SAID_FIRST: ReadonlySet<FileCommand["op"]> = new Set(["delete", "move", "rename"]);
+
+/**
+ * The reading to decide. Voice parses the spoken core ("äh, test löschen" → "test"); for a delete, move or rename the
+ * words as said win when only they name an item ("delete Backup Now" with a "Backup Now" there), and when both readings
+ * name items and those differ neither is acted on (null: today's handling). Both naming the same items: the core
+ * ("rename Backup to Archive now" is "Archive").
+ */
+function readingOf(input: FileLaneInput): FileCommand | null {
+  const { command, said } = input;
+  if (!said || said.op !== command.op || !SAID_FIRST.has(command.op)) return command;
+  const asSaid = namedItems(input, said);
+  if (!asSaid.size) return command;
+  const asCore = namedItems(input, command);
+  if (!asCore.size) return said;
+  return asCore.size === asSaid.size && [...asCore].every((path) => asSaid.has(path)) ? command : null;
+}
+
 async function outcomeOf(input: FileLaneInput, deps: FileCommandDeps): Promise<Outcome | null> {
-  const command = input.command;
+  const command = readingOf(input);
+  if (!command) return null;
   switch (command.op) {
     case "delete": return deleteOutcome(input, command.name);
     case "create": return createOutcome(input, command.name, command.kind);
@@ -542,7 +643,7 @@ async function outcomeOf(input: FileLaneInput, deps: FileCommandDeps): Promise<O
     case "copy":
     case "move": return transferOutcome(input, command.op, command.splits, deps);
     case "rename": return renameOutcome(input, command.name, command.newName);
-    case "close": return closeOutcome(input, command.name);
+    case "close": return closeOutcome(input, command);
   }
 }
 

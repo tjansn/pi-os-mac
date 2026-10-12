@@ -446,6 +446,146 @@ test("nothing is learned from a file command, and \"No, I meant X\" never aims a
   assert.equal(takeRecordFor(spoken([P("Lösche Radfotoss.")], { takeId: "take-list" }), list, Date.now())?.fileOp, true);
 });
 
+// ---------------------------------------------------------------- exact names, packages, protected roots, incomplete views
+
+test("a said extension must be the item's: \"Bericht.pdf\" never deletes the folder \"Bericht\", \"Entwurf 2.1\" never \"Entwurf 2\", \"notes.txt\" never \"notes.md\" — offered, never acted on", async () => {
+  const shown = windowOf("/Users/fixture/Projekte", [
+    item("tok_bericht00001", "Bericht", "/Users/fixture/Projekte/Bericht"),
+    item("tok_entwurf20001", "Entwurf 2", "/Users/fixture/Projekte/Entwurf 2"),
+    item("tok_notesmd00001", "notes.md", "/Users/fixture/Projekte/notes.md", { isDirectory: false, contentType: "net.daringfireball.markdown" }),
+  ]);
+  const { dispatcher } = make(shown);
+  for (const [text, offered] of [
+    ["lösche Bericht.pdf", "Bericht"], ["lösche Entwurf 2.1", "Entwurf 2"], ["lösche notes.txt", "notes.md"],
+    ["verschiebe Bericht.pdf nach Dokumente", "Bericht"], ["benenne notes.txt in alt.txt um", "notes.md"], ["kopiere Entwurf 2.1 nach Dokumente", "Entwurf 2"],
+    ["dupliziere notes.txt", "notes.md"],
+  ] as const) {
+    const list = asList(await dispatcher.dispatch(typed(text, { accept: ["confirm"], takeId: `x-${text}` })));
+    assert.match(list.title, /nicht gefunden – meintest du …\?$/u, text);
+    assert.deepEqual(rows(list.card).map((row) => row.title), [offered], text);
+  }
+  const spokenList = asList(await dispatcher.dispatch(spoken([P("Lösche Bericht.pdf.")])));
+  assert.deepEqual(rows(spokenList.card).map((row) => row.title), ["Bericht"]);
+
+  // The item that has the said extension or version acts; the name without one still finds every item of that name.
+  const versions = windowOf("/Users/fixture/Projekte", [
+    item("tok_entwurf20001", "Entwurf 2", "/Users/fixture/Projekte/Entwurf 2"),
+    item("tok_entwurf21001", "Entwurf 2.1", "/Users/fixture/Projekte/Entwurf 2.1"),
+    item("tok_berichtpdf01", "Bericht.pdf", "/Users/fixture/Projekte/Bericht.pdf", { isDirectory: false, contentType: "com.adobe.pdf" }),
+    item("tok_bericht00001", "Bericht", "/Users/fixture/Projekte/Bericht"),
+  ]);
+  const exact = make(versions);
+  asAct(await exact.dispatcher.dispatch(typed("lösche Entwurf 2.1", { takeId: "v1" })));
+  assert.deepEqual(argvOf(exact.ops, "v1"), [["/bin/rm", "-r", "--", "/Users/fixture/Projekte/Entwurf 2.1"]]);
+  asAct(await exact.dispatcher.dispatch(typed("lösche Entwurf 2", { takeId: "v2" })));
+  assert.deepEqual(argvOf(exact.ops, "v2"), [["/bin/rm", "-r", "--", "/Users/fixture/Projekte/Entwurf 2"]]);
+  const pdf = asAct(await exact.dispatcher.dispatch(typed("lösche Bericht.pdf", { accept: ["confirm"], takeId: "v3" })));
+  assert.equal(pdf.title, "„Bericht.pdf“ endgültig löschen?");
+  assert.deepEqual(argvOf(exact.ops, "v3"), [["/bin/rm", "--", "/Users/fixture/Projekte/Bericht.pdf"]]);
+  const which = asList(await exact.dispatcher.dispatch(typed("lösche Bericht", { takeId: "v4" })));
+  assert.equal(which.title, "Welches „Bericht“ meinst du?");
+  assert.deepEqual(rows(which.card).map((row) => row.title).sort(), ["Bericht", "Bericht.pdf"]);
+  // A file whose name ends in a version ("Entwurf 2.1", no extension) is that whole name, never "Entwurf 2".
+  const file = make(windowOf("/Users/fixture/Projekte", [
+    item("tok_entwurffile1", "Entwurf 2.1", "/Users/fixture/Projekte/Entwurf 2.1", { isDirectory: false, contentType: "public.data" }),
+  ]));
+  assert.equal(asList(await file.dispatcher.dispatch(typed("lösche Entwurf 2", { accept: ["confirm"] }))).decision, "list");
+  assert.equal(asAct(await file.dispatcher.dispatch(typed("lösche Entwurf 2.1", { accept: ["confirm"], takeId: "f1" }))).title, "„Entwurf 2.1“ endgültig löschen?");
+  // A visible folder as a destination is matched the same way.
+  const dest = make(windowOf("/Users/fixture/Projekte", [
+    item("tok_archiv000001", "Archiv", "/Users/fixture/Projekte/Archiv"),
+    item("tok_testtxt00001", "test.txt", "/Users/fixture/Projekte/test.txt", { isDirectory: false, contentType: "public.plain-text" }),
+  ]));
+  assert.equal(asList(await dest.dispatcher.dispatch(typed("kopiere test.txt nach Archiv.zip"))).title, "Wohin soll „test.txt“ kopiert werden?");
+});
+
+test("a package (the host sends isDirectory false, isPackage true) is a folder for every plan: rm -r with dcg's dialog only, and the run's kind check agrees", async () => {
+  const { dispatcher, ops } = make(DESKTOP);
+  const del = asAct(await dispatcher.dispatch(typed("lösche Präsentation.key", { accept: ["confirm"], takeId: "p1" })));
+  assert.deepEqual([del.title, del.confirm], ["Löschen: Präsentation.key", false]);
+  const [op] = ops.forTake("p1");
+  assert.deepEqual([op?.plan.argv, op?.plan.sourceDir], [["/bin/rm", "-r", "--", "/Users/fixture/Desktop/Präsentation.key"], true]);
+  asAct(await dispatcher.dispatch(typed("verschiebe Präsentation nach Dokumente", { takeId: "p2" })));
+  assert.deepEqual(ops.forTake("p2").map((staged) => [staged.plan.argv, staged.plan.sourceDir]),
+    [[["/bin/mv", "-n", "--", "/Users/fixture/Desktop/Präsentation.key", "/Users/fixture/Documents/Präsentation.key"], true]]);
+  asAct(await dispatcher.dispatch(typed("dupliziere Präsentation", { takeId: "p3" })));
+  assert.deepEqual(argvOf(ops, "p3"), [["/bin/cp", "-R", "-n", "--", "/Users/fixture/Desktop/Präsentation.key", "/Users/fixture/Desktop/Präsentation Kopie.key"]]);
+});
+
+test("an incomplete view: a delete, move or rename of the one match is a one-row list (another item of that name may be unread); a copy still acts", async () => {
+  const { dispatcher, ops } = make(FINDER_WINDOW);
+  for (const [index, text] of ["lösche Alpen", "verschiebe Alpen nach Dokumente", "benenne Alpen in Berge um"].entries()) {
+    const list = asList(await dispatcher.dispatch(typed(text, { accept: ["confirm"], takeId: `i${index}` })));
+    assert.equal(list.title, "Welches „Alpen“ meinst du?", text);
+    assert.deepEqual(rows(list.card).map((row) => [row.title, row.subtitle, row.opId]), [["Alpen.jpg", "in Touren", ops.forTake(`i${index}`)[0]?.opId]], text);
+  }
+  asAct(await dispatcher.dispatch(typed("kopiere Alpen nach Dokumente", { takeId: "i-copy" })));
+  // A complete view acts on its one match as before.
+  const complete = make({ ...FINDER_WINDOW, sources: [{ kind: "finderWindow", via: "ax", complete: true }] });
+  asAct(await complete.dispatcher.dispatch(typed("verschiebe Alpen nach Dokumente")));
+});
+
+// ---------------------------------------------------------------- close with a window noun; voice readings
+
+test("close with a window noun never quits an app: \"close the Safari window\" is today's unless it names the take's Finder window", async () => {
+  const lane = make(DESKTOP);
+  const today = make(DESKTOP, { lane: false });
+  for (const [text, locale] of [["close the Safari window", "en-US"], ["schließe das Safari-Fenster", "de-DE"], ["schließe das Fenster Safari", "de-DE"]] as const) {
+    const request = typed(text, { locale });
+    const response = await lane.dispatcher.dispatch(request);
+    assert.ok(!(response.decision === "act" && response.action.type === "quitApp"), `${text}: ${JSON.stringify(response)}`);
+    assert.equal(stable(response), stable(await today.dispatcher.dispatch(request)), text);
+  }
+  const voice = await lane.dispatcher.dispatch(spoken([DE("Schließe das Safari-Fenster.")]));
+  assert.ok(!(voice.decision === "act" && voice.action.type === "quitApp"), JSON.stringify(voice));
+  // Without the noun it is the app; with it, the take's Finder window by its folder name.
+  assert.deepEqual(asAct(await lane.dispatcher.dispatch(typed("schließe Safari"))).action, { type: "quitApp", bundleId: "com.apple.Safari" });
+  assert.deepEqual(asAct(await make(WITH_PATH).dispatcher.dispatch(typed("schließe das Projekte-Fenster"))).action, { type: "closeFinderWindow", contextId: "ctx-desk" });
+  assert.equal(asAnswer(await make(FINDER_WINDOW).dispatcher.dispatch(typed("schließe das Safari-Fenster"))).title, "Ich sehe nicht, welcher Ordner das ist.");
+});
+
+test("voice: delete, move and rename take the words as said when they name an item (\"Delete Backup Now\"); two readings naming different items act on neither", async () => {
+  const backup = item("tok_backup000001", "Backup", "/Users/fixture/Projekte/Backup");
+  const backupNow = item("tok_backupnow001", "Backup Now", "/Users/fixture/Projekte/Backup Now");
+  const said = (text: string, takeId = "take-voice") => spoken([P(text)], { locale: "en-US", takeId });
+  // Both there: the spoken core ("now" is a softener) names "Backup", the words as said "Backup Now" — neither acts.
+  const both = make(windowOf("/Users/fixture/Projekte", [backup, backupNow]));
+  const today = make(windowOf("/Users/fixture/Projekte", [backup, backupNow]), { lane: false });
+  assert.equal(stable(await both.dispatcher.dispatch(said("Delete Backup Now."))), stable(await today.dispatcher.dispatch(said("Delete Backup Now."))));
+  assert.equal(both.ops.size, 0);
+  // Only "Backup Now": the words as said.
+  const only = make(windowOf("/Users/fixture/Projekte", [backupNow]));
+  asAct(await only.dispatcher.dispatch(said("Delete Backup Now.")));
+  assert.deepEqual(argvOf(only.ops, "take-voice"), [["/bin/rm", "-r", "--", "/Users/fixture/Projekte/Backup Now"]]);
+  // Only "Backup": the spoken core, as for fillers ("äh, …") and softeners.
+  const core = make(windowOf("/Users/fixture/Projekte", [backup]));
+  asAct(await core.dispatcher.dispatch(said("Delete Backup Now.")));
+  assert.deepEqual(argvOf(core.ops, "take-voice"), [["/bin/rm", "-r", "--", "/Users/fixture/Projekte/Backup"]]);
+  asAct(await core.dispatcher.dispatch(spoken([P("Äh, kannst du Backup löschen?")], { takeId: "take-filler" })));
+  // Both readings name the same item: the core decides ("now" is no part of the new name).
+  asAct(await core.dispatcher.dispatch(said("Rename Backup to Archive now.", "take-rename")));
+  assert.deepEqual(argvOf(core.ops, "take-rename"), [["/bin/mv", "-n", "--", "/Users/fixture/Projekte/Backup", "/Users/fixture/Projekte/Archive"]]);
+  // Typed words are the words as said.
+  asAct(await both.dispatcher.dispatch(typed("delete Backup Now", { locale: "en-US", takeId: "typed-now" })));
+  assert.deepEqual(argvOf(both.ops, "typed-now"), [["/bin/rm", "-r", "--", "/Users/fixture/Projekte/Backup Now"]]);
+});
+
+test("voice: a delete, move or rename needs every first-tier reading to say it — another command or words that parse as nothing keep today's handling", async () => {
+  const lane = make(DESKTOP);
+  const today = make(DESKTOP, { lane: false });
+  for (const [label, request] of [
+    ["an open peer", spoken([DE("Lösche Radfotos."), EN("Öffne Radfotos.")])],
+    ["an unparsed peer", spoken([DE("Lösche Radfotos."), EN("Lush rat photos.")])],
+    ["a move with an open peer", spoken([DE("Verschiebe Radfotos nach Dokumente."), EN("Open Radfotos.")])],
+    ["a rename with an open peer", spoken([DE("Benenne Radfotos in Radtour um."), EN("Open Radfotos.")])],
+  ] as const) {
+    assert.equal(stable(await lane.dispatcher.dispatch(request)), stable(await today.dispatcher.dispatch(request)), label);
+  }
+  assert.equal(lane.ops.size, 0);
+  // Other ops keep the agreement rule they had: another command as a peer does not stop a duplicate.
+  asAct(await lane.dispatcher.dispatch(spoken([DE("Dupliziere Radfotos."), EN("Open Radfotos.")], { takeId: "take-dup" })));
+});
+
 // ---------------------------------------------------------------- golden: without the lane, today's decisions byte for byte
 
 const GOLDEN_TEXTS: readonly [string, string][] = [

@@ -807,23 +807,29 @@ voice finals and `accept` for the gated kinds, and sends `voice` on voice decisi
     "all", "everything", "alte", "old"), text-edit objects, "… to the clipboard", questions and "frag pi …".
     Open stays the visible-first open above.
   - **Resolution** on the take's visible items with their matching keys (case, accents, spaces, hyphens ignored;
-    extension optional, a said extension narrows): exactly one exact match → `act`; several → `list` "Which “test”
-    do you mean?" / "Welches „test“ meinst du?" (one row per item, "in Desktop"); none exact → sound-alikes ≥ 0.66 as
-    a `list` "Couldn't find “test” — did you mean…?" / "„test“ nicht gefunden – meintest du …?" (≤ 3 rows, **never an
-    act**, for every op that names an existing item); nothing → `answer` "There's nothing called “test” on the
-    Desktop." / "Auf dem Schreibtisch gibt es nichts namens „test“." (a voice final adds the heard text as
-    `subtitle`). Without an exact match, a generic class word ("Fotos", "PDFs", "Downloads") or a source that was
-    incomplete or truncated keeps today's handling instead of claiming nothing is there. An app bundle (`.app`) is
+    extension optional): exactly one exact match → `act`; several → `list` "Which “test” do you mean?" / "Welches
+    „test“ meinst du?" (one row per item, "in Desktop"); none exact → sound-alikes ≥ 0.66 as a `list` "Couldn't find
+    “test” — did you mean…?" / "„test“ nicht gefunden – meintest du …?" (≤ 3 rows, **never an act**, for every op
+    that names an existing item); nothing → `answer` "There's nothing called “test” on the Desktop." / "Auf dem
+    Schreibtisch gibt es nichts namens „test“." (a voice final adds the heard text as `subtitle`). A said extension
+    must be the item's whole name: "Bericht.pdf" never matches the folder "Bericht" and "notes.txt" never
+    "notes.md" — such items lead the "did you mean…?" rows; a numeric-only "extension" is part of the name
+    ("Entwurf 2.1" is not "Entwurf 2"). Without an exact match, a generic class word ("Fotos", "PDFs", "Downloads")
+    or a source that was incomplete or truncated keeps today's handling instead of claiming nothing is there; with
+    an incomplete or truncated source, the one exact match of a delete, move or rename is a one-row `list` "Which
+    “test” do you mean?" (another item of that name may not have been read), never an act. An app bundle (`.app`) is
     never a file-command target (deleting an app stays today's uninstall handling).
-  - **Delete**: a directory on disk (packages included) acts at once — dcg reviews `rm -r` with its own dialog; a
-    file or symlink (dcg allows `rm` silently) is an `act` with `confirm: true` "Delete “test.txt” permanently?" /
-    "„test.txt“ endgültig löschen?" for requests that declare `confirm` (the macOS host does on typed and voice
-    finals), else a one-row `list` with that title whose row must be picked. A file is never deleted without one
-    explicit user step after the command.
+  - **Delete**: a directory on disk — a folder or a package (`isPackage`, even with `isDirectory: false`: `.rtfd`,
+    `.key`, `.photoslibrary`; copy, move and rename treat it as a folder too) — acts at once: dcg reviews `rm -r`
+    with its own dialog; a file or symlink (dcg allows `rm` silently) is an `act` with `confirm: true` "Delete
+    “test.txt” permanently?" / "„test.txt“ endgültig löschen?" for requests that declare `confirm` (the macOS host
+    does on typed and voice finals), else a one-row `list` with that title whose row must be picked. A file is never
+    deleted without one explicit user step after the command.
   - **Copy/move destinations**: standard folders by EN/DE name (Schreibtisch/Desktop, Dokumente/Documents,
     Downloads, Bilder/Pictures, Musik/Music, Filme/Movies, Benutzerordner/Home → their real paths), "hier"/"here"
     (the shown folder's `path`), a visible folder (exact key), a `~/…` or absolute path that is an existing
-    directory. Unresolved or missing → `list` "Where should “test” be copied?" / "Wohin soll „test“ kopiert
+    directory; each by its real path (a symlinked folder is where it leads, so the safety rules see the real
+    target). Unresolved or missing → `list` "Where should “test” be copied?" / "Wohin soll „test“ kopiert
     werden?" with the standard folders as rows; never a guess. The item's own folder: copy duplicates, move answers
     "“test” is already in Desktop."; into itself is refused.
   - **New names** (create, rename): the literal words, trimmed; one path component (no `/`, NUL or control
@@ -832,10 +838,16 @@ voice finals and `accept` for the gated kinds, and sends `voice` on voice decisi
     without `path`) answers "I can't tell which folder that is."
   - **Close**: the take's Finder-window folder name → `act` intent `close` `closeFinderWindow {contextId}`; else an
     installed app with exactly that name (the app index) → `act` `quitApp {bundleId}` "Quit Safari" / "Safari
-    beenden"; else today's handling.
+    beenden"; else today's handling. A window or folder noun ("close the Safari window", "schließe das
+    Safari-Fenster", "den Downloads-Ordner") only ever closes the take's Finder window: never `quitApp`.
   - **Voice**: the host's pick decides. Recognizer doubt (lowest word confidence < 0.2, or disagreeing first-tier
     readings at a low mean), another first-tier hypothesis that is a refusal, deixis or compound, or a different file
-    command keep today's handling (the check state where today has one); a lone peer below 0.4 acts only behind one
+    command keep today's handling (the check state where today has one); for a delete, move or rename every other
+    first-tier hypothesis must read as the same file command (another command such as "Öffne Radfotos", or words
+    that parse as nothing, keep today's handling too). Voice parses the spoken core ("äh, kannst du test löschen");
+    for a delete, move or rename the words as said win when only they name a visible item ("Delete Backup Now" with
+    "Backup Now" there), and when the core and the words as said name different items nothing acts (today's
+    handling). A lone peer below 0.4 acts only behind one
     Return (`confirm: true`, hosts with `confirm`; else today's handling). Every decision carries `voice.via: "file"`:
     no "Not this", nothing is learned, `/dictionary/learn` refuses every gesture against the take, and "No, I meant X"
     never aims at or past it. Typing and partial phases only preview the plan (`answer` "Löschen: test"); ops are

@@ -66,10 +66,15 @@ const ROWS: readonly (readonly [text: string, locale: string, expected: FileComm
   // close / quit (window nouns and articles are not the name)
   ["schließe Downloads", "de-DE", { op: "close", name: "Downloads", quit: false }],
   ["schliesse Downloads", "de-DE", { op: "close", name: "Downloads", quit: false }],
-  ["schließe das Downloads-Fenster", "de-DE", { op: "close", name: "Downloads", quit: false }],
-  ["schließe das Fenster Downloads", "de-DE", { op: "close", name: "Downloads", quit: false }],
+  // A window or folder noun names a window (`window`): the lane never quits an app for it.
+  ["schließe das Downloads-Fenster", "de-DE", { op: "close", name: "Downloads", quit: false, window: true }],
+  ["schließe das Fenster Downloads", "de-DE", { op: "close", name: "Downloads", quit: false, window: true }],
+  ["schließe den Ordner Downloads", "de-DE", { op: "close", name: "Downloads", quit: false, window: true }],
+  ["schließe den Downloads-Ordner", "de-DE", { op: "close", name: "Downloads-Ordner", quit: false, window: true }],
   ["Downloads schließen", "de-DE", { op: "close", name: "Downloads", quit: false }],
-  ["close the Downloads window", "en-US", { op: "close", name: "Downloads", quit: false }],
+  ["close the Downloads window", "en-US", { op: "close", name: "Downloads", quit: false, window: true }],
+  ["close the Safari window", "en-US", { op: "close", name: "Safari", quit: false, window: true }],
+  ["schließe die Safari-App", "de-DE", { op: "close", name: "Safari", quit: false }],
   ["beende Safari", "de-DE", { op: "close", name: "Safari", quit: true }],
   ["Safari beenden", "de-DE", { op: "close", name: "Safari", quit: true }],
   ["quit Safari", "en-US", { op: "close", name: "Safari", quit: true }],

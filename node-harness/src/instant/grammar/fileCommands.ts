@@ -44,8 +44,11 @@ export type FileCommand =
   | { op: "copy" | "move"; splits: readonly FileCommandSplit[] }
   | { op: "duplicate"; name: string }
   | { op: "rename"; name: string; newName: string }
-  /** `quit`: said with beende/quit (else schließe/close); the lane resolves both the same way (BUILD6 §5). */
-  | { op: "close"; name: string; quit: boolean };
+  /**
+   * `quit`: said with beende/quit (else schließe/close); the lane resolves both the same way (BUILD6 §5). `window`: a
+   * window or folder noun was said ("das Safari-Fenster", "den Ordner Downloads"): only a Finder window closes.
+   */
+  | { op: "close"; name: string; quit: boolean; window?: true };
 
 export interface FileCommandOptions {
   /** Push-to-talk transcript: the spoken command core is parsed too. */
@@ -276,8 +279,10 @@ function renameForm(form: Form): FileCommand | null {
   return name && renamed ? { op: "rename", name, newName: renamed } : null;
 }
 
-const CLOSE_LEAD = /^(?:(?:the|das|den|die|dem|my|mein|meine|meinen)\s+)?(?:(?:fenster|window|app|programm|ordner|folder)\s+)?/u;
-const CLOSE_TAIL = /(?:[\s-]+(?:fenster|window|app|programm))$/u;
+const CLOSE_LEAD = /^(?:(?:the|das|den|die|dem|my|mein|meine|meinen)\s+)?(?:(fenster|window|app|programm|ordner|folder)\s+)?/u;
+const CLOSE_TAIL = /(?:[\s-]+(fenster|window|app|programm))$/u;
+/** Nouns that name a window (a folder's window too), never an app to quit. */
+const WINDOW_NOUN = /^(?:fenster|window|ordner|folder)$/u;
 
 function closeForm(form: Form): FileCommand | null {
   const quit = QUIT_FIRST.exec(form.lower) ?? QUIT_LAST.exec(form.lower);
@@ -285,10 +290,17 @@ function closeForm(form: Form): FileCommand | null {
   if (!m) return null;
   // "schließe das Downloads-Fenster", "close the Downloads window", "schließe das Fenster Downloads": the name only.
   const said = cleanName(group(form, m, 1));
-  const lead = CLOSE_LEAD.exec(said.toLowerCase())?.[0].length ?? 0;
-  let core = said.slice(lead);
+  const lead = CLOSE_LEAD.exec(said.toLowerCase());
+  let core = said.slice(lead?.[0].length ?? 0);
   const tail = CLOSE_TAIL.exec(core.toLowerCase());
-  if (tail && tail.index > 0) core = core.slice(0, tail.index);
+  const nouns = [lead?.[1]];
+  if (tail && tail.index > 0) {
+    core = core.slice(0, tail.index);
+    nouns.push(tail[1]);
+  }
   const name = sourceName(core);
-  return name ? { op: "close", name, quit: quit !== null } : null;
+  if (!name) return null;
+  // "den Downloads-Ordner" keeps its noun in the name (a folder may be called "Foto-Ordner"), and still names a window.
+  const window = nouns.some((noun) => noun !== undefined && WINDOW_NOUN.test(noun)) || /[\s-](?:ordner|folder)$/u.test(core.toLowerCase());
+  return { op: "close", name, quit: quit !== null, ...(window ? { window: true } : {}) };
 }

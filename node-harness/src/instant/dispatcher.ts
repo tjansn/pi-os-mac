@@ -659,9 +659,12 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
     }
   }
 
-  /** The lane's decision under the default budget (a timeout is one, as everywhere); null leaves the take to today's lane. */
+  /**
+   * The lane's decision under the default budget (a timeout is one, as everywhere); null leaves the take to today's lane.
+   * `voice.said`: the words as said when they read as the same op on other names than the spoken core (fileLane.ts).
+   */
   async function fileStep(command: FileCommand, request: InstantRequest, n: Normalized, visible: VisibleSnapshot, signal: AbortSignal,
-    voice?: { text: string; source?: string; hold: boolean }): Promise<Body | null> {
+    voice?: { text: string; source?: string; hold: boolean; said?: FileCommand }): Promise<Body | null> {
     const lane = deps.fileCommands;
     if (!lane) return null;
     const budget = deadline(signal, budgets.defaultMs);
@@ -670,6 +673,7 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
         command, request, visible, german: n.lang === "de", home, isWord, nowMs: now().getTime(),
         apps: () => (deps.apps ? deps.apps.get(budget.signal) : Promise.resolve(null)),
         ...(voice ? { voice: { text: voice.text, ...(voice.source ? { source: voice.source } : {}) }, hold: voice.hold } : {}),
+        ...(voice?.said ? { said: voice.said } : {}),
       }, lane);
       const result = await race(work, budget.signal);
       if (result === TIMEOUT) return fallthrough("timeout");
@@ -701,12 +705,15 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
    * A voice final's file command (the host's pick; DESIGN6 §4.5): recognizer doubt, or another first-tier reading that is
    * a refusal, a deletion object, deixis, a compound or a different file command, leaves the take to today's lane (its
    * check state included: never an act); a lone Phase A peer below the confidence threshold acts only behind one Return.
+   * A delete, move or rename needs every first-tier reading to be that same command: any other reading ("Öffne
+   * Radfotos", words that parse as nothing) leaves the take to today's lane too.
    */
   async function voiceFile(request: InstantRequest, take: VoiceTake, command: FileCommand, n: Normalized, visible: VisibleSnapshot,
     signal: AbortSignal): Promise<Body | null> {
     const sent = take.hypotheses[take.sent]!;
     if (voiceDoubt(sent, take.firstTier.map((index) => take.hypotheses[index]!))) return null;
     const mine = fileCommandKey(command);
+    const destructive = command.op === "delete" || command.op === "move" || command.op === "rename";
     let agreed = false;
     for (const index of take.firstTier) {
       if (index === take.sent) continue;
@@ -717,11 +724,26 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
         agreed = true;
         continue;
       }
+      if (destructive) return null;
       const parsed = parseVoice(hypothesis, request);
       if (parsed?.kind === "refuse" || parsed?.kind === "delete_target" || (parsed?.kind === "fallthrough" && parsed.reason !== "unknown_place")) return null;
     }
     const hold = !agreed && sent.role === "peer" && !((sent.confidence ?? -1) >= VOICE.peerConfidence);
-    return fileStep(command, request, n, visible, signal, { text: n.text, ...(take.legacy ? {} : { source: sent.source }), hold });
+    const said = saidReading(n, command);
+    return fileStep(command, request, n, visible, signal, {
+      text: n.text, ...(take.legacy ? {} : { source: sent.source }), hold, ...(said ? { said } : {}),
+    });
+  }
+
+  /** The words as said (no spoken core) when they read as the same op on other names than the core ("Backup Now"). */
+  function saidReading(n: Normalized, command: FileCommand): FileCommand | undefined {
+    let raw: FileCommand | null;
+    try {
+      raw = matchFileCommand(n);
+    } catch {
+      return undefined;
+    }
+    return raw && raw.op === command.op && fileCommandKey(raw) !== fileCommandKey(command) ? raw : undefined;
   }
 
   function system(parsed: Extract<Parsed, { kind: "system" }>, phase: InstantPhase): Body {
