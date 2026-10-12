@@ -495,12 +495,19 @@ unknown keys dropped (`{type: "fileOp", token}` without `opId` is rejected).
 
 - `fileOp {opId}` names an operation **Node** staged for the take; it carries no path, name or command. The host
   performs it by calling `POST /fileops/run {opId}` (see below), shows "Deleting “test”…" / "Lösche „test“…" at once
-  ("Waiting for your approval…" while dcg's own dialog is up), then a toast with the returned `line`. Rows that bind
-  it work like file rows (Return, click, 1–3, spoken picks); nothing is learned from them.
+  ("Waiting for your approval…" while dcg's own dialog is up), then a toast with the returned `line`; the harness
+  stays up (reserved, no stop) until the answer is in. Rows that bind it work like file rows (Return, click, 1–3,
+  spoken picks), except that a spoken name picks a row only when no other row has that name (the rows of a "which
+  one?" list share it); nothing is learned from them. Neither a confirm nor a row is ever triggered by an
+  auto-repeated Return.
 - `quitApp {bundleId}`: `NSRunningApplication.terminate()` of that exact bundle (graceful: the app asks about unsaved
-  work; never a force quit), toast "Safari beendet" / "Quit Safari".
+  work; never a force quit), toast "Safari beendet" / "Quit Safari"; nothing running is shown as not done.
 - `closeFinderWindow {contextId}`: the AX close (the window's AXCloseButton) of the take's captured Finder window,
-  only while that window is still a Finder window; never another window.
+  only while that window is still a Finder window with exactly one readable tab; never another window. A held one
+  (`confirm: true`) answered in the next take closes the window of the take that decided it. Anything but a closed
+  window is shown as not done.
+- An `answer` with intent `file_op` or `close` (a notice: nothing called “X”, already exists, pi-os won't touch “X”)
+  is shown as the answer, with the heard words; a host never hands it to the agent.
 
 `typeIntoPinned.submit` (continuity fills only: `act` intent `fill`, see `POST /instant`): a literal `true`
 (`false` and `null` read as absent; anything else rejects the action, as does `submit` with a text that

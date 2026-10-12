@@ -114,6 +114,10 @@ import PiOSCore
     private let workingDirectories = TakeWorkingDirectories()
     private var takeFullSession = false
     private var takeDirectory: Task<WorkingDirectory?, Never>?
+    /// Discarded contexts' pinned Finder windows and the folders their captures read (≤ 2 min, the last 4): a held
+    /// `closeFinderWindow` answered in the next take ("ja", ↩) still closes the window its own take captured.
+    private var retiredFinderWindows: [(contextId: String, window: WindowContext, folder: String, at: Date)] = []
+    static let retiredFinderWindowTTL: TimeInterval = 120
     /// The running turn's bash call that waits for the user's guard (dcg's own dialog), and the record shown last.
     private var approval: ApprovalWait?
     private var lastRunning: HarnessClient.Status?
@@ -228,7 +232,9 @@ import PiOSCore
             controller.fills = FillSession(input: service)
             // Staged file commands (BUILD6): Node runs them after dcg's review; the bar says so while dcg's dialog is open.
             controller.fileOps = harness
-            controller.guardPending = { [weak self] in GuardProcess.dcgPending(under: self?.harness?.ownedPID) }
+            controller.guardPending = { [weak self] in
+                Application.fileOpWaits(agentRunning: self?.invocation != nil) { GuardProcess.dcgPending(under: self?.harness?.ownedPID) }
+            }
             controller.voiceTakeFinished = { [weak self] in self?.retryDeferredSpeechModels() }
             let voiceSystem = voiceSystem
             let hint = VoiceOffHint { !voiceSettings.enabled && voiceSystem.engineAvailable }
@@ -1188,23 +1194,50 @@ import PiOSCore
         return AppInstance(bundleId: bundleId, pid: pid)
     }
     /// `closeFinderWindow` (BUILD6 #5): the window this context pinned at key-down and the folder its visible-items capture
-    /// read then, checked again and closed off the main thread (`FinderWindowClose`). An AX press is input: computer control
-    /// must be on. Never another window; the folder's name is shown, never logged.
+    /// read then (a context the next take discarded: as it was retired), checked again and closed off the main thread
+    /// (`FinderWindowClose`). Never another window; the folder's name is shown, never logged.
     func closeFinderWindow(contextId: String) async throws -> String {
-        guard config.canControl, AXIsProcessTrusted() else {
-            throw DomainError("policy_blocked", "pi-os is in read-only mode, so it can't close windows.")
-        }
         let snapshot: Snapshot?
         if let take = takeSnapshot, take.id == contextId { snapshot = take } else { snapshot = try? await desktop?.snapshot(contextId) }
-        let captured = launcher.visible?.capturedFolder(contextId: contextId)
-        let folder = captured?.kind == .finderWindow ? captured?.path : nil
-        guard let window = snapshot?.targetWindow else { return try FinderWindowClose.status(.gone, folder: folder) }
+        var window = snapshot?.targetWindow
+        var captured = launcher.visible?.capturedFolder(contextId: contextId)
+        if window == nil || captured == nil, let retired = retiredFinderWindows.last(where: { $0.contextId == contextId }),
+           Date().timeIntervalSince(retired.at) <= Self.retiredFinderWindowTTL {
+            window = retired.window; captured = (.finderWindow, retired.folder)
+        }
+        let plan = try Self.finderClosePlan(canControl: config.canControl, trusted: AXIsProcessTrusted(), window: window, captured: captured)
         let outcome = await Task.detached(priority: .userInitiated) {
-            await FinderWindowClose.run(window, folder: folder, access: NativeFinderWindowAccess())
+            await FinderWindowClose.run(plan.window, folder: plan.folder, access: NativeFinderWindowAccess())
         }.value
-        return try FinderWindowClose.status(outcome, folder: folder)
+        return try FinderWindowClose.status(outcome, folder: plan.folder)
+    }
+    /// `closeFinderWindow`'s gate: an AX press is input, so computer control and Accessibility must be on; then the window
+    /// the context pinned and the folder its capture read for it (only a Finder-window capture names one; without one,
+    /// `FinderWindowClose` closes nothing). Thrown when nothing may be closed.
+    nonisolated static func finderClosePlan(canControl: Bool, trusted: Bool, window: WindowContext?,
+                                            captured: (kind: VisibleSourceKind, path: String)?) throws -> (window: WindowContext, folder: String?) {
+        guard canControl else { throw DomainError("policy_blocked", "pi-os is in read-only mode, so it can't close windows.") }
+        guard trusted else { throw DomainError("policy_blocked", "pi-os needs Accessibility access to close windows.") }
+        let folder = captured?.kind == .finderWindow ? captured?.path : nil
+        // The pinned window is no longer known (its context is gone): nothing is closed, and it is not "already closed".
+        guard let window else { throw DomainError("close_not_done", "Couldn’t find that Finder window again — nothing was closed") }
+        return (window, folder)
+    }
+    /// dcg's dialog for a file command: a dcg under Node while no agent turn runs (an agent's own bash call has its own
+    /// dcg there, and its own "Waiting for your approval…" in the reader).
+    nonisolated static func fileOpWaits(agentRunning: Bool, dcgPending: () -> Bool) -> Bool { !agentRunning && dcgPending() }
+    /// Keeps the discarded context's pinned Finder window and its captured folder for a held close (see
+    /// `retiredFinderWindows`); nothing else reads them.
+    private func retireFinderWindow(contextId: String) {
+        let now = Date()
+        retiredFinderWindows.removeAll { now.timeIntervalSince($0.at) > Self.retiredFinderWindowTTL || $0.contextId == contextId }
+        guard let snapshot = takeSnapshot, snapshot.id == contextId, let window = snapshot.targetWindow,
+              let captured = launcher?.visible?.capturedFolder(contextId: contextId), captured.kind == .finderWindow else { return }
+        retiredFinderWindows.append((contextId, window, captured.path, now))
+        if retiredFinderWindows.count > 4 { retiredFinderWindows.removeFirst(retiredFinderWindows.count - 4) }
     }
     private func discardContext() {
+        if let context { retireFinderWindow(contextId: context) }
         let oldContext = context, oldThread = thread, reservation = invocationReservation, extra = extraContexts
         context = nil; thread = nil; invocationReservation = nil; extraContexts = []; takeSnapshot = nil
         // The take's folder goes with its context (a later take resolves its own).

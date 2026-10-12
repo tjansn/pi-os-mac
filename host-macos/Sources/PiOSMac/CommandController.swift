@@ -665,6 +665,9 @@ public enum SpokenPick: Equatable {
         var field: BoundField?
         /// Spoken at a credential or code field: the composer shows "•••", never the heard words.
         var masked = false
+        /// The context the act was decided for: a held file command answered by "ja" or ↩ in the next take (a new
+        /// context) is performed there, so a held `closeFinderWindow` still names the window its own take captured.
+        var contextId: String?
     }
     enum Decision {
         case choices(Choices)
@@ -1440,7 +1443,8 @@ public enum SpokenPick: Equatable {
                 pendingConfirmation = (trimmed, action, response.isFill, held, title)
                 if let spoken {
                     let masked = secretKind(spoken.takeId) != nil
-                    decision = .confirm(Confirm(take: spoken, text: trimmed, action: action, title: title, field: held, masked: masked))
+                    decision = .confirm(Confirm(take: spoken, text: trimmed, action: action, title: title, field: held, masked: masked,
+                                                contextId: contextId))
                     if masked { surface?.setComposerText(FillCopy.secretMask) }
                     showPreview(.hint(VoiceCopy.confirmHint(title)))
                 } else {
@@ -1545,7 +1549,12 @@ public enum SpokenPick: Equatable {
             surface?.presentWorking(acting!)
         }
         let done = await perform(action, confirmed: false, origin: .instantAct, acting: acting, quiet: undoable)
-        guard done else { writeTiming(otherwise: "act"); return }
+        guard done else {
+            writeTiming(otherwise: "act")
+            // A quit or close that changed nothing ("isn't running", another folder now) is not journalled as acted.
+            if let spoken, Self.isFileCommand(action) { journalUpdate(spoken.takeId, .cancelled) }
+            return
+        }
         if let corrects {
             correction(of: corrects, utterance: spoken?.correctingText ?? utterance, learns: Self.teaches(action))
         } else if !undoable { supersedeRecentAct() }
@@ -1590,7 +1599,7 @@ public enum SpokenPick: Equatable {
     /// `learns` false (the correction opened a file or folder): the wrong take is undone, nothing is learned.
     private func correction(of takeId: String, utterance: String, learns: Bool = true,
                             after: (@MainActor (DictionaryWriteResponse?) -> Void)? = nil) {
-        if recentAct?.take.takeId == takeId { recentAct = nil; surface?.dismissVoiceToast() }
+        if recentAct?.take.takeId == takeId { recentAct = nil; dismissToast() }
         journalUpdate(takeId, .undone)
         // What that take opened is no longer "what you just opened" (DESIGN5 §3.4): its anchor and pending launch go.
         host?.continuityRejected(takeId: takeId)
@@ -1601,7 +1610,7 @@ public enum SpokenPick: Equatable {
     private func supersedeRecentAct() {
         guard recentAct != nil else { return }
         recentAct = nil
-        surface?.dismissVoiceToast()
+        dismissToast()
     }
     private func offerNotThis(_ spoken: VoiceTake, response: InstantResponse, action: HostAction, title: String) {
         let app = VoiceCopy.subject(title)
@@ -1613,7 +1622,7 @@ public enum SpokenPick: Equatable {
         resetTake(); host?.finishInstant()
         let heard = response.voice?.heard
         let text = Self.opens(action) ? VoiceCopy.opened(app, heard: heard) : VoiceCopy.done(title, heard: heard)
-        surface?.presentVoiceToast(VoiceToast(kind: .notThis, text: text, actions: [VoiceCopy.notThis], dwell: timing.undoToast)) { [weak self] _ in
+        showToast(VoiceToast(kind: .notThis, text: text, actions: [VoiceCopy.notThis], dwell: timing.undoToast)) { [weak self] _ in
             self?.notThis()
         }
     }
@@ -1622,7 +1631,7 @@ public enum SpokenPick: Equatable {
     public func notThis() {
         guard let act = recentAct else { return }
         recentAct = nil
-        surface?.dismissVoiceToast()
+        dismissToast()
         journalUpdate(act.take.takeId, .undone)
         host?.continuityRejected(takeId: act.take.takeId)
         learn(.reject(takeId: act.take.takeId, entryId: act.entryId), commits: false, present: false)
@@ -1714,8 +1723,12 @@ public enum SpokenPick: Equatable {
         else if case .fileOp = confirm.action { acting = FileOpCopy.working(confirm.title); surface?.presentWorking(acting!) }
         var bundleId: String?
         if case .openApp(let id) = confirm.action { bundleId = id }
+        // A held file command (a Finder window's close) runs in the context that decided it; every other held act in
+        // the current take's, as before.
+        let decided = Self.isFileCommand(confirm.action) ? confirm.contextId : nil
         Task { [weak self] in
-            guard let self, await self.perform(confirm.action, confirmed: true, origin: .instantAct, acting: acting) else { return }
+            guard let self, await self.perform(confirm.action, confirmed: true, origin: .instantAct, acting: acting, contextId: decided)
+            else { return }
             self.supersedeRecentAct()
             // A file or folder behind one Return (a visible sound-alike), or a file command's one Return: performed, never learned.
             if !Self.teaches(confirm.action) {
@@ -1947,7 +1960,7 @@ public enum SpokenPick: Equatable {
             let actions = secret ? [] : returnKey == .pressed ? [FillCopy.askPi] : [FillCopy.undo, FillCopy.askPi]
             let note = VoiceToast(kind: .typed, text: FillCopy.typed(app: appName(take), kind: field.kind, returnKey: returnKey),
                                   actions: actions, dwell: timing.rejectWindow)
-            surface?.presentVoiceToast(note) { [weak self] index in
+            showToast(note) { [weak self] index in
                 guard actions.indices.contains(index) else { return }
                 if actions[index] == FillCopy.undo { self?.undoFill() } else { self?.askPiAfterFill() }
             }
@@ -1967,7 +1980,7 @@ public enum SpokenPick: Equatable {
     /// (`copy` nil: a credential or code field's words, never offered).
     private func finishFill(_ message: String, copy text: String?) {
         resetTake(); host?.finishInstant()
-        surface?.presentVoiceToast(VoiceToast(kind: .notTyped, text: message, actions: text == nil ? [] : [FillCopy.copy], dwell: timing.undoToast)) { [weak self] _ in
+        showToast(VoiceToast(kind: .notTyped, text: message, actions: text == nil ? [] : [FillCopy.copy], dwell: timing.undoToast)) { [weak self] _ in
             guard let text else { return }
             Task { @MainActor [weak self] in _ = try? await self?.host?.perform(.copyText(text), contextId: nil, confirmed: false) }
         }
@@ -1976,9 +1989,9 @@ public enum SpokenPick: Equatable {
     /// own while its note is up; a new take's after a new hold, critic C10), with the bar out of the way. Only exactly what
     /// pi-os typed is removed; anything unproven is refused with a note (pi-os never sends ⌘Z).
     private func undoFill() {
-        surface?.dismissVoiceToast()
+        dismissToast()
         guard let fills, let record = fills.record, let take else {
-            surface?.presentVoiceToast(VoiceToast(kind: .notTyped, text: FillCopy.undoRefused, dwell: timing.undoToast)) { _ in }
+            showToast(VoiceToast(kind: .notTyped, text: FillCopy.undoRefused, dwell: timing.undoToast)) { _ in }
             return
         }
         if record.returnKey == .pressed {
@@ -1986,7 +1999,7 @@ public enum SpokenPick: Equatable {
             // ⌘Z would not either, so nothing is sent and the note says how to go back.
             forgetFill(); fillDwell?.cancel(); fillDwell = nil
             resetTake(); host?.finishInstant()
-            surface?.presentVoiceToast(VoiceToast(kind: .notTyped, text: FillCopy.alreadySubmitted, dwell: timing.undoToast)) { _ in }
+            showToast(VoiceToast(kind: .notTyped, text: FillCopy.alreadySubmitted, dwell: timing.undoToast)) { _ in }
             return
         }
         let takeId = take.takeId
@@ -2003,14 +2016,14 @@ public enum SpokenPick: Equatable {
             case .refused: VoiceToast(kind: .notTyped, text: FillCopy.undoRefused, dwell: self.timing.undoToast)
             case .uncertain: VoiceToast(kind: .notTyped, text: FillCopy.undoUncertain, dwell: self.timing.undoToast)
             }
-            self.surface?.presentVoiceToast(note) { _ in }
+            self.showToast(note) { _ in }
         }
     }
     /// "Ask pi" (the note, or a bare "frag pi/ask pi" within 5 s): the typing is undone, then the same words go to pi in
     /// the current take, as ⌥↩ does on the check card.
     private func askPiAfterFill() {
         guard let fills, let record = fills.record, !FillSession.secret(record.kind), let take else { return }
-        surface?.dismissVoiceToast()
+        dismissToast()
         let words = record.text
         let input = fillAsk?.takeId == record.takeId ? fillAsk?.input : nil
         let takeId = take.takeId
@@ -2029,7 +2042,7 @@ public enum SpokenPick: Equatable {
             if outcome == .undone { self.journalUpdate(record.takeId, .undone) }
             guard self.take?.takeId == takeId else { return }
             if outcome != .undone {
-                self.surface?.presentVoiceToast(VoiceToast(kind: .notTyped, text: outcome == .refused ? FillCopy.undoRefused : FillCopy.undoUncertain,
+                self.showToast(VoiceToast(kind: .notTyped, text: outcome == .refused ? FillCopy.undoRefused : FillCopy.undoUncertain,
                                                            dwell: self.timing.undoToast)) { _ in }
             }
             self.journalUpdate(record.takeId, .agent)
@@ -2059,7 +2072,7 @@ public enum SpokenPick: Equatable {
     /// otherwise a note says what typing there needs (the card stays).
     private func resolveSecret(_ secret: Secret) {
         guard secret.canType else {
-            surface?.presentVoiceToast(VoiceToast(kind: .notTyped, text: FillCopy.secretBlocked(secret.blocked ?? .notHere),
+            showToast(VoiceToast(kind: .notTyped, text: FillCopy.secretBlocked(secret.blocked ?? .notHere),
                                                   dwell: timing.undoToast)) { _ in }
             return
         }
@@ -2101,14 +2114,14 @@ public enum SpokenPick: Equatable {
         switch response.status {
         case .learned, .updated:
             guard let token = response.undoToken else { return }
-            surface?.presentVoiceToast(VoiceToast(kind: .learned, text: line, actions: [VoiceCopy.undo], dwell: timing.undoToast)) { [weak self] _ in
+            showToast(VoiceToast(kind: .learned, text: line, actions: [VoiceCopy.undo], dwell: timing.undoToast)) { [weak self] _ in
                 self?.undoLearn(token)
             }
         case .needsConfirmation:
             // Asks once: Remember resends with `confirmed`; Not now drops it.
             var confirmed = request
             confirmed.confirmed = true; confirmed.regression = nil
-            surface?.presentVoiceToast(VoiceToast(kind: .ask, text: line, actions: [VoiceCopy.remember, VoiceCopy.notNow],
+            showToast(VoiceToast(kind: .ask, text: line, actions: [VoiceCopy.remember, VoiceCopy.notNow],
                                                   dwell: timing.undoToast)) { [weak self] index in
                 guard index == 0 else { return }
                 self?.learn(confirmed, commits: false)
@@ -2123,7 +2136,7 @@ public enum SpokenPick: Equatable {
             guard let response = try? await dictionary.editDictionary(.undo(token: token)) else { return }
             self.terms?.noteRevision(response.revision)
             if response.status == .learned || response.status == .updated {
-                self.surface?.presentVoiceToast(VoiceToast(kind: .undone, text: VoiceCopy.undone, dwell: 1.4)) { _ in }
+                self.showToast(VoiceToast(kind: .undone, text: VoiceCopy.undone, dwell: 1.4)) { _ in }
             }
         }
     }
@@ -2278,11 +2291,13 @@ public enum SpokenPick: Equatable {
         }
     }
     /// `acting`: "Opening Pages…" is already shown (the launch is not awaited; the bar goes after the dwell).
-    /// `quiet`: the caller presents the outcome itself. True when the action was performed.
+    /// `quiet`: the caller presents the outcome itself. `contextId`: the context the act was decided for (a held confirm
+    /// answered in a later take), else the take's. True when the action was performed.
     @discardableResult
-    private func perform(_ action: HostAction, confirmed: Bool, origin: Origin, acting: String? = nil, quiet: Bool = false) async -> Bool {
+    private func perform(_ action: HostAction, confirmed: Bool, origin: Origin, acting: String? = nil, quiet: Bool = false,
+                         contextId decided: String? = nil) async -> Bool {
         if case .fileOp(let opId) = action { return runFileOp(opId, origin: origin, acting: acting) }
-        let contextId = take?.contextId
+        let contextId = decided ?? take?.contextId
         // A typed list previewed above the bar has no reader footer for a notice: confirm in the
         // bar ("✓ Copied path") and show failures there, as for an instant act.
         let inBar = origin == .instantAct || (origin == .instantCard && surface?.showsComposer == true)
@@ -2353,16 +2368,36 @@ public enum SpokenPick: Equatable {
         }
         return true
     }
-    /// While the run is pending: once dcg's process (its dialog) is up under the harness, the note says it waits for you.
+    /// While the run is pending: once dcg's process (its dialog) is up under the harness, the note says it waits for you;
+    /// when the dialog is gone again (the op itself runs now) the note goes, and the outcome follows.
     private func watchApproval(_ run: FileOpRun, after seconds: TimeInterval) {
         run.watch = scheduler.after(seconds) { [weak self] in
             guard let self, !run.settled else { return }
-            if !run.waiting, self.guardPending() {
+            let pending = self.guardPending()
+            if !run.waiting, pending {
                 run.waiting = true
-                self.surface?.presentVoiceToast(VoiceToast(kind: .waiting, text: FileOpCopy.waiting, dwell: FileOpLimits.runTimeout)) { _ in }
+                self.showToast(VoiceToast(kind: .waiting, text: FileOpCopy.waiting, dwell: FileOpLimits.runTimeout)) { _ in }
+            } else if run.waiting, !pending {
+                run.waiting = false
+                if self.noteKind == .waiting { self.surface?.dismissVoiceToast(); self.noteKind = nil }
             }
             self.watchApproval(run, after: ApprovalWait.poll)
         }
+    }
+    /// The kind of the note last shown above the bar (it may have timed out since).
+    private var noteKind: VoiceToast.Kind?
+    /// A file command's notes: its waiting line and its outcome. Only a newer note replaces one, never a dismissal for
+    /// something else ("Not this" after a newer act), so the outcome is not taken away before it is read.
+    static let fileOpNotes: Set<VoiceToast.Kind> = [.waiting, .done, .notDone]
+    private func showToast(_ toast: VoiceToast, onAction: @escaping @MainActor (Int) -> Void) {
+        noteKind = toast.kind
+        surface?.presentVoiceToast(toast, onAction: onAction)
+    }
+    /// Takes down a note that no longer applies ("Not this", a fill's note) — never a file command's.
+    private func dismissToast() {
+        if let noteKind, Self.fileOpNotes.contains(noteKind) { return }
+        noteKind = nil
+        surface?.dismissVoiceToast()
     }
     /// The run's outcome as a note (it replaces "Waiting for your approval…"). The line is Node's user copy and is never
     /// logged; the perf line carries the outcome and the duration only.
@@ -2377,7 +2412,7 @@ public enum SpokenPick: Equatable {
             label = error.code
         }
         if perf { print("[perf] fileop outcome=\(label) ms=\(Int((clock() - started) * 1000))"); fflush(stdout) }
-        surface?.presentVoiceToast(toast) { _ in }
+        showToast(toast) { _ in }
     }
     private func startDwell() {
         confirmationTimer?.cancel()

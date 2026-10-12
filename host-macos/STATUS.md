@@ -36,11 +36,20 @@ command for these: it performs Node's acts.
 - **quitApp** (`LauncherService.swift`): pi-os itself, Finder and macOS's own UI processes (loginwindow, Dock,
   SystemUIServer, Control Center, Notification Center, WindowManager, Spotlight, the wallpaper agent) are refused in
   `LauncherPolicy.plan`; otherwise every regular running app with exactly that bundle id gets `terminate()` (never a
-  force quit): "Asked Safari to quit", "Safari isn't running", or `quit_failed`.
+  force quit): "Asked Safari to quit"; nothing running is `not_running` ("Safari isn't running — nothing to quit."), a
+  refused request `quit_failed`.
 - **closeFinderWindow** (`FinderWindowClose.swift`, `Application.swift`): only the request's own context, with computer
   control on; the pinned window still on screen with the same id and owner, still Finder, the exact AX window, its
-  AXDocument the folder captured at key-down, at most one tab → AXPress on its AXCloseButton, gone within 0.6 s.
-  Anything else closes nothing and says so.
+  AXDocument the folder captured at key-down, exactly one readable tab → AXPress on its AXCloseButton, gone within
+  0.6 s. Anything else closes nothing and is shown as not done (`close_not_done`).
+- **Review 6 fixes (H1–H9):** a spoken name the "which one?" rows share ("test" for `test` and `test.txt`) picks none
+  (the question stays; numbers and a name only one row has still pick); auto-repeated Return/Enter never submits,
+  confirms or runs a row (composer and card); Node's `file_op`/`close` answers are shown with the heard words and never
+  handed to pi; a running file command reserves Node and every stop waits for it (`HarnessClient.holdForFileOp`); unread
+  Finder tabs close nothing; a held close answered in the next take ("ja", tap + ↩) performs in its own context (the
+  discarded context's Finder window and folder are kept 2 min for it); "isn't running", another folder, a window that
+  stays or is already gone are not done (no ✓, journal `cancelled`); the waiting note shows only for dcg while no agent
+  turn runs and goes when dcg's dialog closes; a file command's outcome note is never dismissed for "Not this".
 - **Verified offline:** `swift build` and `swift build --build-tests`, 0 warnings. `swift test` not run (the dcg hook
   blocks test runners for agents). Until the Node branch is merged these fail by design: the shared-fixture tests
   (`act-file-op-delete-folder.json`, `act-file-op-delete-file-confirm.json`, `act-close-quit-app.json`,

@@ -330,7 +330,86 @@ import XCTest
         XCTAssertEqual(surface.toasts.count, count, "the watch ends with the outcome")
     }
 
+    func testTheWaitingNoteGoesWhenDcgsDialogClosesWhileTheOpStillRuns() async throws {
+        var release = false, dialog = false
+        fileOps.gate = { while !release { try? await Task.sleep(nanoseconds: 1_000_000) } }
+        controller.guardPending = { dialog }
+        finals(Self.act(Self.fileOpAction(Self.folderOp)))
+        await say("lösche test")
+        await eventually("sent") { self.fileOps.runs.count == 1 }
+        scheduler.advance(0.4)
+        dialog = true
+        scheduler.advance(2.5)
+        XCTAssertEqual(surface.toasts.last?.kind, .waiting)
+        let dismissals = surface.toastDismissals
+        dialog = false
+        scheduler.advance(1)
+        XCTAssertEqual(surface.toastDismissals, dismissals + 1, "approved: the op runs now, nothing waits for the user")
+        release = true
+        await eventually("line") { self.surface.toasts.last?.kind == .done }
+    }
+
+    func testAFileCommandsOutcomeIsNeverTakenAwayForSomethingElse() async throws {
+        var release = false
+        fileOps.gate = { while !release { try? await Task.sleep(nanoseconds: 1_000_000) } }
+        finals(Self.act(Self.fileOpAction(Self.folderOp)))
+        await say("lösche test")
+        await eventually("sent") { self.fileOps.runs.count == 1 }
+        scheduler.advance(0.4)
+        // Meanwhile a sound-alike open: its "Not this" note.
+        finals(Self.act(#"{"type":"openApp","bundleId":"com.apple.Safari"}"#, intent: "open_app", title: "Open Safari", via: "sound"))
+        await say("öffne Safari")
+        await eventually("not this") { self.surface.toasts.last?.kind == .notThis }
+        release = true
+        await eventually("line") { self.surface.toasts.last?.kind == .done }
+        let dismissals = surface.toastDismissals
+        // A newer act supersedes "Not this" — the outcome now in its place stays until it times out or a newer note replaces it.
+        host.performResult = .success("Opened Notes")
+        finals(Self.act(#"{"type":"openApp","bundleId":"com.apple.Notes"}"#, intent: "open_app", title: "Open Notes", via: nil))
+        await say("öffne Notes")
+        await settle()
+        XCTAssertEqual(host.performed.last?.action, .openApp(bundleId: "com.apple.Notes"))
+        XCTAssertEqual(surface.toastDismissals, dismissals, "the outcome is not taken down before it is read")
+    }
+
     // MARK: Close acts
+
+    func testAHeldCloseAnsweredInTheNextTakeClosesTheWindowOfItsOwnTake() async throws {
+        host.performResult = .success("Closed the “Downloads” window")
+        let held = Self.act(#"{"type":"closeFinderWindow","contextId":"ctx-1"}"#, intent: "close", title: "Close the Downloads window", confirm: true)
+        finals(held)
+        await say("schließe Downloads")
+        XCTAssertTrue(host.performed.isEmpty, "held for one answer")
+        await say("ja")
+        await eventually("closed") { self.host.performed.count == 1 }
+        XCTAssertEqual(host.performed.first?.action, .closeFinderWindow(contextId: "ctx-1"))
+        XCTAssertEqual(host.performed.first?.contextId, "ctx-1", "the held act's own context, not the answering take's (ctx-2)")
+        XCTAssertEqual(surface.confirmations.last, "Closed the “Downloads” window")
+        // A tap and Return in the next take: the same (the held act was decided in take 3, ctx-3).
+        scheduler.advance(0.4); controller.interrupt(); surface.showsComposer = false
+        XCTAssertEqual(host.begun, 2)
+        finals(Self.act(#"{"type":"closeFinderWindow","contextId":"ctx-3"}"#, intent: "close", title: "Close the Downloads window", confirm: true))
+        await say("schließe Downloads")
+        controller.hotkeyPressed(); scheduler.advance(0.1); controller.hotkeyReleased()
+        XCTAssertEqual(host.begun, 4, "a new take (a new context) answers it")
+        controller.composerSubmitted(surface.composerText, intent: .plain)
+        await eventually("closed by Return") { self.host.performed.count == 2 }
+        XCTAssertEqual(host.performed.last?.action, .closeFinderWindow(contextId: "ctx-3"))
+        XCTAssertEqual(host.performed.last?.contextId, "ctx-3")
+    }
+
+    func testAQuitOrCloseThatChangedNothingIsNotDone() async throws {
+        host.performResult = .failure(DomainError("not_running", "Safari isn't running — nothing to quit."))
+        finals(Self.act(#"{"type":"quitApp","bundleId":"com.apple.Safari"}"#, intent: "close", title: "Quit Safari"))
+        await say("beende Safari")
+        await settle()
+        XCTAssertEqual(surface.failures, ["not_running"], "shown as not done")
+        XCTAssertTrue(surface.confirmations.isEmpty, "never a ✓")
+        await eventually("journal") { self.log.events.contains("update take-1 cancelled") }
+        XCTAssertFalse(log.events.contains("update take-1 confirmed"))
+    }
+
+    // MARK: Close acts (immediate)
 
     func testQuitAndCloseActsGoThroughTheHostAndNeverOfferNotThisOrLearn() async throws {
         host.performResult = .success("Asked Safari to quit")

@@ -107,16 +107,35 @@ public extension LauncherEffects {
         NSWorkspace.shared.urlForApplication(toOpen: url).flatMap { Bundle(url: $0)?.bundleIdentifier }
     }
     public func runningApps(bundleId: String) -> [RunningApp] {
-        let own = ProcessInfo.processInfo.processIdentifier
-        return NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).filter {
-            $0.bundleIdentifier == bundleId && $0.activationPolicy == .regular && !$0.isTerminated && $0.processIdentifier != own
-        }.map { RunningApp(pid: $0.processIdentifier, bundleId: bundleId, name: $0.localizedName ?? bundleId) }
+        Self.quittable(NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).map(Self.facts), bundleId: bundleId,
+                       own: ProcessInfo.processInfo.processIdentifier)
     }
     /// Re-checked by pid right before: still running and still that app (a reused pid is never asked).
     public func terminate(_ app: RunningApp) -> Bool {
-        guard let running = NSRunningApplication(processIdentifier: app.pid), running.bundleIdentifier == app.bundleId,
-              !running.isTerminated, app.pid != ProcessInfo.processInfo.processIdentifier else { return false }
+        guard let running = NSRunningApplication(processIdentifier: app.pid),
+              Self.mayTerminate(app, now: Self.facts(running), own: ProcessInfo.processInfo.processIdentifier) else { return false }
         return running.terminate()
+    }
+    /// A running process as `quitApp` sees it: NSRunningApplication's facts, plain values in tests.
+    struct ProcessFacts: Equatable {
+        var pid: pid_t
+        var bundleId: String?
+        var regular: Bool
+        var terminated: Bool
+        var name: String?
+    }
+    static func facts(_ app: NSRunningApplication) -> ProcessFacts {
+        ProcessFacts(pid: app.processIdentifier, bundleId: app.bundleIdentifier, regular: app.activationPolicy == .regular,
+                     terminated: app.isTerminated, name: app.localizedName)
+    }
+    /// The regular (Dock) apps of exactly `bundleId` still running, never pi-os's own process (`own`).
+    nonisolated static func quittable(_ processes: [ProcessFacts], bundleId: String, own: pid_t) -> [RunningApp] {
+        processes.filter { $0.bundleId == bundleId && $0.regular && !$0.terminated && $0.pid != own }
+            .map { RunningApp(pid: $0.pid, bundleId: bundleId, name: $0.name ?? bundleId) }
+    }
+    /// Asked to quit only while the pid is still that app, still running, and never pi-os itself.
+    nonisolated static func mayTerminate(_ app: RunningApp, now: ProcessFacts, own: pid_t) -> Bool {
+        now.pid == app.pid && now.bundleId == app.bundleId && !now.terminated && app.pid != own
     }
     public func inspect(_ url: URL) -> FileInspection {
         do {
@@ -623,8 +642,9 @@ public struct LauncherTraceEvent: Equatable, Sendable {
             // about unsaved work or decline, so the status says what was asked.
             let running = effects.runningApps(bundleId: bundleId)
             guard !running.isEmpty else {
+                // Nothing to quit: not done (never a ✓).
                 let record = (try? await apps.list())?.apps.first { $0.bundleId.caseInsensitiveCompare(bundleId) == .orderedSame }
-                return Executed(status: "\(record?.name ?? "That app") isn't running", performed: "quitApp")
+                throw DomainError("not_running", "\(record?.name ?? "That app") isn't running — nothing to quit.")
             }
             var asked: [RunningApp] = []
             for app in running where effects.terminate(app) { asked.append(app) }

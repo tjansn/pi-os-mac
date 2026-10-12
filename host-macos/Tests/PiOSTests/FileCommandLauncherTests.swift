@@ -1,3 +1,4 @@
+import Darwin
 import XCTest
 @testable import PiOSCore
 @testable import PiOSMac
@@ -19,10 +20,11 @@ import XCTest
         XCTAssertEqual(status, "Asked Safari to quit")
         XCTAssertEqual(effects.terminated, [4242], "terminate(), never a force quit")
         XCTAssertEqual(effects.total, 0, "nothing opened, revealed or copied")
-        let idle = try await host.service.perform(.quitApp(bundleId: "com.brave.Browser"), contextId: "ctx-1", confirmed: false)
-        XCTAssertEqual(idle, "Brave Browser isn't running")
-        let unknown = try await host.service.perform(.quitApp(bundleId: "com.example.Unknown"), contextId: nil, confirmed: false)
-        XCTAssertEqual(unknown, "That app isn't running")
+        // Nothing to quit is not done (the bar never shows a ✓ for it).
+        do { _ = try await host.service.perform(.quitApp(bundleId: "com.brave.Browser"), contextId: "ctx-1", confirmed: false); XCTFail("not running") }
+        catch { XCTAssertEqual(error as? DomainError, DomainError("not_running", "Brave Browser isn't running — nothing to quit.")) }
+        let unknown = await code { try await host.service.perform(.quitApp(bundleId: "com.example.Unknown"), contextId: nil, confirmed: false) }
+        XCTAssertEqual(unknown, "not_running")
         XCTAssertEqual(effects.terminated, [4242])
         effects.terminateAnswers = false
         let refused = await code { try await host.service.perform(.quitApp(bundleId: "com.apple.Safari"), contextId: "ctx-1", confirmed: false) }
@@ -123,9 +125,6 @@ final class FinderWindowCloseTests: XCTestCase {
         let slash = FakeFinderWindow()
         let lexical = await run(slash, folder: Self.downloads + "/")
         XCTAssertEqual(lexical, .closed, "folders compare lexically")
-        let tabs = FakeFinderWindow(); tabs.tabCount = nil
-        let unknownTabs = await run(tabs)
-        XCTAssertEqual(unknownTabs, .closed, "unreadable tabs: the window's own close button, as a click would")
     }
 
     func testAnythingElseClosesNothing() async throws {
@@ -151,16 +150,24 @@ final class FinderWindowCloseTests: XCTestCase {
         XCTAssertEqual(moved, .otherFolder)
         let tabbed = await refused { $0.tabCount = 3 }
         XCTAssertEqual(tabbed, .tabs)
+        let unknownTabs = await refused { $0.tabCount = nil }
+        XCTAssertEqual(unknownTabs, .unreadable, "tabs that cannot be read may be several: nothing is closed")
         let unmatched = await refused { $0.matched = nil }
         XCTAssertEqual(unmatched, .unreadable)
         let unread = await refused { $0.shown = nil }
         XCTAssertEqual(unread, .unreadable)
-        for outcome: FinderWindowClose.Outcome in [.gone, .notFinder, .noFolder, .otherFolder, .tabs, .unreadable] {
-            let status = try FinderWindowClose.status(outcome, folder: Self.downloads)
-            XCTAssertFalse(status.hasPrefix("Closed"), status)
+        // Every outcome that closed nothing is not done: thrown, so the bar never shows it with a ✓.
+        for outcome: FinderWindowClose.Outcome in [.gone, .notFinder, .noFolder, .otherFolder, .tabs, .unreadable, .stillOpen] {
+            XCTAssertThrowsError(try FinderWindowClose.status(outcome, folder: Self.downloads), "\(outcome)") {
+                XCTAssertEqual(($0 as? DomainError)?.code, "close_not_done")
+            }
         }
-        XCTAssertEqual(try FinderWindowClose.status(.otherFolder, folder: Self.downloads), "That Finder window shows another folder now — nothing was closed")
-        XCTAssertEqual(try FinderWindowClose.status(.gone, folder: nil), "That Finder window is already closed")
+        func message(_ outcome: FinderWindowClose.Outcome, _ folder: String?) -> String? {
+            do { _ = try FinderWindowClose.status(outcome, folder: folder); return nil } catch { return (error as? DomainError)?.message }
+        }
+        XCTAssertEqual(message(.otherFolder, Self.downloads), "That Finder window shows another folder now — nothing was closed")
+        XCTAssertEqual(message(.gone, nil), "That Finder window is already closed")
+        XCTAssertEqual(try FinderWindowClose.status(.closed, folder: Self.downloads), "Closed the “Downloads” window", "only a closed window is done")
     }
 
     func testAFailedPressIsAnErrorAndAWindowThatStaysSaysSo() async throws {
@@ -173,7 +180,123 @@ final class FinderWindowCloseTests: XCTestCase {
         let stuck = FakeFinderWindow(); stuck.closesOnPress = false
         let stays = await run(stuck)
         XCTAssertEqual(stays, .stillOpen); XCTAssertEqual(stuck.presses, 1, "pressed once, never again")
-        XCTAssertEqual(try FinderWindowClose.status(.stillOpen, folder: Self.downloads), "Finder didn’t close the “Downloads” window yet")
+        XCTAssertThrowsError(try FinderWindowClose.status(.stillOpen, folder: Self.downloads)) {
+            XCTAssertEqual($0 as? DomainError, DomainError("close_not_done", "Finder didn’t close the “Downloads” window — it may be asking something"))
+        }
+    }
+
+    /// Application.closeFinderWindow's gate: computer control, then Accessibility, then the pinned window; only a
+    /// Finder-window capture names the folder the close checks (a desktop capture or none: no folder, nothing closes).
+    func testTheCloseIsGatedOnControlAccessibilityAndTheCapturedWindow() throws {
+        let window = Self.window
+        func code(_ work: () throws -> Any) -> String? {
+            do { _ = try work(); return nil } catch { return (error as? DomainError)?.code }
+        }
+        let captured: (kind: VisibleSourceKind, path: String) = (.finderWindow, Self.downloads)
+        XCTAssertEqual(code { try Application.finderClosePlan(canControl: false, trusted: true, window: window, captured: captured) }, "policy_blocked",
+                       "read-only mode: no AX press")
+        XCTAssertEqual(code { try Application.finderClosePlan(canControl: true, trusted: false, window: window, captured: captured) }, "policy_blocked",
+                       "no Accessibility: no AX press")
+        XCTAssertEqual(code { try Application.finderClosePlan(canControl: true, trusted: true, window: nil, captured: captured) }, "close_not_done",
+                       "the pinned window is unknown: nothing is closed, never “already closed”")
+        let plan = try Application.finderClosePlan(canControl: true, trusted: true, window: window, captured: captured)
+        XCTAssertEqual(plan.window, window); XCTAssertEqual(plan.folder, Self.downloads)
+        XCTAssertNil(try Application.finderClosePlan(canControl: true, trusted: true, window: window, captured: (.desktop, "/Users/fixture/Desktop")).folder,
+                     "a desktop capture names no window folder")
+        XCTAssertNil(try Application.finderClosePlan(canControl: true, trusted: true, window: window, captured: nil).folder)
+        // The waiting note is about the file command's dcg only: never while an agent turn (with its own dcg) runs.
+        XCTAssertTrue(Application.fileOpWaits(agentRunning: false) { true })
+        XCTAssertFalse(Application.fileOpWaits(agentRunning: true) { true })
+        XCTAssertFalse(Application.fileOpWaits(agentRunning: false) { false })
+    }
+}
+
+// MARK: - quitApp's running-app filter, and POST /fileops/run without an answer
+
+@MainActor final class FileCommandHostEffectsTests: XCTestCase {
+    typealias Facts = WorkspaceEffects.ProcessFacts
+
+    func testOnlyRegularRunningAppsOfExactlyThatBundleAndNeverPiOSItselfAreAskedToQuit() {
+        let own: pid_t = 500
+        let processes = [
+            Facts(pid: 10, bundleId: "com.apple.Safari", regular: true, terminated: false, name: "Safari"),
+            Facts(pid: 11, bundleId: "com.apple.Safari", regular: false, terminated: false, name: "Safari Helper"),
+            Facts(pid: 12, bundleId: "com.apple.Safari", regular: true, terminated: true, name: "Safari"),
+            Facts(pid: 13, bundleId: "com.apple.SafariTechnologyPreview", regular: true, terminated: false, name: "Safari TP"),
+            Facts(pid: own, bundleId: "com.apple.Safari", regular: true, terminated: false, name: "pi-os"),
+            Facts(pid: 14, bundleId: "com.apple.Safari", regular: true, terminated: false, name: nil),
+        ]
+        XCTAssertEqual(WorkspaceEffects.quittable(processes, bundleId: "com.apple.Safari", own: own), [
+            RunningApp(pid: 10, bundleId: "com.apple.Safari", name: "Safari"), RunningApp(pid: 14, bundleId: "com.apple.Safari", name: "com.apple.Safari"),
+        ])
+        let safari = RunningApp(pid: 10, bundleId: "com.apple.Safari", name: "Safari")
+        XCTAssertTrue(WorkspaceEffects.mayTerminate(safari, now: processes[0], own: own))
+        XCTAssertFalse(WorkspaceEffects.mayTerminate(safari, now: Facts(pid: 10, bundleId: "com.example.Other", regular: true, terminated: false, name: "x"), own: own),
+                       "a reused pid is another app now: never asked")
+        XCTAssertFalse(WorkspaceEffects.mayTerminate(safari, now: Facts(pid: 10, bundleId: "com.apple.Safari", regular: true, terminated: true, name: "Safari"), own: own))
+        XCTAssertFalse(WorkspaceEffects.mayTerminate(RunningApp(pid: own, bundleId: "com.apple.Safari", name: "x"),
+                                                     now: Facts(pid: own, bundleId: "com.apple.Safari", regular: true, terminated: false, name: "x"), own: own))
+        // The live effects: no app runs with a fixture bundle id, and neither the test's own process nor a pid that does
+        // not exist is ever asked (nothing real is quit here).
+        let live = WorkspaceEffects()
+        XCTAssertTrue(live.runningApps(bundleId: "dev.pi-os.fixture.not-running").isEmpty)
+        XCTAssertFalse(live.terminate(RunningApp(pid: ProcessInfo.processInfo.processIdentifier, bundleId: "dev.pi-os.fixture.not-running", name: "x")))
+        XCTAssertFalse(live.terminate(RunningApp(pid: 999_999, bundleId: "dev.pi-os.fixture.not-running", name: "x")))
+    }
+
+    /// No answer from Node: a refused connection ran nothing; anything later (a timeout, a dropped connection) may have run.
+    func testARunWithoutAnAnswerSaysWhetherAnythingMayHaveRun() async throws {
+        for code in [URLError.Code.cannotConnectToHost, .cannotFindHost] {
+            XCTAssertEqual(HarnessClient.fileOpError(URLError(code)), FileOpErrors.notRun, "\(code)")
+        }
+        for error: Error in [URLError(.timedOut), URLError(.networkConnectionLost), URLError(.cancelled), CancellationError(),
+                             DomainError("x", "y")] {
+            XCTAssertEqual(HarnessClient.fileOpError(error), FileOpErrors.unknown, "\(error)")
+        }
+        // A port nothing listens on: refused before anything could run.
+        let support = FileManager.default.temporaryDirectory.appendingPathComponent("pi-os-fileop-refused-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: support) }
+        let client = HarnessClient(config: try MacConfiguration(env: ["PI_OS_SUPPORT_DIR": support.path, "PI_OS_TOKEN": "test-token",
+                                                                       "PI_OS_NODE_PORT": String(try Self.closedPort())]))
+        do { _ = try await client.runFileOp(FileOpRunRequest(opId: "op_7c1e0a9f3b2d4e5f")); XCTFail("nothing listens") }
+        catch { XCTAssertEqual(error as? DomainError, FileOpErrors.notRun) }
+        XCTAssertFalse(client.stopDeferred)
+    }
+
+    /// A running file command keeps Node: no idle or `stopIfUnused` stop while it runs, and a hard stop waits for it.
+    func testARunningFileCommandHoldsNodeAndAStopWaitsForIt() throws {
+        let support = FileManager.default.temporaryDirectory.appendingPathComponent("pi-os-fileop-hold-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: support) }
+        let client = HarnessClient(config: try MacConfiguration(env: ["PI_OS_SUPPORT_DIR": support.path]))
+        let hold = client.holdForFileOp()
+        client.stop()
+        XCTAssertTrue(client.stopDeferred, "the stop waits for the file command")
+        let second = client.holdForFileOp()
+        client.releaseFileOp(hold)
+        XCTAssertTrue(client.stopDeferred, "still one running")
+        client.releaseFileOp(second)
+        XCTAssertFalse(client.stopDeferred, "done when the last one finished")
+        client.stop()
+        XCTAssertFalse(client.stopDeferred, "with nothing running a stop is immediate")
+    }
+
+    /// A port that was free a moment ago (bound, then closed).
+    private static func closedPort() throws -> UInt16 {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        defer { close(fd) }
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        let bound = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        }
+        guard bound == 0 else { throw DomainError("test", "no port") }
+        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        _ = withUnsafeMutablePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &length) }
+        }
+        return UInt16(bigEndian: address.sin_port)
     }
 }
 

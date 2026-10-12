@@ -6,8 +6,9 @@ import PiOSCore
 // exactly the Finder window the take pinned at key-down, and only while it is still that window (same window id and
 // owner, still Finder, still the exact AX window) and still shows the folder the visible-items capture read then. The
 // close is the window's own close button (AXPress on AXCloseButton): no keystroke, no focus change, no other window. A
-// window with more than one tab is left alone (its close button would close the other tabs too). The desktop is not a
-// window. Folder names and paths are user content: shown in the status, never logged.
+// window with more than one tab, or whose tabs cannot be read, is left alone (its close button would close the other
+// tabs too). The desktop is not a window. Only a closed window is a done status; every other outcome is reported as not
+// done. Folder names and paths are user content: shown in the status, never logged.
 
 /// What closing the take's Finder window needs from the window server and Accessibility (fakes in tests). Made and used
 /// on one task (the app's runs off the main thread).
@@ -22,7 +23,7 @@ public protocol FinderWindowAccess {
     func window(_ target: WindowContext, frame: Rect) -> Window?
     /// The folder the window shows now (its AXDocument file URL's path), or nil.
     func folder(_ window: Window) -> String?
-    /// The window's tabs (1 without a tab bar); nil when they cannot be read.
+    /// The window's tabs (1 without a tab bar); nil when they cannot be read (then nothing is closed).
     func tabs(_ window: Window) -> Int?
     /// Presses the window's close button. False when it has none or the press failed.
     func pressClose(_ window: Window) -> Bool
@@ -62,7 +63,9 @@ public enum FinderWindowClose {
         guard access.isFinder(pid: target.processId) else { return .notFinder }
         guard let window = access.window(target, frame: frame), let shown = access.folder(window) else { return .unreadable }
         guard VisibleItemsPolicy.normalized(shown) == VisibleItemsPolicy.normalized(folder) else { return .otherFolder }
-        if let tabs = access.tabs(window), tabs > 1 { return .tabs }
+        // Tabs that cannot be read may be several: the close button would close them all.
+        guard let tabs = access.tabs(window) else { return .unreadable }
+        if tabs > 1 { return .tabs }
         guard access.pressClose(window) else { return .failed }
         let deadline = Date().addingTimeInterval(verifySeconds)
         while access.frame(target) != nil {
@@ -72,20 +75,21 @@ public enum FinderWindowClose {
         return .closed
     }
 
-    /// The bar's status (English UI, the folder's name as shown). A failed press is an error; every other outcome that
-    /// closed nothing says so.
+    /// The bar's status (English UI, the folder's name as shown) when the window closed. Every other outcome closed
+    /// nothing and is thrown (`close_not_done`; a failed press `close_failed`): the bar shows it as not done, never ✓.
     public static func status(_ outcome: Outcome, folder: String?) throws -> String {
         let name = folder.map { ($0 as NSString).lastPathComponent }.flatMap { $0.isEmpty ? nil : $0 }
         let window = name.map { "the “\($0)” window" } ?? "that Finder window"
+        let notDone = { (message: String) in DomainError("close_not_done", message) }
         switch outcome {
         case .closed: return "Closed " + window
-        case .stillOpen: return "Finder didn’t close \(window) yet"
-        case .gone: return name.map { "The “\($0)” window is already closed" } ?? "That Finder window is already closed"
-        case .notFinder: return "That isn’t a Finder window — nothing was closed"
-        case .noFolder: return "I can’t tell which folder that window shows — nothing was closed"
-        case .otherFolder: return "That Finder window shows another folder now — nothing was closed"
-        case .tabs: return "That Finder window has more tabs — nothing was closed"
-        case .unreadable: return "Couldn’t check that Finder window — nothing was closed"
+        case .stillOpen: throw notDone("Finder didn’t close \(window) — it may be asking something")
+        case .gone: throw notDone(name.map { "The “\($0)” window is already closed" } ?? "That Finder window is already closed")
+        case .notFinder: throw notDone("That isn’t a Finder window — nothing was closed")
+        case .noFolder: throw notDone("I can’t tell which folder that window shows — nothing was closed")
+        case .otherFolder: throw notDone("That Finder window shows another folder now — nothing was closed")
+        case .tabs: throw notDone("That Finder window has more tabs — nothing was closed")
+        case .unreadable: throw notDone("Couldn’t check that Finder window — nothing was closed")
         case .failed: throw DomainError("close_failed", "Finder didn’t let pi-os close \(window).")
         }
     }
@@ -105,10 +109,18 @@ struct NativeFinderWindowAccess: FinderWindowAccess {
         guard let document = (raw as? String) ?? (raw as? URL)?.absoluteString, let url = URL(string: document), url.isFileURL else { return nil }
         return url.path
     }
+    /// 1 only when every child's role was read and none is a tab group; a role or the tab list that cannot be read
+    /// (the budget ran out, AX failed) is unknown, never "one tab".
     func tabs(_ window: AXUIElement) -> Int? {
         guard let children = budget.read(window, kAXChildrenAttribute) as? [AXUIElement] else { return nil }
-        guard let group = children.first(where: { budget.read($0, kAXRoleAttribute) as? String == kAXTabGroupRole }) else { return 1 }
-        return (budget.read(group, kAXTabsAttribute) as? [AXUIElement])?.count
+        var group: AXUIElement?
+        for child in children {
+            guard let role = budget.read(child, kAXRoleAttribute) as? String else { return nil }
+            if role == kAXTabGroupRole { group = child; break }
+        }
+        guard let group else { return 1 }
+        guard let tabs = budget.read(group, kAXTabsAttribute) as? [AXUIElement], !tabs.isEmpty else { return nil }
+        return tabs.count
     }
     func pressClose(_ window: AXUIElement) -> Bool {
         guard let button = budget.element(window, kAXCloseButtonAttribute) else { return false }

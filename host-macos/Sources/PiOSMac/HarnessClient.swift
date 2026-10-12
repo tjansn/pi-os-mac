@@ -164,6 +164,10 @@ private final class OwnedChild {
     private var generation = UUID()
     private var expectedExit = false
     private var reservations: Set<UUID> = []
+    /// File commands in flight (POST /fileops/run): each holds a reservation, and a stop waits until the last one is in.
+    private var fileOpsInFlight = 0
+    /// A stop asked for while a file command ran: done when the last one finishes (unless newer work reserved Node).
+    private(set) var stopDeferred = false
     public var onUnexpectedExit: (() -> Void)?
     /// Push-to-talk keeps Node warm without an idle stop (see MacConfiguration.warmTTL(voiceEnabled:)).
     public var voiceEnabled: () -> Bool = { false }
@@ -288,12 +292,37 @@ private final class OwnedChild {
         retainWarm()
         return true
     }
+    /// Stops the owned group. While a file command runs (dcg's dialog may be open, its op may be running) the stop waits
+    /// for it: killing Node then would close dcg's dialog or orphan the run's answer.
     public func stop() {
+        guard fileOpsInFlight == 0 else {
+            stopDeferred = true
+            retention?.cancel(); retention = nil
+            return
+        }
         expectedExit = true; generation = UUID()
         retention?.cancel(); retention = nil
         starting?.cancel(); starting = nil
         child?.stop()
         // Keep ownership until waitpid completes; a new invocation must not attach to a stopping child.
+    }
+    /// A file command starts: Node is reserved (no idle stop, no `stopIfUnused`) and stops wait until it finishes.
+    func holdForFileOp() -> UUID {
+        fileOpsInFlight += 1
+        return reserve()
+    }
+    /// A file command finished: its reservation goes, and a stop asked for meanwhile happens now — unless newer work
+    /// (a take, a reader) reserved Node since, which then owns it as `stopIfUnused` would decide.
+    func releaseFileOp(_ hold: UUID) {
+        fileOpsInFlight = max(0, fileOpsInFlight - 1)
+        reservations.remove(hold)
+        guard fileOpsInFlight == 0 else { return }
+        if stopDeferred {
+            stopDeferred = false
+            stopIfUnused()
+            if reservations.isEmpty { return }
+        }
+        retainWarm()
     }
     public func submit(id: String, context: String, prompt: String) async throws {
         try await submit(id: id, context: context, prompt: prompt, takeId: nil, input: nil)
@@ -600,7 +629,10 @@ private final class OwnedChild {
     /// POST /fileops/run: Node runs the op it staged for the take after the user's dcg guard reviewed it, and answers one
     /// line of copy. Never warms Node and is never retried: a 4xx answer or a refused connection means nothing ran
     /// (`file_op_not_run`); no answer within 180 s, a server error or an unreadable answer may have run (`file_op_unknown`).
+    /// Node stays reserved for the whole run, and no stop kills it meanwhile (`holdForFileOp`).
     public func runFileOp(_ run: FileOpRunRequest) async throws -> FileOpRunResult {
+        let hold = holdForFileOp()
+        defer { releaseFileOp(hold) }
         var req = URLRequest(url: URL(string: "http://127.0.0.1:\(config.nodePort)" + FileOpRoutes.run)!)
         req.httpMethod = "POST"
         req.timeoutInterval = FileOpLimits.runTimeout
@@ -609,10 +641,14 @@ private final class OwnedChild {
         req.httpBody = try JSONEncoder().encode(run)
         let answer: (Data, URLResponse)
         do { answer = try await fileOpSession.data(for: req) }
-        // Node was not there to take the request: nothing ran. Anything later (a timeout, a dropped connection) may have run.
-        catch let error as URLError where [.cannotConnectToHost, .cannotFindHost].contains(error.code) { throw FileOpErrors.notRun }
-        catch { throw FileOpErrors.unknown }
+        catch { throw Self.fileOpError(error) }
         return try Self.fileOpResult(data: answer.0, status: (answer.1 as? HTTPURLResponse)?.statusCode ?? 0)
+    }
+    /// A run that brought no answer: Node was not there to take the request (refused, no such host) — nothing ran;
+    /// anything later (a timeout, a dropped connection, a cancel) may have run.
+    nonisolated static func fileOpError(_ error: Error) -> DomainError {
+        if let error = error as? URLError, [.cannotConnectToHost, .cannotFindHost].contains(error.code) { return FileOpErrors.notRun }
+        return FileOpErrors.unknown
     }
     /// The run's answer: a 2xx with a valid body is the result; a 4xx means Node refused the request before anything ran;
     /// anything else may have run.
