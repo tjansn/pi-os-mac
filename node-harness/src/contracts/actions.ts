@@ -203,9 +203,9 @@ export function parseFileOpRunRequest(value: unknown): FileOpParse<FileOpRunRequ
   return { ok: true, value: { opId: value.opId } };
 }
 
-/** Structural check of a 200 body (hosts drop anything else and show a generic failure). */
+/** Structural check of a 200 body (hosts drop anything else and show a generic failure); a blank `line` too, as Swift. */
 export function parseFileOpRunResponse(value: unknown): FileOpRunResponse | null {
   if (!isRecord(value) || value.ok !== true || typeof value.outcome !== "string" || !(FILE_OP_OUTCOMES as readonly string[]).includes(value.outcome)) return null;
-  if (!boundedString(value.line, FILE_OP_LIMITS.maxLine) || !isOneLineText(value.line)) return null;
+  if (!boundedString(value.line, FILE_OP_LIMITS.maxLine) || !isOneLineText(value.line) || !value.line.trim()) return null;
   return { ok: true, outcome: value.outcome as FileOpOutcome, line: value.line };
 }

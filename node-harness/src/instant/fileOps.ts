@@ -1,7 +1,7 @@
-import { execFile, spawn, type ChildProcess } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { accessSync, constants, realpathSync, statSync } from "node:fs";
-import { lstat } from "node:fs/promises";
+import { lstat, realpath } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, delimiter, isAbsolute, join } from "node:path";
 import { FILE_OP_LIMITS, type FileOpOutcome } from "../contracts/actions.js";
@@ -17,14 +17,17 @@ import { truncate } from "./format.js";
  *     shell-quoted with the bare binary name.
  *   - FileOpStore: ops staged for one take (takeId, contextId), single-use, 2 minutes. Staging reads the source's
  *     identity (device, inode, mtime, kind) at once and never blocks the decision on it (a Desktop item may raise the
- *     privacy prompt once); the run awaits it.
- *   - runFileOp (POST /fileops/run): expiry → still on → safety rules → identity unchanged → target free → dcg's review
- *     exactly as Tom's pi bridge asks it (`~/.pi/agent/extensions/dcg-guard.ts`) → identity unchanged again (the dialog
- *     may have been open for minutes) → execFile → the effect verified. Every failure fails closed.
+ *     privacy prompt once); the run awaits it. Running one op of a take drops the take's other ops (the rest of a
+ *     "which one?" list), and a newer take's final in the same context drops the older takes' ops there.
+ *   - runFileOp (POST /fileops/run): expiry → still on → safety rules (as named and through real folders) → identity
+ *     unchanged → target free → dcg's review exactly as Tom's pi bridge asks it (`~/.pi/agent/extensions/dcg-guard.ts`)
+ *     → identity unchanged again (the dialog may have been open for minutes) → the argv in its own process group,
+ *     within the run's budget → the effect verified. Every failure fails closed.
  *   - Safety (§4.1): only paths that are not the shown folder or one of its ancestors, not the home folder, its
- *     standard folders or ~/Library, not `/`, a volume root, a system root (`/System`, `/Library`, `/usr`, `/bin`,
- *     `/sbin`, `/private`, `/etc`, `/var`, `/tmp`, `/dev`, `/cores`) except inside the user's temp folder, and never a
- *     path with a hidden component (`~/.Trash`).
+ *     standard folders or ~/Library, not `/` or one of its direct children, a volume root, a system root (`/System`,
+ *     `/Library`, `/usr`, `/bin`, `/sbin`, `/private`, `/etc`, `/var`, `/tmp`, `/dev`, `/cores`), `/Applications` or
+ *     `/opt` except inside the user's temp folder, nothing under `/Users` but the user's own home, and never a path
+ *     with a hidden component (`~/.Trash`).
  *
  * Logs are content-free: the caller's `log` gets the op kind, the outcome, dcg's verdict and the time, never a name,
  * path, command or dcg reason. User copy (`line`) is in the take's language.
@@ -55,7 +58,10 @@ export interface FileOpPlan {
   cwd: string;
   /** The existing item (absent for create). */
   source?: string;
-  /** The host said the source is a directory on disk: `rm -r` (checked against its identity before a delete runs). */
+  /**
+   * The source is a directory on disk — a folder or a package (`.rtfd`, `.key`, `.photoslibrary`) — so `rm -r`
+   * (checked against its identity before a delete runs).
+   */
   sourceDir?: boolean;
   /** What exists afterwards (create, copy, move, rename); it must not exist before. */
   target?: string;
@@ -73,8 +79,16 @@ export const FILE_OPS = Object.freeze({
   dcgTimeoutMs: 140_000,
   /** dcg's stdout cap (the pi bridge's 1 MB). */
   maxDcgOutput: 1024 * 1024,
-  /** The op itself (a large folder copy may take a while; the host waits 180 s in all). */
-  execTimeoutMs: 30_000,
+  /**
+   * The whole run — checks, dcg's review and the op — answers within this long: the host waits 180 s (FILE_OP_LIMITS
+   * .hostTimeoutMs), and the 10 s left cover the checks around the op and the answer itself.
+   */
+  runBudgetMs: 170_000,
+  /**
+   * The op gets what dcg's review left of the run's budget (a large folder copy may take a while), never less than
+   * this: a review that took its full 140 s still leaves the op 30 s within the budget.
+   */
+  minExecMs: 30_000,
 });
 
 export const BINARIES = Object.freeze({ rm: "/bin/rm", mkdir: "/bin/mkdir", touch: "/usr/bin/touch", cp: "/bin/cp", mv: "/bin/mv" });
@@ -95,7 +109,10 @@ export function parentPath(path: string): string {
 
 export interface PlanItem { path: string; isDirectory: boolean }
 
-/** `rm -r` for a directory on disk (packages too: dcg reviews it with its own dialog), `rm` for a file or symlink. */
+/**
+ * `rm -r` for a directory on disk (a package is one: the caller passes `isDirectory` for it, and dcg reviews `rm -r`
+ * with its own dialog), `rm` for a file or symlink.
+ */
 export function deletePlan(item: PlanItem, shown: string, words: FileOpWords): FileOpPlan {
   const argv = item.isDirectory ? [BINARIES.rm, "-r", "--", item.path] : [BINARIES.rm, "--", item.path];
   return { kind: "delete", argv, cwd: shown, source: item.path, sourceDir: item.isDirectory, words };
@@ -162,24 +179,42 @@ export function nameProblem(name: string): NameProblem | null {
 // ---------------------------------------------------------------------------------------------
 // Safety (DESIGN6 §4.1)
 
-export type PathProblem = "invalid" | "root" | "home" | "shown_folder" | "standard_folder" | "system" | "volume_root" | "trash" | "hidden";
+export type PathProblem =
+  | "invalid" | "root" | "top_level" | "home" | "other_user" | "shown_folder" | "standard_folder" | "system" | "volume_root" | "trash" | "hidden";
 
 export interface PathGuard {
   home: string;
+  /** The home folder's real path when it differs (a symlinked home): it is the home folder too. */
+  realHome?: string;
   /** The user's temp folder (and its real path): the only place below a system root an op may touch. */
   temp: readonly string[];
 }
 
 /** The home folder's own folders: never a target themselves (an item inside them is fine). */
 const STANDARD_FOLDERS = new Set(["desktop", "documents", "downloads", "library", "pictures", "music", "movies", "public", "applications", "sites"]);
-const SYSTEM_ROOTS = new Set(["system", "library", "usr", "bin", "sbin", "private", "etc", "var", "tmp", "dev", "cores"]);
+/** Top-level folders nothing inside of is a target: the system's, the apps' (`/Applications`) and third-party tools' (`/opt`). */
+const SYSTEM_ROOTS = new Set(["system", "library", "usr", "bin", "sbin", "private", "etc", "var", "tmp", "dev", "cores", "applications", "opt"]);
 
 /** Compared as the file system compares (NFC, case-insensitive APFS/HFS+). */
 function pathKey(path: string): string {
   return path.normalize("NFC").toLowerCase();
 }
 
+/** A folder without trailing slashes ("/Users/x/" is "/Users/x"; "/" stays). */
+function withoutTrailingSlash(path: string): string {
+  return path.replace(/\/+$/u, "") || "/";
+}
+
+/** The home folder as given (trailing slashes off) and, read once here, its real path when that differs. */
 export function defaultPathGuard(home = homedir()): PathGuard {
+  const given = withoutTrailingSlash(home);
+  let realHome: string | undefined;
+  try {
+    const real = realpathSync(given);
+    if (real !== given) realHome = real;
+  } catch {
+    // No such home: only the given path is compared.
+  }
   const temp = new Set<string>();
   try {
     const dir = tmpdir();
@@ -188,16 +223,19 @@ export function defaultPathGuard(home = homedir()): PathGuard {
   } catch {
     // No temp folder: nothing below a system root is allowed.
   }
-  return { home, temp: [...temp] };
+  return { home: given, ...(realHome ? { realHome } : {}), temp: [...temp] };
 }
 
-/** Why `path` may not be acted on, or null. `shown`: the folder the take shows (never itself or an ancestor of it). */
+/**
+ * Why `path` may not be acted on, or null. `shown`: the folder the take shows (never itself or an ancestor of it).
+ * Lexical: runFileOp checks the real path through the folders on the way as well (`realPathProblem`).
+ */
 export function pathProblem(path: string, guard: PathGuard, shown?: string): PathProblem | null {
   if (!isAbsoluteHostPath(path)) return "invalid";
   const key = pathKey(path);
   if (key === "/") return "root";
-  const home = pathKey(guard.home);
-  if (key === home || home.startsWith(`${key}/`)) return "home";
+  const homes = [guard.home, guard.realHome].flatMap((home) => (home ? [pathKey(withoutTrailingSlash(home))] : []));
+  if (homes.some((home) => key === home || home.startsWith(`${key}/`))) return "home";
   if (shown !== undefined) {
     const folder = pathKey(shown);
     if (key === folder || folder.startsWith(`${key}/`)) return "shown_folder";
@@ -206,13 +244,18 @@ export function pathProblem(path: string, guard: PathGuard, shown?: string): Pat
   if (parts.some((part) => part === ".trash" || part === ".trashes")) return "trash";
   if (parts.some((part) => part.startsWith("."))) return "hidden";
   if (parts[0] === "volumes" && parts.length <= 2) return "volume_root";
-  if (key.startsWith(`${home}/`)) {
+  const home = homes.find((candidate) => key.startsWith(`${candidate}/`));
+  if (home !== undefined) {
     const rest = key.slice(home.length + 1).split("/");
     if (rest.length === 1 && STANDARD_FOLDERS.has(rest[0]!)) return "standard_folder";
     return rest[0] === "library" ? "system" : null;
   }
-  const inTemp = guard.temp.some((dir) => key.startsWith(`${pathKey(dir)}/`));
-  return !inTemp && SYSTEM_ROOTS.has(parts[0]!) ? "system" : null;
+  if (guard.temp.some((dir) => key.startsWith(`${pathKey(dir)}/`))) return null;
+  // "delete Applications" in a Finder window on the startup disk: no direct child of "/", nothing in another user's
+  // home or /Users/Shared, nothing under a system root, /Applications or /opt.
+  if (parts.length === 1) return "top_level";
+  if (parts[0] === "users") return "other_user";
+  return SYSTEM_ROOTS.has(parts[0]!) ? "system" : null;
 }
 
 /** The first problem of a plan's source and target (each checked against the shown folder too). */
@@ -228,6 +271,29 @@ export function planProblem(plan: FileOpPlan, guard: PathGuard): PathProblem | n
     if (pathKey(plan.target).startsWith(`${source}/`)) return "invalid";
   }
   return isAbsoluteHostPath(plan.cwd) || plan.cwd === "/" ? null : "invalid";
+}
+
+export type RealPathFn = (path: string) => Promise<string>;
+
+/**
+ * `planProblem` on the real paths: each path's folder through its symlinks ("~/Desktop/Link" to /Applications is
+ * /Applications), the item itself as it is (a symlink is acted on as a link). Null when every real path passes too;
+ * "unreadable" when a folder cannot be resolved.
+ */
+export async function realPathProblem(plan: FileOpPlan, guard: PathGuard, resolve: RealPathFn = realpath): Promise<PathProblem | "unreadable" | null> {
+  try {
+    const shown = await resolve(plan.cwd);
+    for (const path of [plan.source, plan.target]) {
+      if (path === undefined) continue;
+      const real = childPath(await resolve(parentPath(path)), basename(path));
+      if (real === path && shown === plan.cwd) continue;
+      const problem = pathProblem(real, guard, shown);
+      if (problem) return problem;
+    }
+    return null;
+  } catch {
+    return "unreadable";
+  }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -335,13 +401,31 @@ export class FileOpStore {
     });
   }
 
-  /** Single-use: the op is gone after this, whatever the answer. `ok: false` for an unknown or expired op. */
+  /**
+   * Single-use: the op is gone after this, whatever the answer. `ok: false` for an unknown or expired op. A claimed op
+   * also takes its take's other ops with it (the other rows of a "which one?" list are no longer what the user means).
+   */
   claim(opId: string): FileOpClaim {
     const op = this.ops.get(opId);
     if (!op) return { ok: false };
     this.ops.delete(opId);
     const age = this.clock() - op.stagedAt;
-    return age < 0 || age > this.ttlMs ? { ok: false, op } : { ok: true, op };
+    if (age < 0 || age > this.ttlMs) return { ok: false, op };
+    const sibling = (other: StagedFileOp): boolean => (op.takeId !== undefined
+      ? other.takeId === op.takeId
+      : op.contextId !== undefined && other.takeId === undefined && other.contextId === op.contextId);
+    for (const [id, other] of this.ops) if (sibling(other)) this.ops.delete(id);
+    return { ok: true, op };
+  }
+
+  /**
+   * A newer take's final in `contextId`: the ops older takes staged there go (their list or confirm was replaced).
+   * The same take's ops stay — a voice take's second final (Phase B) must not take the first one's act away.
+   */
+  supersede(binding: { takeId?: string; contextId?: string }): void {
+    const { takeId, contextId } = binding;
+    if (takeId === undefined || contextId === undefined) return;
+    for (const [id, op] of this.ops) if (op.contextId === contextId && op.takeId !== takeId) this.ops.delete(id);
   }
 
   /** Staged ops of one take (tests, diagnostics). */
@@ -499,29 +583,67 @@ export interface FileOpRunOptions {
   guard?: PathGuard;
   signal?: AbortSignal;
   dcgTimeoutMs?: number;
+  /** The op's own limit (default: what dcg's review left of FILE_OPS.runBudgetMs, at least FILE_OPS.minExecMs). */
   execTimeoutMs?: number;
-  /** Monotonic ms for the log (default performance.now). */
+  /** Monotonic ms for the log and the run's budget (default performance.now). */
   clock?: () => number;
+  /** Real paths of the folders on the way (default fs.realpath). */
+  realpath?: RealPathFn;
   log?: (fields: FileOpLogFields, ms: number) => void;
 }
 
-/** Runs one argv (absolute binary, no shell, a fixed minimal environment). Resolves its exit code (-1: it did not run or was killed). */
-function execArgv(argv: readonly string[], cwd: string, timeoutMs: number): Promise<number> {
-  const [binary, ...args] = argv;
-  if (!binary || !isAbsolute(binary)) return Promise.resolve(-1);
-  return new Promise((resolve) => {
+interface ExecResult {
+  /** The exit code; -1: it did not run or was killed. */
+  code: number;
+  /** The time limit stopped it: part of the op may have happened. */
+  killed: boolean;
+}
+
+/** SIGKILL to the op's whole process group (`mv` across volumes runs a `cp` of its own), else to the op itself. */
+function killGroup(child: ChildProcess): void {
+  try {
+    if (child.pid === undefined) throw new Error("no pid");
+    process.kill(-child.pid, "SIGKILL");
+  } catch {
     try {
-      execFile(binary, args, {
-        cwd, timeout: timeoutMs, killSignal: "SIGKILL", maxBuffer: 64 * 1024, windowsHide: true,
-        env: { PATH: "/usr/bin:/bin:/usr/sbin:/sbin", LC_ALL: "C" },
-      }, (error) => {
-        if (!error) return resolve(0);
-        const code = (error as { code?: unknown }).code;
-        resolve(typeof code === "number" ? code : -1);
+      child.kill("SIGKILL");
+    } catch {
+      // Already gone.
+    }
+  }
+}
+
+/**
+ * Runs one argv (absolute binary, no shell, a fixed minimal environment) as the leader of its own process group, so the
+ * time limit stops everything it started and a harness stop never cuts it off half-way. Output is discarded.
+ */
+function execArgv(argv: readonly string[], cwd: string, timeoutMs: number): Promise<ExecResult> {
+  const [binary, ...args] = argv;
+  if (!binary || !isAbsolute(binary)) return Promise.resolve({ code: -1, killed: false });
+  return new Promise((resolve) => {
+    let killed = false;
+    let settled = false;
+    let timer: NodeJS.Timeout | undefined;
+    const done = (code: number): void => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve({ code, killed });
+    };
+    let child: ChildProcess;
+    try {
+      child = spawn(binary, args, {
+        cwd, detached: true, shell: false, stdio: "ignore", windowsHide: true, env: { PATH: "/usr/bin:/bin:/usr/sbin:/sbin", LC_ALL: "C" },
       });
     } catch {
-      resolve(-1);
+      return done(-1);
     }
+    timer = setTimeout(() => {
+      killed = true;
+      killGroup(child);
+    }, timeoutMs);
+    child.on("error", () => done(-1));
+    child.on("close", (code) => done(typeof code === "number" ? code : -1));
   });
 }
 
@@ -569,6 +691,11 @@ export async function runFileOp(store: FileOpStore, opId: string, options: FileO
     if (options.enabled && !options.enabled()) return finish("failed", failedLine(plan, "off"));
     const guard = options.guard ?? defaultPathGuard();
     if (planProblem(plan, guard)) return finish("failed", failedLine(plan, "protected"));
+    /** The safety rules on the real paths (a symlinked folder on the way), before dcg's review and again before the op. */
+    const realProblem = async (): Promise<FailedWhy | null> => {
+      const problem = await realPathProblem(plan, guard, options.realpath);
+      return problem === null ? null : problem === "unreadable" ? "unreadable" : "protected";
+    };
 
     // The source as staged: still there, still the same item.
     let staged: SourceIdentity | undefined;
@@ -587,6 +714,8 @@ export async function runFileOp(store: FileOpStore, opId: string, options: FileO
       if (target.ok) return finish("failed", failedLine(plan, "exists"));
       if (target.code !== "gone") return finish("failed", failedLine(plan, "unreadable"));
     }
+    const real = await realProblem();
+    if (real) return finish("failed", failedLine(plan, real));
 
     // dcg reviews every op (BUILD6 §3): missing or failing, nothing runs.
     const dcg = options.dcg();
@@ -605,9 +734,14 @@ export async function runFileOp(store: FileOpStore, opId: string, options: FileO
       if (!again.ok || !sameIdentity(staged, again.identity)) return finish("expired", expiredLine(words, !again.ok && again.code === "gone" ? "gone" : "changed"), "allow");
     }
     if (plan.target !== undefined && (await identityOf(plan.target, read)).ok) return finish("failed", failedLine(plan, "exists"), "allow");
+    const realAfter = await realProblem();
+    if (realAfter) return finish("failed", failedLine(plan, realAfter), "allow");
 
-    const code = await execArgv(plan.argv, plan.cwd, options.execTimeoutMs ?? FILE_OPS.execTimeoutMs);
-    if (code === 0 && await verified(plan, read)) return finish("done", doneLine(plan), "allow");
+    // The host waits 180 s in all: the op gets what the review left of the run's budget, at least FILE_OPS.minExecMs.
+    const execMs = options.execTimeoutMs ?? Math.max(FILE_OPS.minExecMs, FILE_OPS.runBudgetMs - (clock() - started));
+    const ran = await execArgv(plan.argv, plan.cwd, execMs);
+    if (ran.killed) return finish("failed", failedLine(plan, "killed"), "allow");
+    if (ran.code === 0 && await verified(plan, read)) return finish("done", doneLine(plan), "allow");
     return finish("failed", failedLine(plan, "op"), "allow");
   } catch {
     return finish("failed", failedLine(undefined, "op"));
@@ -654,7 +788,7 @@ export function deniedLine(plan: FileOpPlan, reason: string): string {
   return w.german ? `dcg hat das ${verb.de} abgelehnt: ${reason}` : `dcg blocked ${verb.gerund} ${q(w, w.name)}: ${reason}`;
 }
 
-type FailedWhy = "op" | "exists" | "protected" | "no_dcg" | "dcg_error" | "aborted" | "off" | "unreadable";
+type FailedWhy = "op" | "killed" | "exists" | "protected" | "no_dcg" | "dcg_error" | "aborted" | "off" | "unreadable";
 
 export function failedLine(plan: FileOpPlan | undefined, why: FailedWhy): string {
   const w = plan?.words ?? { german: false, name: "" };
@@ -679,6 +813,11 @@ export function failedLine(plan: FileOpPlan | undefined, why: FailedWhy): string
     case "op":
       if (!plan) return "That didn't work.";
       return de ? `${VERBS[plan.kind].de} von ${q(w, w.name)} hat nicht geklappt.` : `Couldn't ${VERBS[plan.kind].en} ${q(w, w.name)}.`;
+    case "killed":
+      // The time limit stopped it part-way: the user checks the folder.
+      if (!plan) return "That was stopped — it may be incomplete.";
+      return de ? `${VERBS[plan.kind].de} von ${q(w, w.name)} wurde abgebrochen – möglicherweise unvollständig.`
+        : `Stopped ${VERBS[plan.kind].gerund} ${q(w, w.name)} — it may be incomplete.`;
   }
 }
 

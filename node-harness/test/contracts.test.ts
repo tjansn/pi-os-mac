@@ -96,6 +96,8 @@ test("POST /fileops/run fixtures: the request is exactly {opId}; responses carry
   assert.equal(parseFileOpRunResponse(invalid), null);
   assert.deepEqual([invalid.ok, typeof invalid.error], [false, "string"]);
   assert.equal(parseFileOpRunResponse({ ok: true, outcome: "done", line: "a\nb" }), null, "one line");
+  // Blank (JS whitespace only) is no line, as the Swift host decodes it (FileOpRunResult, VoiceText.isValid).
+  for (const blank of [" ", "   ", " ", "  "]) assert.equal(parseFileOpRunResponse({ ok: true, outcome: "done", line: blank }), null, JSON.stringify(blank));
   assert.equal(parseFileOpRunResponse({ ok: true, outcome: "done", line: "x".repeat(FILE_OP_LIMITS.maxLine + 1) }), null, "≤ 300");
   assert.equal(parseFileOpRunResponse({ ok: true, outcome: "maybe", line: "x" }), null);
   assert.equal(FILE_OP_LIMITS.hostTimeoutMs, 180_000);

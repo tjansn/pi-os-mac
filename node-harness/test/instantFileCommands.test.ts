@@ -512,6 +512,23 @@ test("a package (the host sends isDirectory false, isPackage true) is a folder f
   assert.deepEqual(argvOf(ops, "p3"), [["/bin/cp", "-R", "-n", "--", "/Users/fixture/Desktop/Präsentation.key", "/Users/fixture/Desktop/Präsentation Kopie.key"]]);
 });
 
+test("the startup disk's top level, /Applications, /opt and other users' folders are never targets: \"pi-os won't touch\"", async () => {
+  const root = windowOf("/", [
+    item("tok_appsfolder01", "Applications", "/Applications"), item("tok_usersfolder1", "Users", "/Users"), item("tok_optfolder0001", "opt", "/opt"),
+    item("tok_library00002", "Library", "/Library"),
+  ]);
+  const { dispatcher, ops } = make(root);
+  for (const [text, name] of [["lösche Applications", "Applications"], ["lösche Users", "Users"], ["lösche opt", "opt"], ["benenne Library in Bib um", "Library"],
+    ["verschiebe Applications nach Dokumente", "Applications"]] as const) {
+    assert.equal(asAnswer(await dispatcher.dispatch(typed(text))).title, `pi-os rührt „${name}“ nicht an.`, text);
+  }
+  const users = make(windowOf("/Users", [item("tok_shared000001", "Shared", "/Users/Shared"), item("tok_otheruser001", "anna", "/Users/anna")]));
+  for (const text of ["lösche Shared", "lösche anna"]) assert.match(asAnswer(await users.dispatcher.dispatch(typed(text))).title, /^pi-os rührt „/u, text);
+  const apps = make(windowOf("/Applications", [item("tok_utilities001", "Utilities", "/Applications/Utilities")]));
+  assert.equal(asAnswer(await apps.dispatcher.dispatch(typed("lösche Utilities"))).title, "pi-os rührt „Utilities“ nicht an.");
+  assert.equal(ops.size + users.ops.size + apps.ops.size, 0);
+});
+
 test("an incomplete view: a delete, move or rename of the one match is a one-row list (another item of that name may be unread); a copy still acts", async () => {
   const { dispatcher, ops } = make(FINDER_WINDOW);
   for (const [index, text] of ["lösche Alpen", "verschiebe Alpen nach Dokumente", "benenne Alpen in Berge um"].entries()) {

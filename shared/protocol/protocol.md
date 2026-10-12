@@ -856,16 +856,21 @@ voice finals and `accept` for the gated kinds, and sends `voice` on voice decisi
     lane's step 6 skips it). Anywhere else the same words decide exactly as before ("close enough" in a chat is still
     typed).
   - **Safety** (each a test): targets are only the resolved items (and the shown folder for create); never the shown
-    folder or one of its ancestors, the home folder or its standard folders, `~/Library`, `/`, a volume root,
-    anything under `/System`, `/Library`, `/usr`, `/bin`, `/sbin`, `/private`, `/etc`, `/var`, `/tmp`, `/dev` except
-    the user's temp folder, nor a path with a hidden component (`~/.Trash`); such a target answers "pi-os won't
-    touch “X”." Symlinks are acted on as links. Every op runs as argv with an absolute binary, `--` always, no `-f`,
+    folder or one of its ancestors, the home folder (given with or without a trailing slash, or by its real path) or
+    its standard folders, `~/Library`, `/` or any of its direct children (`/Applications`, `/Users`, `/opt` …), a
+    volume root, anything under `/System`, `/Library`, `/usr`, `/bin`, `/sbin`, `/private`, `/etc`, `/var`, `/tmp`,
+    `/dev`, `/Applications`, `/opt` except the user's temp folder, anything under `/Users` but the user's own home
+    (`/Users/Shared`, other users), nor a path with a hidden component (`~/.Trash`); such a target answers "pi-os
+    won't touch “X”." The rules hold for the real path through every folder on the way as well (checked again when
+    the op runs). Symlinks are acted on as links. Every op runs as argv with an absolute binary, `--` always, no `-f`,
     no `-p`: `/bin/rm -r -- <abs>` (folder), `/bin/rm -- <abs>` (file, symlink), `/bin/mkdir -- <abs>`,
     `/usr/bin/touch -- <abs>`, `/bin/cp -R -n -- <abs> <destDir>/<name>`, `/bin/mv -n -- <abs> <destDir>/<name>`,
     `/bin/mv -n -- <abs> <sameDir>/<newName>`.
   - **Staged ops** live in Node only: bound to the take (`takeId`, `contextId`), single-use, 2 minutes, run only by
-    the host's `POST /fileops/run`. The source's identity (device, inode, mtime, kind) is read when the op is staged
-    and must still hold when it runs, before and after dcg's review.
+    the host's `POST /fileops/run`. Running one op of a take drops the take's other ops (the other rows of a "which
+    one?" list); a newer take's `final` in the same `contextId` drops the ops older takes staged there, while a take's
+    own later `final` (a voice take's second final) keeps the ops of its first. The source's identity (device, inode,
+    mtime, kind) is read when the op is staged and must still hold when it runs, before and after dcg's review.
 
 - `scope` (optional, any phase and decision): how likely the text refers to the active window
   (Node rules, < 0.01 ms; reasons are content-free codes such as `pronoun`, `ui-verb`,
@@ -951,11 +956,18 @@ POST /fileops/run   {"opId": "op_7Hq2Lr9xVb4Nc8Ws1Ke5Ty"}
 → 400 {"ok": false, "error": "<no echo of input>"}
 ```
 
-- Order: the op is taken (single-use) → unknown, used or expired (2 minutes) is `expired` → off (no full pi session
-  any more) is `failed` → the source's identity (device, inode, mtime, kind, read when the op was staged) and every
-  safety rule are checked again (changed or gone: `expired`) → the target of create/copy/move/rename must not exist
-  (`failed`) → dcg reviews the command → the identity is checked once more → the argv runs (`execFile`, absolute
-  binary, never a shell) → the effect is verified (source gone, target there) and anything else is `failed`.
+- Order: the op is taken (single-use; the take's other ops go with it) → unknown, used or expired (2 minutes) is
+  `expired` → off (no full pi session any more) is `failed` → the source's identity (device, inode, mtime, kind, read
+  when the op was staged) and every safety rule are checked again (changed or gone: `expired`) → the target of
+  create/copy/move/rename must not exist (`failed`) → the safety rules on the real paths through every folder on the
+  way (`failed`) → dcg reviews the command → the identity, the target and the real paths are checked once more → the
+  argv runs (absolute binary, never a shell, as the leader of its own process group) → the effect is verified
+  (source gone, target there) and anything else is `failed`.
+- Time: the whole run answers within 170 s (the host waits 180 s). dcg's review may take up to 140 s; the op gets what
+  is left of the 170 s, at least 30 s. An op still running then is stopped with its whole process group (`mv` across
+  volumes runs a `cp` of its own) and answers `failed` with "Stopped copying “test” — it may be incomplete." /
+  "Kopieren von „test“ wurde abgebrochen – möglicherweise unvollständig." A harness that stops meanwhile never cuts
+  the op off half-way (it is not in the harness's process group); the host then has no answer and says so.
 - dcg is called exactly as Tom's pi bridge (`~/.pi/agent/extensions/dcg-guard.ts`) calls it: `spawn(dcg,
   ["--desktop-review", "--no-color", "--agent", "pi"], {cwd: <shown folder>, shell: false})`, stdin
   `{"tool_name":"Bash","tool_input":{"command":<the same argv shell-quoted, bare binary name>},"cwd":<shown
@@ -964,7 +976,8 @@ POST /fileops/run   {"opId": "op_7Hq2Lr9xVb4Nc8Ws1Ke5Ty"}
   anything else (spawn error, timeout after 140 s, more than 1 MB of output, garbage) fails closed (`failed`). Every
   op (create, copy, move, rename, delete) goes through this review; a dcg that no longer resolves is `failed`.
 - `line` is the user copy in the take's language: "„test“ gelöscht." / "Deleted “test”.", "„test“ nach Dokumente
-  kopiert.", "dcg hat das Löschen abgelehnt: …" / "dcg blocked deleting “test”: …".
+  kopiert.", "dcg hat das Löschen abgelehnt: …" / "dcg blocked deleting “test”: …". It is never blank: both sides
+  reject a `line` of whitespace only (`parseFileOpRunResponse`, Swift `FileOpRunResult`).
 - The call takes as long as dcg's dialog stays open: the host waits up to 180 s and shows "Waiting for your
   approval…". When the host disconnects first, Node kills dcg and runs nothing.
 - Logs are content-free: `[perf] stage=fileops.run op=<kind> outcome=<outcome> verdict=<allow|deny|error|none>

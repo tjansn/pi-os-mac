@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { FILE_OP_ID, FILE_OP_LIMITS } from "../src/contracts/actions.js";
 import {
-  BINARIES, childPath, copyPlan, createPlan, deletePlan, FILE_OPS, FileOpStore, identityOf, movePlan, nameProblem, needsOwnConfirm, parentPath,
-  pathProblem, planProblem, renamePlan, resolveDcg, reviewCommand, reviewWithDcg, runFileOp, shellQuote,
+  BINARIES, childPath, copyPlan, createPlan, defaultPathGuard, deletePlan, failedLine, FILE_OPS, FileOpStore, identityOf, movePlan, nameProblem, needsOwnConfirm,
+  parentPath, pathProblem, planProblem, realPathProblem, renamePlan, resolveDcg, reviewCommand, reviewWithDcg, runFileOp, shellQuote,
   type FileOpLogFields, type FileOpPlan, type FileOpRunOptions, type LstatFn, type PathGuard,
 } from "../src/instant/fileOps.js";
 
@@ -137,8 +137,18 @@ test("safety: never the shown folder or an ancestor, home, its standard folders 
     ["/Users/fixture/Desktop/test", null],
     ["/Users/fixture/Documents/Archiv/test.txt", null],
     ["/Volumes/USB/test", null],
-    ["/Users/Shared/test", null],
     ["/private/var/folders/ab/T/pi-os-x/test", null],
+    // A Finder window on the startup disk: no direct child of "/", nothing of the apps, /opt or another user.
+    ["/Applications", "top_level"],
+    ["/opt", "top_level"],
+    ["/cores", "top_level"],
+    ["/Applications/Safari.app", "system"],
+    ["/Applications/Utilities/Terminal.app", "system"],
+    ["/opt/homebrew/bin/x", "system"],
+    ["/Users/Shared", "other_user"],
+    ["/Users/Shared/test", "other_user"],
+    ["/Users/other", "other_user"],
+    ["/Users/other/Desktop/test", "other_user"],
     [shown, "shown_folder"],
     ["/Users/fixture/Desktop", "standard_folder"],
     ["/Users/fixture", "home"],
@@ -172,6 +182,16 @@ test("safety: never the shown folder or an ancestor, home, its standard folders 
   for (const [path, problem] of cases) assert.equal(pathProblem(path, guard, shown), problem, path);
   // Case-insensitive as APFS compares: "/users/FIXTURE/desktop" is still the Desktop folder.
   assert.equal(pathProblem("/users/FIXTURE/desktop", guard), "standard_folder");
+  // A home given with a trailing slash, or reached through a symlink (its real path), is the same home.
+  for (const home of [{ home: "/Users/fixture/", temp: [] }, { home: "/Users/fixture//", temp: [] }, { home: "/home/link", realHome: "/Users/fixture", temp: [] }] as PathGuard[]) {
+    const label = JSON.stringify(home);
+    assert.equal(pathProblem("/Users/fixture/Desktop", home), "standard_folder", label);
+    assert.equal(pathProblem("/Users/fixture/Library/Preferences/x.plist", home), "system", label);
+    assert.equal(pathProblem("/Users/fixture", home), "home", label);
+    assert.equal(pathProblem("/Users/fixture/Desktop/test", home), null, label);
+  }
+  assert.equal(pathProblem("/home/link/Documents", { home: "/home/link", realHome: "/Users/fixture", temp: [] }), "standard_folder");
+  assert.deepEqual(defaultPathGuard("/nonexistent-pi-os-home///").home, "/nonexistent-pi-os-home");
   // A plan is checked on its source and its target, and never into itself.
   const words = { ...EN, name: "x" };
   assert.equal(planProblem(copyPlan({ path: "/Users/fixture/Desktop/a", isDirectory: true }, "/Users/fixture/Desktop/a/b", "a", "/Users/fixture/Desktop", words), guard), "invalid");
@@ -258,13 +278,14 @@ test("run: delete a folder, a file and a symlink (the link only); create a folde
     writeFileSync(target, "keep");
     const link = join(box.desktop, "link");
     symlinkSync(target, link);
-    const [folderOp, fileOp, linkOp, mkdirOp, touchOp] = store.stage([
+    // One take each: running an op drops its take's other ops.
+    const [folderOp, fileOp, linkOp, mkdirOp, touchOp] = [
       deletePlan({ path: folder, isDirectory: true }, box.desktop, { ...DE, name: "Radfotos" }),
       deletePlan({ path: file, isDirectory: false }, box.desktop, { ...EN, name: "notes.txt" }),
       deletePlan({ path: link, isDirectory: false }, box.desktop, { ...EN, name: "link" }),
       createPlan(box.desktop, "Neuer Ordner", true, { ...DE, name: "Neuer Ordner" }),
       createPlan(box.desktop, "plan.md", false, { ...EN, name: "plan.md" }),
-    ], { takeId: "take-1", contextId: "ctx-1" });
+    ].map((plan, index) => store.stage([plan], { takeId: `take-${index}`, contextId: "ctx-1" })[0]);
     const run = (opId: string) => runFileOp(store, opId, options(box.guard, dcg.path));
     assert.deepEqual(await run(folderOp!), { outcome: "done", line: "„Radfotos“ gelöscht.", verdict: "allow" });
     assert.equal(existsSync(folder), false);
@@ -521,4 +542,117 @@ test("safety at run time: a protected target never reaches dcg; logs are content
   } finally {
     box.cleanup();
   }
+});
+
+// ---------------------------------------------------------------- binding, real paths, the op's time limit
+
+test("staged ops: one op of a take runs, its take's other ops go; a newer take's final in the context drops older takes' ops; the same take's finals keep theirs", () => {
+  let n = 0;
+  const lstat: LstatFn = async () => ({ dev: 1n, ino: 2n, mtimeNs: 3n, isDirectory: () => true, isFile: () => false, isSymbolicLink: () => false });
+  const store = new FileOpStore({ lstat, mintId: () => `op_fixture_${String(++n).padStart(8, "0")}` });
+  const plan = (name: string) => deletePlan({ path: `/Users/fixture/Desktop/${name}`, isDirectory: true }, "/Users/fixture/Desktop", { ...EN, name });
+  // A "which one?" list: one row runs, the other row is no longer runnable; another take's op is untouched.
+  const [a, b] = store.stage([plan("a"), plan("b")], { takeId: "take-1", contextId: "ctx-1" });
+  const [other] = store.stage([plan("c")], { takeId: "take-9", contextId: "ctx-9" });
+  assert.equal(store.claim(a!).ok, true);
+  assert.equal(store.claim(b!).ok, false, "the list's other row");
+  assert.equal(store.forTake("take-9").length, 1);
+  // Phase B: a voice take's second final (same take) keeps the first final's act, which the host may be running.
+  const [first] = store.stage([plan("d")], { takeId: "take-2", contextId: "ctx-2" });
+  store.supersede({ takeId: "take-2", contextId: "ctx-2" });
+  const [second] = store.stage([plan("d")], { takeId: "take-2", contextId: "ctx-2" });
+  assert.equal(store.claim(first!).ok, true, "the first final's act still runs");
+  assert.equal(store.claim(second!).ok, false, "and takes the second final's op with it");
+  // A newer take's final in the same context: the older take's ops go.
+  const [older] = store.stage([plan("e")], { takeId: "take-3", contextId: "ctx-3" });
+  const [mine] = store.stage([plan("f")], { takeId: "take-4", contextId: "ctx-3" });
+  store.supersede({ takeId: "take-4", contextId: "ctx-3" });
+  assert.equal(store.claim(older!).ok, false);
+  assert.equal(store.claim(mine!).ok, true);
+  assert.equal(store.claim(other!).ok, true, "another context's op is untouched");
+  // Without both a take and a context nothing is superseded; ops staged without a take have no siblings.
+  const [loose, loose2] = [store.stage([plan("g")])[0], store.stage([plan("h")])[0]];
+  store.supersede({ contextId: "ctx-3" });
+  store.supersede({});
+  assert.equal(store.claim(loose!).ok, true);
+  assert.equal(store.claim(loose2!).ok, true);
+});
+
+test("safety through real paths: a symlinked folder on the way is judged by where it leads, before dcg is asked", { skip: SKIP }, async () => {
+  const guard: PathGuard = { home: "/Users/fixture", temp: [] };
+  const words = { ...EN, name: "test" };
+  const item = { path: "/Users/fixture/Desktop/test", isDirectory: true };
+  // The seam: a Desktop folder "Link" that leads to /Applications.
+  const resolve = async (path: string) => (path === "/Users/fixture/Desktop/Link" ? "/Applications" : path);
+  const intoLink = movePlan(item, "/Users/fixture/Desktop/Link", "/Users/fixture/Desktop", words);
+  assert.equal(planProblem(intoLink, guard), null, "by its name it is a Desktop folder");
+  assert.equal(await realPathProblem(intoLink, guard, resolve), "system");
+  assert.equal(await realPathProblem(movePlan(item, "/Users/fixture/Documents", "/Users/fixture/Desktop", words), guard, resolve), null);
+  assert.equal(await realPathProblem(intoLink, guard, async () => { throw Object.assign(new Error("x"), { code: "EACCES" }); }), "unreadable");
+
+  const box = sandbox();
+  try {
+    // On disk: Desktop/Lib leads into the home's Library. The move is refused before dcg is asked; nothing moves.
+    const library = join(box.home, "Library");
+    mkdirSync(library);
+    symlinkSync(library, join(box.desktop, "Lib"));
+    const source = join(box.desktop, "test");
+    mkdirSync(source);
+    const dcg = fakeDcg(box.root, "allow");
+    const store = new FileOpStore();
+    const plan = movePlan({ path: source, isDirectory: true }, join(box.desktop, "Lib"), box.desktop, words);
+    assert.equal(planProblem(plan, box.guard), null);
+    assert.deepEqual(await runFileOp(store, store.stage([plan])[0]!, options(box.guard, dcg.path)),
+      { outcome: "failed", line: "pi-os won't touch “test”.", verdict: "none" });
+    assert.equal(dcg.ran(), false);
+    assert.ok(existsSync(source) && !existsSync(join(library, "test")));
+    // The item itself may be a symlink: it is acted on as a link, its own target is not followed.
+    const link = join(box.desktop, "to-library");
+    symlinkSync(library, link);
+    assert.equal(await realPathProblem(deletePlan({ path: link, isDirectory: false }, box.desktop, words), box.guard), null);
+    // A symlinked home is the home: defaultPathGuard reads its real path once.
+    const linkedHome = join(box.root, "home-link");
+    symlinkSync(box.home, linkedHome);
+    assert.deepEqual([defaultPathGuard(`${linkedHome}/`).home, defaultPathGuard(linkedHome).realHome], [linkedHome, box.home]);
+    assert.equal(pathProblem(join(box.home, "Documents"), defaultPathGuard(linkedHome)), "standard_folder");
+  } finally {
+    box.cleanup();
+  }
+});
+
+test("run: the op leads its own process group — the time limit stops it and what it started, and the line says it may be incomplete", { skip: SKIP }, async () => {
+  const box = sandbox();
+  try {
+    const dcg = fakeDcg(box.root, "allow");
+    const pidFile = join(box.root, "child.pid");
+    // A stand-in for `mv` across volumes: it starts a child process of its own and waits for it.
+    const slow = join(box.root, "slow-op");
+    writeFileSync(slow, `#!/bin/sh\n/bin/sleep 30 &\necho $! > '${pidFile}'\nwait\n`, { mode: 0o755 });
+    const plan: FileOpPlan = { ...createPlan(box.desktop, "Neu", true, { ...DE, name: "Neu" }), argv: [slow] };
+    const store = new FileOpStore();
+    const result = await runFileOp(store, store.stage([plan])[0]!, options(box.guard, dcg.path, { execTimeoutMs: 400 }));
+    assert.deepEqual(result, { outcome: "failed", line: "Erstellen von „Neu“ wurde abgebrochen – möglicherweise unvollständig.", verdict: "allow" });
+    const child = Number(readFileSync(pidFile, "utf8").trim());
+    assert.ok(child > 1);
+    let alive = true;
+    for (let i = 0; i < 50 && alive; i++) {
+      try {
+        process.kill(child, 0);
+        await new Promise((resolve) => setTimeout(resolve, 40));
+      } catch {
+        alive = false;
+      }
+    }
+    assert.equal(alive, false, "the op's own child was stopped with it");
+    const english = { ...plan, words: { ...EN, name: "Radfotos" }, kind: "copy" as const };
+    assert.equal(failedLine(english, "killed"), "Stopped copying “Radfotos” — it may be incomplete.");
+  } finally {
+    box.cleanup();
+  }
+});
+
+test("run budget: dcg's longest review plus the op's minimum fit the run's budget, which answers before the host stops waiting", () => {
+  assert.ok(FILE_OPS.dcgTimeoutMs + FILE_OPS.minExecMs <= FILE_OPS.runBudgetMs);
+  assert.ok(FILE_OPS.runBudgetMs < FILE_OP_LIMITS.hostTimeoutMs);
+  assert.equal(FILE_OP_LIMITS.hostTimeoutMs, 180_000, "the host's FileOpLimits.runTimeout");
 });

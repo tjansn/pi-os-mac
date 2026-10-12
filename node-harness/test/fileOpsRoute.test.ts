@@ -143,6 +143,27 @@ test("dcg denies: the folder stays and the line carries dcg's reason; switching 
   });
 });
 
+test("binding: a newer take's final in the context drops an older take's staged op; the same take's later final keeps it (Phase B)", { skip: SKIP }, async () => {
+  await scenario({}, async (s) => {
+    await primeGuard(s);
+    const older = await s.instant("lösche test");
+    const newer = await s.instant("lösche test");
+    assert.notEqual(older.action.opId, newer.action.opId);
+    const stale = await (await s.post("/fileops/run", { opId: older.action.opId })).json();
+    assert.deepEqual(stale, { ok: true, outcome: "expired", line: "That expired — please say it again." });
+    assert.ok(existsSync(s.folder), "nothing ran");
+    // A voice take decided on its first final may still send a second one: the first final's act stays runnable.
+    const first = await s.instant("lösche test", { takeId: "take-phase", seq: 100 });
+    const second = await s.instant("lösche test", { takeId: "take-phase", seq: 101 });
+    assert.deepEqual([first.decision, second.decision], ["act", "act"]);
+    const done = await (await s.post("/fileops/run", { opId: first.action.opId })).json();
+    assert.deepEqual(done, { ok: true, outcome: "done", line: "„test“ gelöscht." });
+    assert.equal(existsSync(s.folder), false);
+    // Running it took the take's other op (and the newer take's, superseded by take-phase) with it.
+    assert.equal(s.store.size, 0);
+  });
+});
+
 test("the lane stays off without dcg as the guard, without a resolvable dcg, in isolated mode and on Windows: today's decisions", { skip: SKIP }, async () => {
   for (const [label, options, expected] of [
     ["guard other", { guard: "other" }, "fallthrough"],

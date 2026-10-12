@@ -803,6 +803,9 @@ export class HarnessServer {
       }
     }
     response.once("close", () => { if (!response.writableFinished) controller.abort(); });
+    // A newer take's final in the same context replaces what older takes staged there (their list or confirm is gone);
+    // the same take's finals keep each other's ops (Phase B: the host may be about to run the first one's act).
+    if (final) this.fileOps.supersede({ ...(body.takeId ? { takeId: body.takeId } : {}), ...(body.contextId ? { contextId: body.contextId } : {}) });
     const raw = await this.instant.dispatch(body, controller.signal);
     const result = this.checkInstantFill(body, await this.checkInstantCard(raw));
     const entry = key === undefined ? undefined : this.instantLatest.get(key);
