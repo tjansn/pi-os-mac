@@ -231,9 +231,10 @@ export function defaultPathGuard(home = homedir()): PathGuard {
  * Lexical: runFileOp checks the real path through the folders on the way as well (`realPathProblem`).
  */
 export function pathProblem(path: string, guard: PathGuard, shown?: string): PathProblem | null {
+  // "/" first: isAbsoluteHostPath rejects it (no name after the slash).
+  if (path === "/") return "root";
   if (!isAbsoluteHostPath(path)) return "invalid";
   const key = pathKey(path);
-  if (key === "/") return "root";
   const homes = [guard.home, guard.realHome].flatMap((home) => (home ? [pathKey(withoutTrailingSlash(home))] : []));
   if (homes.some((home) => key === home || home.startsWith(`${key}/`))) return "home";
   if (shown !== undefined) {
