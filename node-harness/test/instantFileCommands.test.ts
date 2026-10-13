@@ -820,6 +820,15 @@ test("a said place never reaches the folder the window shows, nor one of its anc
   assert.equal(asAnswer(await dispatcher.dispatch(typed("verschiebe Projekte aus Dokumente nach Downloads", { takeId: "take-move" }))).title,
     "pi-os rührt „Projekte“ nicht an.");
   assert.equal(ops.size, 0);
+  // The desktop and a window on one of its folders: that folder is never deleted, but a copy only reads it.
+  const both: VisibleItemsResult = {
+    sources: [{ kind: "desktop", via: "ax", complete: true, path: "/Users/fixture/Desktop" }, { kind: "finderWindow", via: "ax", complete: true, path: "/Users/fixture/Desktop/Fotos" }],
+    items: [], truncated: false, elapsedMs: 1,
+  };
+  const open = make(both, { listFolder: disk({ "/Users/fixture/Desktop": ["Fotos/"], "/Users/fixture/Desktop/Fotos": [] }).listFolder });
+  assert.equal(asAnswer(await open.dispatcher.dispatch(typed("lösche Fotos"))).title, "pi-os rührt „Fotos“ nicht an.");
+  asAct(await open.dispatcher.dispatch(typed("dupliziere Fotos", { takeId: "take-dup" })));
+  assert.deepEqual(argvOf(open.ops, "take-dup"), [["/bin/cp", "-R", "-n", "--", "/Users/fixture/Desktop/Fotos", "/Users/fixture/Desktop/Fotos Kopie"]]);
 });
 
 test("several names: one op for all after the whole name; any name that names nothing stages nothing", async () => {

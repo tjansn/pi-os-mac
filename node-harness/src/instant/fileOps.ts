@@ -391,10 +391,14 @@ export function planProblem(plan: FileOpPlan, guard: PathGuard): PathProblem | n
   const units = planUnits(plan);
   if (plan.entries && plan.entries.length === 0) return "invalid";
   if (plan.shown?.some((folder) => !isAbsoluteHostPath(folder) && folder !== "/")) return "invalid";
+  // The take's other shown folders guard what an op removes or relocates (a delete's, move's or rename's source); a copy
+  // only reads its source ("dupliziere Fotos" while a window shows Fotos), and a target is new.
+  const removes = plan.kind === "delete" || plan.kind === "move" || plan.kind === "rename";
   for (const unit of units) {
     for (const path of [unit.source, unit.target]) {
       if (path === undefined) continue;
-      for (const shown of [plan.cwd, ...(plan.shown ?? [])]) {
+      const guarded = removes && path === unit.source ? [plan.cwd, ...(plan.shown ?? [])] : [plan.cwd];
+      for (const shown of guarded) {
         const problem = pathProblem(path, guard, shown);
         if (problem) return problem;
       }
@@ -425,13 +429,17 @@ export type RealPathFn = (path: string) => Promise<string>;
 export async function realPathProblem(plan: FileOpPlan, guard: PathGuard, resolve: RealPathFn = realpath): Promise<PathProblem | "unreadable" | null> {
   try {
     const shown = await resolve(plan.cwd);
-    const others = await Promise.all((plan.shown ?? []).map((folder) => resolve(folder)));
-    for (const path of planUnits(plan).flatMap((unit) => [unit.source, unit.target])) {
-      if (path === undefined) continue;
-      const real = childPath(await resolve(parentPath(path)), basename(path));
-      for (const folder of [shown, ...others]) {
-        const problem = pathProblem(real, guard, folder);
-        if (problem) return problem;
+    // As planProblem: the other shown folders guard what an op removes or relocates.
+    const removes = plan.kind === "delete" || plan.kind === "move" || plan.kind === "rename";
+    const others = removes ? await Promise.all((plan.shown ?? []).map((folder) => resolve(folder))) : [];
+    for (const unit of planUnits(plan)) {
+      for (const path of [unit.source, unit.target]) {
+        if (path === undefined) continue;
+        const real = childPath(await resolve(parentPath(path)), basename(path));
+        for (const folder of path === unit.source ? [shown, ...others] : [shown]) {
+          const problem = pathProblem(real, guard, folder);
+          if (problem) return problem;
+        }
       }
     }
     return null;
@@ -502,7 +510,7 @@ export async function treeFingerprint(root: string, limit = MAX_TREE_ENTRIES): P
         return false;
       }
       const kind = stats.isSymbolicLink() ? "l" : stats.isDirectory() ? "d" : stats.isFile() ? "f" : "o";
-      hash.update(`${rel}/${dirent.name}\0${kind}\0${stats.size}\0${stats.mtimeNs}\n`);
+      hash.update(`${rel}/${dirent.name}\0${kind}\0${stats.ino}\0${stats.size}\0${stats.mtimeNs}\n`);
       if (kind === "d" && !(await walk(path, `${rel}/${dirent.name}`))) return false;
     }
     return true;
