@@ -150,7 +150,8 @@ test("safety: never the shown folder or an ancestor, home, its standard folders 
     ["/Users/other", "other_user"],
     ["/Users/other/Desktop/test", "other_user"],
     [shown, "shown_folder"],
-    ["/Users/fixture/Desktop", "standard_folder"],
+    // An ancestor of the shown folder reports as the shown folder; without one, Desktop is a standard folder (below).
+    ["/Users/fixture/Desktop", "shown_folder"],
     ["/Users/fixture", "home"],
     ["/Users", "home"],
     ["/", "root"],
