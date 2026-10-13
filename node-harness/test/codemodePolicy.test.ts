@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { realpathSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { createAgentSession, ModelRuntime, SessionManager, type ExtensionAPI, type InlineExtension } from "@earendil-works/pi-coding-agent";
 import { createAssistantMessageEventStream, Type, type AssistantMessage } from "@earendil-works/pi-ai";
 import { READ_ONLY_TOOLS } from "../src/agent/agentRunner.js";
@@ -18,6 +20,9 @@ import type { BrowserSession } from "../src/browser/session.js";
 import { BROWSER_TOOLS } from "../src/browser/tools.js";
 
 const png = await readFile(new URL("../../shared/fixtures/captures/window.png", import.meta.url));
+// Scratch folders live in the temp folder (real path), never in the checkout.
+const scratch = await mkdtemp(join(realpathSync(tmpdir()), "pi-os-codemode-"));
+after(() => rm(scratch, { recursive: true, force: true }));
 const searchResponse = JSON.parse(await readFile(new URL("../../shared/fixtures/launcher/search-files-response.json", import.meta.url), "utf8"));
 const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 
@@ -150,7 +155,7 @@ out.context = typeof (await tools.desktop_get_context({}));
 return out;`;
 
 test("a real codemode script cannot capture, act, open or call unlisted tools; read tools work and authority stays put", async () => {
-  const root = join(process.cwd(), "test", ".tmp-codemode-session");
+  const root = join(scratch, ".tmp-codemode-session");
   await mkdir(root, { recursive: true });
   const run = await scriptedSession(root, [
     () => [{ type: "toolCall", id: "call_script", name: "codemode", arguments: { code: SCRIPT } }],
@@ -190,7 +195,7 @@ test("a real codemode script cannot capture, act, open or call unlisted tools; r
 });
 
 test("a runaway script stops at its clamped deadline without touching the host", async () => {
-  const root = join(process.cwd(), "test", ".tmp-codemode-deadline");
+  const root = join(scratch, ".tmp-codemode-deadline");
   await mkdir(root, { recursive: true });
   const run = await scriptedSession(root, [
     () => [{ type: "toolCall", id: "call_loop", name: "codemode", arguments: { code: '// @options: {"timeout_ms": 200}\nwhile (true) {}' } }],
@@ -208,7 +213,7 @@ test("a runaway script stops at its clamped deadline without touching the host",
 });
 
 test("ctx.executeTool (the path every script call takes) refuses model-only and unlisted tools before any host call", async () => {
-  const root = join(process.cwd(), "test", ".tmp-codemode-probe");
+  const root = join(scratch, ".tmp-codemode-probe");
   await mkdir(root, { recursive: true });
   const run = await scriptedSession(root, [
     () => [{ type: "toolCall", id: "call_probe", name: "fixture_probe", arguments: {} }],
@@ -226,7 +231,7 @@ test("ctx.executeTool (the path every script call takes) refuses model-only and 
 });
 
 test("large script output is bounded by the policy and never spilled to a temp file", async () => {
-  const root = join(process.cwd(), "test", ".tmp-codemode-output");
+  const root = join(scratch, ".tmp-codemode-output");
   await mkdir(root, { recursive: true });
   const run = await scriptedSession(root, [
     () => [{ type: "toolCall", id: "call_big", name: "codemode", arguments: { code: '// @options: {"max_output_tokens": 100}\ntext("A".repeat(60000)); return "TAIL";' } }],
@@ -244,7 +249,7 @@ test("large script output is bounded by the policy and never spilled to a temp f
 });
 
 test("with a pinned Brave tab, scripts may read browser_snapshot but can never reach browser_act", async () => {
-  const root = join(process.cwd(), "test", ".tmp-codemode-browser");
+  const root = join(scratch, ".tmp-codemode-browser");
   await mkdir(root, { recursive: true });
   const browser = { acts: 0,
     exclusive: <T>(run: () => Promise<T>) => run(),
@@ -273,7 +278,7 @@ return out;`;
 });
 
 test("coordinate authority follows images the model has seen: a click batched after another click keeps the old one", async () => {
-  const root = join(process.cwd(), "test", ".tmp-codemode-batch");
+  const root = join(scratch, ".tmp-codemode-batch");
   await mkdir(root, { recursive: true });
   const run = await scriptedSession(root, [
     // One model message, two clicks: both were planned from the request screenshot.
@@ -293,7 +298,7 @@ test("coordinate authority follows images the model has seen: a click batched af
 });
 
 test("use_active_window is model-only in a scope-aware session: a script can neither pull the window nor reach the host", async () => {
-  const root = join(process.cwd(), "test", ".tmp-codemode-loader");
+  const root = join(scratch, ".tmp-codemode-loader");
   await mkdir(root, { recursive: true });
   const asked: string[] = [];
   const hooks: ContextHooks = {

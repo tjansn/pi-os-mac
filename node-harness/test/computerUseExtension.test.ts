@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { realpathSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
   ATTACHMENT_IMAGES_MESSAGE, COMMAND_CONTEXT_MESSAGE, createComputerUseExtension, FULL_SESSION_SECTION, fullSessionSystemPrompt, postActionSettleMs, scopedSystemPrompt,
@@ -14,6 +16,9 @@ import type { BrowserSession } from "../src/browser/session.js";
 import type { BrowserPageResult } from "../src/contracts/browser.js";
 
 const png = await readFile(new URL("../../shared/fixtures/captures/window.png", import.meta.url));
+// Scratch folders live in the temp folder (real path), never in the checkout.
+const scratch = await mkdtemp(join(realpathSync(tmpdir()), "pi-os-computer-use-"));
+after(() => rm(scratch, { recursive: true, force: true }));
 
 function register(fakeInvoke: (...args: any[]) => any, captureDir = "C:/captures", platform: NodeJS.Platform = "win32",
   initialScreenshotId?: string, options: ComputerUseOptions = {}) {
@@ -89,7 +94,7 @@ test("host domain errors become failed tool executions", async () => {
 });
 
 test("fresh capture returns image only and propagates cancellation", async () => {
-  const root = join(process.cwd(), "test", ".tmp-captures");
+  const root = join(scratch, ".tmp-captures");
   await mkdir(root, { recursive: true });
   const file = join(root, "fresh.png");
   await writeFile(file, png);
@@ -112,12 +117,12 @@ test("fresh capture returns image only and propagates cancellation", async () =>
 });
 
 test("screenshot loader rejects missing, empty, oversized, non-PNG, and outside files", async () => {
-  const root = join(process.cwd(), "test", ".tmp-image-validation");
+  const root = join(scratch, ".tmp-image-validation");
   await mkdir(root, { recursive: true });
   const empty = join(root, "empty.png");
   const large = join(root, "large.png");
   const text = join(root, "text.png");
-  const outside = join(process.cwd(), "test", ".tmp-outside.png");
+  const outside = join(scratch, ".tmp-outside.png");
   await writeFile(empty, Buffer.alloc(0));
   await writeFile(large, Buffer.alloc(MAX_SCREENSHOT_BYTES + 1));
   await writeFile(text, "not png");
@@ -217,7 +222,7 @@ async function macHost(root: string, refuseCapture = () => false) {
 }
 
 test("macOS desktop_act returns the settled post-action capture and advances coordinate authority to it", async () => {
-  const root = join(process.cwd(), "test", ".tmp-post-capture");
+  const root = join(scratch, ".tmp-post-capture");
   const host = await macHost(root);
   const settled: string[] = [];
   const tools = register(host.invoke, root, "darwin", "shot-1", { postActionCapture: true, settleMs: (action) => { settled.push(action); return 1; } });
@@ -250,7 +255,7 @@ test("macOS desktop_act returns the settled post-action capture and advances coo
 });
 
 test("a failed post-action capture reports the posted input without an image and keeps the old authority", async () => {
-  const root = join(process.cwd(), "test", ".tmp-post-capture-fail");
+  const root = join(scratch, ".tmp-post-capture-fail");
   let refuse = false;
   const host = await macHost(root, () => refuse);
   const tools = register(host.invoke, root, "darwin", "shot-1", { postActionCapture: true, settleMs: () => 0 });
@@ -272,7 +277,7 @@ test("a failed post-action capture reports the posted input without an image and
 });
 
 test("desktop_capture_window authorizes coordinates only from the next model turn; a new user turn drops it", async () => {
-  const root = join(process.cwd(), "test", ".tmp-capture-turns");
+  const root = join(scratch, ".tmp-capture-turns");
   const host = await macHost(root);
   const handlers = new Map<string, (event: unknown) => unknown>();
   const tools = new Map<string, any>();
@@ -297,7 +302,7 @@ test("desktop_capture_window authorizes coordinates only from the next model tur
 });
 
 test("cancellation during the settle wait aborts without capturing; post-action capture is macOS-only and opt-in", async () => {
-  const root = join(process.cwd(), "test", ".tmp-post-capture-abort");
+  const root = join(scratch, ".tmp-post-capture-abort");
   const host = await macHost(root);
   const controller = new AbortController();
   const tools = register(host.invoke, root, "darwin", "shot-1", { postActionCapture: true, settleMs: () => { setImmediate(() => controller.abort()); return 5_000; } });
@@ -440,7 +445,7 @@ test("before_agent_start hands a full session's pi-command context to pi once, a
 });
 
 test("use_active_window: refuses unless allowed, revalidates the pin, captures, adds the page digest and hands authority over at the next turn", async () => {
-  const root = join(process.cwd(), "test", ".tmp-use-active-window");
+  const root = join(scratch, ".tmp-use-active-window");
   const host = await macHost(root);
   const page = (JSON.parse(await readFile(new URL("../../shared/fixtures/browser-ax/page-response.json", import.meta.url), "utf8")) as { result: BrowserPageResult }).result;
   try {
