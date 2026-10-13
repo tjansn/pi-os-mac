@@ -7,11 +7,12 @@ import { bindingToHostAction, type CardSpec } from "../src/contracts/cards.js";
 import { NO_CONTEXT_SCORER } from "../src/contracts/context.js";
 import { NO_DICTIONARY } from "../src/contracts/dictionary.js";
 import type { InstantAccept, InstantRequest, InstantResponse, InstantTarget, VoiceHypothesis } from "../src/contracts/instant.js";
-import type { AppRecord, VisibleItem, VisibleItemsResult } from "../src/contracts/launcher.js";
+import type { AppRecord, VisibleItem, VisibleItemsResult, VisibleSource } from "../src/contracts/launcher.js";
 import { AppIndexCache } from "../src/instant/apps.js";
 import { fileOpActCard, fileOpRowsCard, noticeCard } from "../src/instant/cards.js";
 import { createInstantDispatcher, type InstantDispatcherDeps } from "../src/instant/dispatcher.js";
 import { DictionaryStore } from "../src/instant/dictionary.js";
+import type { FileCommandDeps, FolderListing } from "../src/instant/fileLane.js";
 import { FileOpStore, type LstatFn, type PathGuard } from "../src/instant/fileOps.js";
 import { createLearnLane, learnFromGesture } from "../src/instant/learned.js";
 import { InMemoryTakeMemo, takeRecordFor } from "../src/instant/takeMemo.js";
@@ -62,6 +63,8 @@ interface Make {
   active?: () => boolean;
   /** No fileCommands dependency at all (today's lane). */
   lane?: boolean;
+  /** The lane's disk reads (default: the real fs, which finds nothing under /Users/fixture). */
+  listFolder?: FileCommandDeps["listFolder"];
   deps?: Partial<InstantDispatcherDeps>;
 }
 
@@ -79,6 +82,7 @@ function make(visible: VisibleItemsResult | null, options: Make = {}) {
         active: () => { reads++; return (options.active ?? (() => true))(); },
         store: ops, guard: GUARD,
         isDirectory: async (path: string) => path === "/Users/fixture/Projects",
+        ...(options.listFolder ? { listFolder: options.listFolder } : {}),
       },
     }),
     ...options.deps,
@@ -665,4 +669,119 @@ test("logs: the dispatcher's perf fields name the op kind and decision only, nev
   assert.equal(lines[1]?.via, "file");
   const logged = JSON.stringify(lines);
   for (const content of ["Radfotos", "Dokumente", "tset", "/Users", "fixture"]) assert.ok(!logged.includes(content), content);
+});
+
+// ---------------------------------------------------------------- DESIGN7: the current view, places, spoken marks, lanes
+
+/** A fake disk: folder path → names (a trailing "/" marks a folder); every read is recorded. */
+function disk(folders: Record<string, string[]>) {
+  const reads: string[] = [];
+  const listFolder = async (path: string): Promise<FolderListing | null> => {
+    reads.push(path);
+    const names = folders[path];
+    if (!names) return null;
+    return {
+      complete: true,
+      items: names.map((raw) => {
+        const directory = raw.endsWith("/");
+        const name = directory ? raw.slice(0, -1) : raw;
+        return { token: "", name, path: `${path}/${name}`, isDirectory: directory, isPackage: false, ...(directory ? { contentType: "public.folder" } : {}) };
+      }),
+    };
+  };
+  return { listFolder, reads };
+}
+const desktopOf = (items: VisibleItem[], source: Partial<VisibleSource> = {}): VisibleItemsResult => ({
+  sources: [{ kind: "desktop", via: "ax", complete: true, path: "/Users/fixture/Desktop", ...source }], items, truncated: false, elapsedMs: 1,
+});
+const RADFOTOS = item("tok_radfotosdesk1", "Radfotos", "/Users/fixture/Desktop/Radfotos", { source: "desktop" });
+
+test("finals decide on the shown folder as it is on disk: a folder pi just made acts, one just gone is not there; typing never reads the disk", async () => {
+  const fs = disk({ "/Users/fixture/Desktop": ["tiest/", "Notizen.txt"] });
+  const { dispatcher, ops, warm } = make(desktopOf([RADFOTOS]), { listFolder: fs.listFolder });
+  await warm();
+  const preview = await dispatcher.dispatch(typed("lösche tiest", { phase: "typing" }));
+  assert.notEqual(preview.decision, "act");
+  assert.deepEqual(fs.reads, [], "previews keep the host's capture (no folder-privacy prompt while typing)");
+  const act = asAct(await dispatcher.dispatch(typed("lösche tiest")));
+  assert.equal(act.title, "Löschen: tiest");
+  assert.deepEqual(argvOf(ops, "take-typed"), [["/bin/rm", "-r", "--", "/Users/fixture/Desktop/tiest"]]);
+  assert.deepEqual(fs.reads, ["/Users/fixture/Desktop"]);
+  // Radfotos is gone from disk (a complete read): not there any more, never an op on a stale path.
+  assert.equal(asAnswer(await dispatcher.dispatch(typed("lösche Radfotos", { takeId: "take-gone" }))).title, "Auf dem Schreibtisch gibt es nichts namens „Radfotos“.");
+  assert.equal(ops.forTake("take-gone").length, 0);
+  // Name checks see the disk too.
+  assert.equal(asAnswer(await dispatcher.dispatch(typed("erstelle Ordner tiest", { takeId: "take-taken" }))).title, "„tiest“ gibt es hier schon.");
+});
+
+test("a view the host could not read whole is complete again from disk: \"nothing called …\" instead of falling through to pi", async () => {
+  const partial: VisibleItemsResult = { ...desktopOf([RADFOTOS], { complete: false }), truncated: true };
+  const { dispatcher } = make(partial, { listFolder: disk({ "/Users/fixture/Desktop": ["Radfotos/"] }).listFolder });
+  assert.equal(asAnswer(await dispatcher.dispatch(typed("lösche tset"))).title, "Auf dem Schreibtisch gibt es nichts namens „tset“.");
+  // An unreadable folder keeps the host's incomplete view: today's handling.
+  const unreadable = make(partial, { listFolder: async () => null });
+  const today = make(partial, { lane: false });
+  assert.equal(stable(await unreadable.dispatcher.dispatch(typed("lösche tset"))), stable(await today.dispatcher.dispatch(typed("lösche tset"))));
+});
+
+test("a said standard folder: decided on that folder as it is on disk, the whole object first on what the take shows", async () => {
+  const fs = disk({
+    "/Users/fixture/Downloads": ["Rechnung.pdf", "Belege/"], "/Users/fixture/Documents": [], "/Users/fixture/Desktop": ["Radfotos/", "Fotos in Downloads/"],
+  });
+  const { dispatcher, ops } = make(desktopOf([RADFOTOS]), { listFolder: fs.listFolder });
+  const file = asAct(await dispatcher.dispatch(typed("lösche Rechnung in Downloads", { accept: ["confirm"] })));
+  assert.deepEqual([file.title, file.confirm], ["„Rechnung.pdf“ endgültig löschen?", true]);
+  assert.deepEqual(argvOf(ops, "take-typed"), [["/bin/rm", "--", "/Users/fixture/Downloads/Rechnung.pdf"]]);
+  assert.equal(asAct(await dispatcher.dispatch(typed("delete Belege from my Downloads", { locale: "en-US", takeId: "take-en" }))).title, "Delete Belege");
+  assert.deepEqual(argvOf(ops, "take-en"), [["/bin/rm", "-r", "--", "/Users/fixture/Downloads/Belege"]]);
+  assert.equal(asAnswer(await dispatcher.dispatch(typed("lösche Steuer aus Downloads", { takeId: "take-none" }))).title, "In „Downloads“ gibt es nichts namens „Steuer“.");
+  // An item called with the place words wins on what the take shows.
+  asAct(await dispatcher.dispatch(typed("lösche Fotos in Downloads", { takeId: "take-whole" })));
+  assert.deepEqual(argvOf(ops, "take-whole"), [["/bin/rm", "-r", "--", "/Users/fixture/Desktop/Fotos in Downloads"]]);
+  // Copy out of a place; create in one.
+  asAct(await dispatcher.dispatch(typed("kopiere Rechnung aus Downloads nach Dokumente", { takeId: "take-copy" })));
+  assert.deepEqual(argvOf(ops, "take-copy"), [["/bin/cp", "-R", "-n", "--", "/Users/fixture/Downloads/Rechnung.pdf", "/Users/fixture/Documents/Rechnung.pdf"]]);
+  asAct(await dispatcher.dispatch(typed("erstelle Ordner Belege in Dokumente", { takeId: "take-create" })));
+  assert.deepEqual(argvOf(ops, "take-create"), [["/bin/mkdir", "--", "/Users/fixture/Documents/Belege"]]);
+  // Typing never reads a place: no plan preview for it.
+  const reads = fs.reads.length;
+  assert.notEqual((await dispatcher.dispatch(typed("lösche Rechnung in Downloads", { phase: "typing", takeId: "take-preview" }))).decision, "act");
+  assert.equal(fs.reads.length, reads);
+});
+
+test("spoken punctuation names an item (\"notes punkt txt\" is notes.txt), only when the words themselves name nothing", async () => {
+  const fs = disk({ "/Users/fixture/Desktop": ["notes.txt", "Rad-Tour/"] });
+  const { dispatcher, ops } = make(desktopOf([]), { listFolder: fs.listFolder });
+  assert.equal(asAct(await dispatcher.dispatch(typed("lösche notes punkt txt", { accept: ["confirm"] }))).title, "„notes.txt“ endgültig löschen?");
+  assert.equal(asAct(await dispatcher.dispatch(typed("delete Rad dash Tour", { locale: "en-US", takeId: "take-dash" }))).title, "Delete Rad-Tour");
+  assert.deepEqual(argvOf(ops, "take-dash"), [["/bin/rm", "-r", "--", "/Users/fixture/Desktop/Rad-Tour"]]);
+});
+
+test("create as people say it: the name before the noun, and a text file by its extension alone", async () => {
+  const { dispatcher, ops } = make(desktopOf([]), { listFolder: disk({ "/Users/fixture/Desktop": [] }).listFolder });
+  assert.equal(asAct(await dispatcher.dispatch(typed("create teast folder", { locale: "en-US" }))).title, "Create folder “teast”");
+  assert.deepEqual(argvOf(ops, "take-typed"), [["/bin/mkdir", "--", "/Users/fixture/Desktop/teast"]]);
+  assert.equal(asAct(await dispatcher.dispatch(typed("erstelle einen test Ordner", { takeId: "take-de" }))).title, "Ordner „test“ erstellen");
+  assert.equal(asAct(await dispatcher.dispatch(typed("erstelle todo.md", { takeId: "take-md" }))).title, "Datei „todo.md“ erstellen");
+  assert.deepEqual(argvOf(ops, "take-md"), [["/usr/bin/touch", "--", "/Users/fixture/Desktop/todo.md"]]);
+});
+
+test("lanes [file] (a pi thread's follow-up): a file command decides as on a take; anything else falls through at once", async () => {
+  const fs = disk({ "/Users/fixture/Desktop": ["tiest/"] });
+  const { dispatcher, ops } = make(desktopOf([]), { listFolder: fs.listFolder });
+  const act = asAct(await dispatcher.dispatch(typed("rename tiest to tester", { locale: "en-US", lanes: ["file"] })));
+  assert.equal(act.title, "Rename “tiest” to “tester”");
+  assert.deepEqual(argvOf(ops, "take-typed"), [["/bin/mv", "-n", "--", "/Users/fixture/Desktop/tiest", "/Users/fixture/Desktop/tester"]]);
+  // What today's lanes would decide is not theirs here: it goes on to pi.
+  const other = make(desktopOf([]), { listFolder: fs.listFolder });
+  assert.equal(asAct(await other.dispatcher.dispatch(typed("öffne Safari"))).action.type, "openApp");
+  const cases: readonly (readonly [string, Partial<InstantRequest>])[] = [
+    ["öffne Safari", { lanes: ["file"] }], ["wie spät ist es in Tokio", { lanes: ["file"] }], ["frag pi lösche tiest", { lanes: ["file"] }],
+    ["lösche tiest", { lanes: [] }], ["lösche tiest", { lanes: ["file"], phase: "typing" }],
+  ];
+  for (const [text, extra] of cases) {
+    const response = await other.dispatcher.dispatch(typed(text, { takeId: "take-other", ...extra }));
+    assert.deepEqual([response.decision, response.decision === "fallthrough" ? response.reason : null], ["fallthrough", "no_match"], `${text} ${JSON.stringify(extra)}`);
+  }
+  assert.equal(other.ops.size, 0);
 });

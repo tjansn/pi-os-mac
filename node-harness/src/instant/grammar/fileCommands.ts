@@ -7,7 +7,8 @@ import { isBareEdit, isCompound, isDeictic, isInAppObject } from "./policy.js";
  *   delete     "lösche test", "lösch test", "entferne test", "delete test", "remove test", "test löschen"
  *   create     "erstelle (einen neuen) Ordner test", "lege einen Ordner test an", "neuer Ordner test", "neue Datei
  *              notes.txt", "create (a new) folder test", "make a folder test", "new file notes.txt" (the noun decides
- *              folder or file)
+ *              folder or file); the name first too ("create teast folder", "erstelle einen test Ordner", "test Ordner
+ *              anlegen"), and a plain-text file by its extension alone ("erstelle notes.txt", "create todo.md")
  *   copy       "kopiere test nach Dokumente", "test nach Downloads kopieren", "copy test to Downloads"; without a
  *              destination ("kopiere test") the lane asks where to
  *   duplicate  "dupliziere test", "test duplizieren", "duplicate test" (next to it)
@@ -16,6 +17,10 @@ import { isBareEdit, isCompound, isDeictic, isInAppObject } from "./policy.js";
  *              "rename test to test-alt"
  *   close      "schließe test", "schliesse test", "close test", "beende Safari", "quit Safari" (and "X schließen",
  *              "X beenden")
+ *
+ * A standard folder after the object is its place ("lösche test in Downloads", "kopiere test aus Dokumente nach …",
+ * "delete test from my Downloads", "erstelle Ordner test in Dokumente"): `place` as said, the name without it, and
+ * `whole` (the object with its place words), which the lane tries first on what the take shows.
  *
  * Open is not here: it stays the visible-first open of the open grammar. Policy first: compounds, bare edits and
  * deixis ("lösche das", "close this", "schließe das Fenster"), anything about the Trash (there is no trash op),
@@ -31,18 +36,28 @@ import { isBareEdit, isCompound, isDeictic, isInAppObject } from "./policy.js";
 
 export type FileCommandOp = "delete" | "create" | "copy" | "duplicate" | "move" | "rename" | "close";
 
+/**
+ * A standard folder said after an object ("test in Downloads"): `place` the folder word as said ("Downloads"), `whole`
+ * the object with its place words ("test in Downloads").
+ */
+export interface FileCommandPlace {
+  place?: string;
+  whole?: string;
+}
+
 /** One reading of "X nach Y": the object and the destination as said ("" when none was said). */
-export interface FileCommandSplit {
+export interface FileCommandSplit extends FileCommandPlace {
   name: string;
   dest: string;
 }
 
 export type FileCommand =
-  | { op: "delete"; name: string }
-  | { op: "create"; name: string; kind: "folder" | "file" }
+  | ({ op: "delete"; name: string } & FileCommandPlace)
+  /** `place`: the standard folder to create in ("erstelle Ordner test in Dokumente"). */
+  | { op: "create"; name: string; kind: "folder" | "file"; place?: string }
   /** Readings from the last preposition to the first ("kopiere Fotos in Rom nach Archiv": "nach" first). */
   | { op: "copy" | "move"; splits: readonly FileCommandSplit[] }
-  | { op: "duplicate"; name: string }
+  | ({ op: "duplicate"; name: string } & FileCommandPlace)
   | { op: "rename"; name: string; newName: string }
   /**
    * `quit`: said with beende/quit (else schließe/close); the lane resolves both the same way (BUILD6 §5). `window`: a
@@ -64,7 +79,7 @@ interface Form {
 const PARTICLES = "(?:\\s+(?:mal|bitte|doch|jetzt|kurz|schnell|einfach|eben|please|just))*";
 const NOUN = "(ordner|verzeichnis|datei|folder|directory|file)";
 const NAMED = "(?:\\s+(?:namens|mit\\s+dem\\s+namen|called|named))?";
-const ARTICLE = "(?:\\s+(?:einen|eine|ein|a|an))?";
+const ARTICLE = "(?:\\s+(?:einen|eine|ein|den|die|das|a|an|the))?";
 const NEW = "(?:\\s+(?:neuen|neue|neues|new))?";
 
 const DELETE_FIRST = new RegExp(`^(?:lösche|lösch|loesche|loesch|entferne|entfern|delete|remove)${PARTICLES}\\s+(.+)$`, "du");
@@ -76,6 +91,46 @@ const CREATE_NEW = new RegExp(`^(?:neuer|neuen|neue|neues|new)\\s+${NOUN}${NAMED
 const CREATE_LAST = new RegExp(`^(?:(?:einen|eine|ein)\\s+)?(?:(?:neuen|neue|neues)\\s+)?${NOUN}${NAMED}\\s+(.+?)\\s+(?:erstellen|anlegen)$`, "du");
 /** "neue Datei test erstellen": the verb at the end is no part of the name. */
 const CREATE_TAIL_VERB = /\s*\b(?:erstellen|anlegen|machen)$/u;
+// The name first, the noun as the last word ("create teast folder", "erstelle einen test Ordner", "neuer test Ordner",
+// "lege einen test Ordner an", "test Ordner anlegen"). The noun stands alone: "Foto-Ordner" stays a name.
+const CREATE_VERB_NAME_FIRST = new RegExp(`^(?:erstelle|erstell|create|make)${PARTICLES}${ARTICLE}${NEW}\\s+(.+?)\\s+${NOUN}$`, "du");
+const CREATE_LEGE_NAME_FIRST = new RegExp(`^(?:lege|leg)${PARTICLES}${ARTICLE}${NEW}\\s+(.+?)\\s+${NOUN}\\s+an$`, "du");
+const CREATE_NEW_NAME_FIRST = new RegExp(`^(?:neuer|neuen|neue|neues|new)\\s+(.+?)\\s+${NOUN}$`, "du");
+const CREATE_LAST_NAME_FIRST = new RegExp(`^(?:(?:einen|eine|ein|den|die|das)\\s+)?(?:(?:neuen|neue|neues)\\s+)?(.+?)\\s+${NOUN}\\s+(?:erstellen|anlegen)$`, "du");
+/**
+ * A plain-text file by its extension alone ("erstelle notes.txt", "create todo.md", "notes.txt anlegen"): one word, and only
+ * text formats, where an empty file is a valid one (an empty .zip, .docx or .pages is not).
+ */
+const TEXT_FILE = "(\\S+\\.(?:txt|text|md|markdown|csv|tsv|json|yaml|yml|toml|ini|xml|html|htm|css|js|mjs|ts|py|sh|swift|rb|go|rs|java|c|h|cpp|sql|log|tex))";
+const CREATE_BY_EXTENSION = new RegExp(`^(?:erstelle|erstell|create|make)${PARTICLES}${ARTICLE}${NEW}\\s+${TEXT_FILE}$`, "du");
+const CREATE_BY_EXTENSION_LAST = new RegExp(`^${TEXT_FILE}\\s+(?:erstellen|anlegen)$`, "du");
+/**
+ * A name that is only articles, "new" words and plain adjectives ("create a new folder" names no folder "a new",
+ * "erstelle einen leeren Ordner" none called "leeren").
+ */
+const FILLER_NAME = new RegExp("^(?:(?:einen|eine|ein|den|die|das|der|a|an|the|neuen|neue|neues|neuer|new|leer|leere|leeren|leeres|leerer|empty|blank|"
+  + "weiteren|weitere|weiteres|weiterer|another|additional|extra|zusätzlichen|zusätzliche|zusätzliches|zusaetzlichen)\\s*)+$", "u");
+/** A possessive before a new name: whose it is, not its name ("create my project folder"); today's. */
+const POSSESSIVE_NAME = /^(?:my|your|our|mein|meine|meinen|meinem|dein|deine|deinen|unser|unsere|unseren)(?=\s|$)/u;
+/**
+ * A name said before its noun is a few name words, never a phrase: "make a backup of the folder" and "erstelle eine Kopie
+ * vom Ordner" are no folders "backup of the" or "Kopie vom".
+ */
+const NAME_FIRST_PROSE = /(?:^|\s)(?:of|the|for|with|from|to|in|on|at|and|or|this|that|von|vom|für|fuer|mit|aus|zu|zum|zur|im|am|der|die|das|den|dem|des|und|oder|diesen|diese|dieses)(?=\s|$)/u;
+const MAX_NAME_FIRST_WORDS = 3;
+
+/** The standard folders the lane resolves (fileLane.ts STANDARD_FOLDERS keys), as a place after an object. */
+const PLACE_KEYS = "schreibtisch|desktop|dokumente|dokumenten|documents|downloads|download|bilder|pictures|musik|music|filme|movies|"
+  + "benutzerordner|home|homeordner|privatordner";
+/**
+ * "… in Downloads", "… aus dem Ordner Dokumente", "… auf dem Schreibtisch", "… from my Downloads", "… im Downloads-Ordner":
+ * a standard folder at the end of an object (group 1 the folder word).
+ */
+const PLACE_TAIL = new RegExp(
+  `\\s+(?:in|im|aus|von|vom|auf|from|on|inside)(?:\\s+(?:dem|den|der|die|the|my|meinem|meinen|meiner))?(?:\\s+(?:ordner|folder))?\\s+(${PLACE_KEYS})`
+    + "(?:[\\s-]+(?:ordner|folder))?$",
+  "diu",
+);
 const COPY_FIRST = new RegExp(`^(?:kopiere|kopier|copy)${PARTICLES}\\s+(.+)$`, "du");
 const COPY_LAST = /^(.+)\s+kopieren$/du;
 const DUPLICATE_FIRST = new RegExp(`^(?:dupliziere|duplizier|duplicate)${PARTICLES}\\s+(.+)$`, "du");
@@ -229,20 +284,73 @@ function newName(raw: string): string | null {
   return isDeictic(normalize(name)) ? null : name;
 }
 
+/** An object with a standard folder at its end ("test in Downloads"): the name before it, the folder word and the whole. */
+function placed(raw: string): { name: string; place?: string; whole?: string } {
+  const whole = cleanName(raw);
+  const m = PLACE_TAIL.exec(whole);
+  const span = m?.indices?.[1];
+  if (!m || !span || m.index === 0) return { name: whole };
+  const name = whole.slice(0, m.index).trim();
+  return name ? { name, place: whole.slice(span[0], span[1]), whole } : { name: whole };
+}
+
+/** A source object (sourceName) with its place, if one was said. */
+function sourceObject(raw: string): ({ name: string } & FileCommandPlace) | null {
+  const object = placed(raw);
+  const name = sourceName(object.name);
+  if (!name) return null;
+  return object.place ? { name, place: object.place, whole: object.whole! } : { name };
+}
+
 function deleteForm(form: Form): FileCommand | null {
   const m = DELETE_FIRST.exec(form.lower) ?? DELETE_LAST.exec(form.lower);
   if (!m) return null;
-  const name = sourceName(group(form, m, 1));
-  return name ? { op: "delete", name } : null;
+  const object = sourceObject(group(form, m, 1));
+  return object ? { op: "delete", ...object } : null;
+}
+
+function kindOf(noun: string): "folder" | "file" {
+  return /^(?:datei|file)$/u.test(noun) ? "file" : "folder";
+}
+
+/** A new name for create: newName, and never only articles and "new" words. */
+function createName(raw: string): string | null {
+  const name = newName(raw);
+  return name && !FILLER_NAME.test(name.toLowerCase()) ? name : null;
+}
+
+/** A create form on the whole text (its name may end in a place: "erstelle Ordner test in Dokumente"). */
+function createParsed(form: Form): Extract<FileCommand, { op: "create" }> | null {
+  const withPlace = (name: string | null, kind: "folder" | "file"): Extract<FileCommand, { op: "create" }> | null => {
+    if (!name) return null;
+    const object = placed(name);
+    const inner = object.place ? createName(object.name) : name;
+    if (!inner) return null;
+    return object.place ? { op: "create", name: inner, kind, place: object.place } : { op: "create", name, kind };
+  };
+  const nounFirst = CREATE_VERB.exec(form.lower) ?? CREATE_LEGE.exec(form.lower) ?? CREATE_LAST.exec(form.lower) ?? CREATE_NEW.exec(form.lower);
+  if (nounFirst) return withPlace(createName(group(form, nounFirst, 2).replace(CREATE_TAIL_VERB, "")), kindOf(nounFirst[1]!));
+  const nameFirst = CREATE_VERB_NAME_FIRST.exec(form.lower) ?? CREATE_LEGE_NAME_FIRST.exec(form.lower)
+    ?? CREATE_LAST_NAME_FIRST.exec(form.lower) ?? CREATE_NEW_NAME_FIRST.exec(form.lower);
+  if (nameFirst) {
+    const said = group(form, nameFirst, 1);
+    const lower = said.toLowerCase().trim();
+    if (POSSESSIVE_NAME.test(lower) || NAME_FIRST_PROSE.test(lower) || lower.split(/\s+/u).length > MAX_NAME_FIRST_WORDS) return null;
+    return withPlace(createName(said), kindOf(nameFirst[2]!));
+  }
+  const byExtension = CREATE_BY_EXTENSION.exec(form.lower) ?? CREATE_BY_EXTENSION_LAST.exec(form.lower);
+  return byExtension ? withPlace(createName(group(form, byExtension, 1)), "file") : null;
 }
 
 function createForm(form: Form): FileCommand | null {
-  const m = CREATE_VERB.exec(form.lower) ?? CREATE_LEGE.exec(form.lower) ?? CREATE_LAST.exec(form.lower) ?? CREATE_NEW.exec(form.lower);
-  if (!m) return null;
-  const noun = m[1]!;
-  const name = newName(group(form, m, 2).replace(CREATE_TAIL_VERB, ""));
-  if (!name) return null;
-  return { op: "create", name, kind: /^(?:datei|file)$/u.test(noun) ? "file" : "folder" };
+  const direct = createParsed(form);
+  if (direct) return direct;
+  // The place after the noun ("erstelle einen test Ordner in Dokumente", "create notes.txt in Documents").
+  const m = PLACE_TAIL.exec(form.lower);
+  const span = m?.indices?.[1];
+  if (!m || !span || m.index === 0) return null;
+  const inner = createParsed({ lower: form.lower.slice(0, m.index), cased: form.cased.slice(0, m.index) });
+  return inner && !inner.place ? { ...inner, place: form.cased.slice(span[0], span[1]) } : null;
 }
 
 /** Every "object → destination" reading of a copy/move remainder, the last preposition first. */
@@ -251,21 +359,21 @@ function splits(form: Form, start: number, end: number): FileCommandSplit[] {
   const cased = form.cased.slice(start, end);
   const here = DEST_HERE.exec(lower);
   if (here) {
-    const name = sourceName(cased.slice(0, here.index));
-    return name ? [{ name, dest: here[1]! }] : [];
+    const object = sourceObject(cased.slice(0, here.index));
+    return object ? [{ ...object, dest: here[1]! }] : [];
   }
   const out: FileCommandSplit[] = [];
   for (const m of [...lower.matchAll(DEST_PREPOSITION)].reverse()) {
     const at = m.index ?? 0;
-    const name = sourceName(cased.slice(0, at));
+    const object = sourceObject(cased.slice(0, at));
     const dest = cleanName(cased.slice(at + m[0].length));
-    if (name && dest) out.push({ name, dest });
+    if (object && dest) out.push({ ...object, dest });
   }
-  // No destination said ("kopiere test"): the lane asks where to. A remainder with a preposition that gave no
-  // reading is no command.
+  // No destination said ("kopiere test", "kopiere test aus Downloads"): the lane asks where to. A remainder with a
+  // preposition that gave no reading is no command.
   if (!out.length && !HAS_PREPOSITION.test(lower)) {
-    const name = sourceName(cased);
-    if (name) out.push({ name, dest: "" });
+    const object = sourceObject(cased);
+    if (object) out.push({ ...object, dest: "" });
   }
   return out;
 }
@@ -273,8 +381,8 @@ function splits(form: Form, start: number, end: number): FileCommandSplit[] {
 function copyMoveForm(form: Form): FileCommand | null {
   const duplicate = DUPLICATE_FIRST.exec(form.lower) ?? DUPLICATE_LAST.exec(form.lower);
   if (duplicate) {
-    const name = sourceName(group(form, duplicate, 1));
-    return name ? { op: "duplicate", name } : null;
+    const object = sourceObject(group(form, duplicate, 1));
+    return object ? { op: "duplicate", ...object } : null;
   }
   const copy = COPY_FIRST.exec(form.lower) ?? COPY_LAST.exec(form.lower);
   const move = copy ? null : MOVE_FIRST.exec(form.lower) ?? MOVE_LAST.exec(form.lower);

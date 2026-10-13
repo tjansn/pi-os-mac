@@ -1,9 +1,9 @@
-import { realpath, stat } from "node:fs/promises";
+import { readdir, realpath, stat } from "node:fs/promises";
 import { basename } from "node:path";
 import type { HostAction } from "../contracts/actions.js";
 import { isAbsoluteHostPath } from "../contracts/attachments.js";
 import { accepts, type InstantRequest, type VoiceMeta } from "../contracts/instant.js";
-import type { VisibleSourceKind } from "../contracts/launcher.js";
+import type { FileCandidate, VisibleSource, VisibleSourceKind } from "../contracts/launcher.js";
 import { SPOKEN, type AppMatcher } from "./apps.js";
 import { fileOpActCard, fileOpRowsCard, MAX_LIST_ITEMS, noticeCard, type FileOpRow } from "./cards.js";
 import {
@@ -11,11 +11,13 @@ import {
   type FileOpPlan, type FileOpStore, type FileOpWords, type PathGuard, type PlanItem,
 } from "./fileOps.js";
 import { truncate } from "./format.js";
-import { phraseLike, type FileCommand, type FileCommandSplit } from "./grammar/fileCommands.js";
+import { phraseLike, type FileCommand, type FileCommandPlace, type FileCommandSplit } from "./grammar/fileCommands.js";
 import { displayName as appDisplayName } from "./learned.js";
 import type { InstantBody } from "./types.js";
 import { voiceMeta } from "./voice.js";
-import { matchKey, matchVisible, VISIBLE, visibleTarget, type VisibleEntry, type VisibleMatch, type VisibleSnapshot, type VisibleTarget } from "./visible.js";
+import {
+  matchKey, matchVisible, VISIBLE, visibleEntry, visibleTarget, type VisibleEntry, type VisibleMatch, type VisibleSnapshot, type VisibleTarget,
+} from "./visible.js";
 
 /**
  * The file-command lane (DESIGN6 §1–§3 with BUILD6): a parsed file command (grammar/fileCommands.ts) resolved against the
@@ -37,6 +39,10 @@ import { matchKey, matchVisible, VISIBLE, visibleTarget, type VisibleEntry, type
  *   - Close: a window noun ("das Safari-Fenster") only ever closes the take's Finder window, never quits an app.
  *   - Voice: delete, move and rename take the words as said when only they name an item ("delete Backup Now"), the
  *     spoken core otherwise; two readings that name different items act on neither (today's).
+ *   - Finals decide on the shown folders as they are on disk (DESIGN7 §2): items the host did not list or no longer are
+ *     there count as they are now, and a folder read whole is a complete view. A said standard folder ("lösche test in
+ *     Downloads") is read the same way and decided on alone; the whole object is tried first on what the take shows.
+ *     Spoken punctuation names an item too ("notes punkt txt"). Previews keep the host's capture.
  *   - Previews (typing, partial) show an act's plan as an answer and stage nothing; finals stage.
  *
  * Every row binds `fileOp {opId}` only. Nothing here logs; names and paths are user content.
@@ -56,6 +62,14 @@ export interface FileCommandDeps {
   isDirectory?: (path: string) => Promise<boolean>;
   /** A destination folder's real path, or null when it cannot be resolved (then it is taken as named; default fs.realpath). */
   realPath?: (path: string) => Promise<string | null>;
+  /** A folder's direct children as they are on disk, or null when unreadable (default listFolderOnDisk). Finals only. */
+  listFolder?: (path: string) => Promise<FolderListing | null>;
+}
+
+/** A folder's children as read from disk; `complete` false when the read stopped at its cap. */
+export interface FolderListing {
+  items: FileCandidate[];
+  complete: boolean;
 }
 
 export interface FileLaneInput {
@@ -298,6 +312,172 @@ function incomplete(visible: VisibleSnapshot): boolean {
 }
 
 // ---------------------------------------------------------------------------------------------
+// The current view (DESIGN7 §2): the shown folders and a said place as they are on disk, read on finals only
+
+const MAX_LISTED = 2_000;
+/** Directory extensions macOS shows as one file (a package: `rm -r` like a folder, never browsed as one). */
+const PACKAGE_EXTENSIONS: ReadonlySet<string> = new Set([
+  "app", "bundle", "framework", "plugin", "kext", "rtfd", "key", "pages", "numbers", "photoslibrary", "xcodeproj", "xcworkspace",
+  "playground", "logicx", "band", "fcpbundle", "imovielibrary", "musiclibrary", "aplibrary", "scptd", "workflow",
+]);
+
+/**
+ * A folder's direct children: no dot names and no Finder "Icon\r", a symlink is no directory, at most 2,000 (then
+ * `complete` is false). Null when the folder cannot be read. Names and paths stay as stored: they are what the ops get.
+ */
+export async function listFolderOnDisk(path: string): Promise<FolderListing | null> {
+  let dirents;
+  try {
+    dirents = await readdir(path, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  const items: FileCandidate[] = [];
+  for (const dirent of dirents) {
+    const name = dirent.name;
+    if (!name || name.startsWith(".") || name === "Icon\r") continue;
+    if (items.length >= MAX_LISTED) return { items, complete: false };
+    const directory = dirent.isDirectory();
+    const extension = /\.([^.]+)$/u.exec(name)?.[1]?.toLowerCase();
+    const isPackage = directory && extension !== undefined && PACKAGE_EXTENSIONS.has(extension);
+    items.push({ token: "", name, path: childPath(path, name), isDirectory: directory, isPackage, ...(directory && !isPackage ? { contentType: "public.folder" } : {}) });
+  }
+  return { items, complete: true };
+}
+
+const foldName = (text: string): string => text.normalize("NFC").toLowerCase();
+
+/**
+ * `visible` with `folder`'s items as they are on disk: items the host did not list are added; listed items gone from
+ * disk are dropped (only after a complete read); a complete read makes that source complete.
+ */
+function mergeListing(visible: VisibleSnapshot, folder: string, kind: VisibleSourceKind, listing: FolderListing): VisibleSnapshot {
+  const folderKey = foldName(folder);
+  const onDisk = new Map(listing.items.map((item) => [foldName(item.name), item]));
+  const entries: VisibleEntry[] = [];
+  const seen = new Set<string>();
+  for (const entry of visible.entries) {
+    if (foldName(parentPath(entry.item.path)) !== folderKey) {
+      entries.push(entry);
+      continue;
+    }
+    const key = foldName(entry.item.name);
+    if (onDisk.has(key)) {
+      seen.add(key);
+      entries.push(entry);
+    } else if (!listing.complete) {
+      entries.push(entry);
+    }
+  }
+  for (const [key, item] of onDisk) {
+    if (seen.has(key)) continue;
+    const entry = visibleEntry({ ...item, source: kind });
+    if (entry.key) entries.push(entry);
+  }
+  const sources = visible.sources.map((source) => (source.kind === kind && listing.complete ? { ...source, complete: true } : source));
+  return { ...visible, sources, entries };
+}
+
+/** The folder a lane source shows (the desktop's is `~/Desktop` without a path); never `/`. */
+function laneFolder(source: VisibleSource, home: string): string | undefined {
+  const path = source.kind === "desktop" ? folderPath(source.path) ?? childPath(home, "Desktop") : folderPath(source.path);
+  return path && path !== "/" ? path : undefined;
+}
+
+/**
+ * The take's view with its shown folders read from disk (a final's): a stale capture (an op or pi just changed the
+ * folder, a thread's older take) or a view the host could not read whole is current and complete again. Previews keep
+ * the host's view: the host never enumerates these folders itself (macOS's folder-privacy prompt), and a final file
+ * command needs the same access for its op anyway.
+ */
+async function currentView(input: FileLaneInput, deps: FileCommandDeps): Promise<VisibleSnapshot> {
+  if (input.request.phase !== "final") return input.visible;
+  const list = deps.listFolder ?? listFolderOnDisk;
+  let visible = input.visible;
+  let lanes = 0, read = 0;
+  for (const source of input.visible.sources) {
+    if (!LANE_SOURCES.has(source.kind)) continue;
+    lanes++;
+    const folder = laneFolder(source, input.home);
+    if (!folder) continue;
+    const listing = await list(folder).catch(() => null);
+    if (!listing) continue;
+    visible = mergeListing(visible, folder, source.kind, listing);
+    if (listing.complete) read++;
+  }
+  // Every shown folder read whole: the host's result cap no longer hides anything the lane compares.
+  if (lanes > 0 && read === lanes && visible.truncated) {
+    const { truncated: _truncated, ...complete } = visible;
+    return complete;
+  }
+  return visible;
+}
+
+/** A said standard folder ("lösche test in Downloads") as a view of its own, read from disk on finals; else null. */
+async function placeView(place: string, input: FileLaneInput, deps: FileCommandDeps): Promise<VisibleSnapshot | null> {
+  if (input.request.phase !== "final") return null;
+  const standard = STANDARD_FOLDERS.find((folder) => folder.keys.includes(matchKey(place)));
+  if (!standard) return null;
+  const folder = standardDestination(standard, input.home, input.german).path;
+  const listing = await (deps.listFolder ?? listFolderOnDisk)(folder).catch(() => null);
+  if (!listing) return null;
+  const kind: VisibleSourceKind = standard.dir === "Desktop" ? "desktop" : "finderWindow";
+  const entries = listing.items.map((item) => visibleEntry({ ...item, source: kind })).filter((entry) => entry.key);
+  return { supported: true, sources: [{ kind, via: "ax", complete: listing.complete, path: folder }], entries };
+}
+
+/** Spoken punctuation between name parts ("notes punkt txt" → "notes.txt", "rad unterstrich tour" → "rad_tour"). */
+const SPOKEN_MARKS: readonly (readonly [RegExp, string])[] = [
+  [/\s+(?:punkt|dot)\s+/giu, "."], [/\s+(?:unterstrich|underscore)\s+/giu, "_"], [/\s+(?:bindestrich|dash|hyphen)\s+/giu, "-"],
+];
+
+function spokenMarks(name: string): string {
+  return SPOKEN_MARKS.reduce((text, [pattern, mark]) => text.replace(pattern, mark), name);
+}
+
+/** resolveItem, then the name with its spoken punctuation when only that names an item. */
+function resolveName(name: string, input: FileLaneInput): Resolution | null {
+  const first = resolveItem(name, input);
+  if (first && (first.kind === "one" || first.kind === "several")) return first;
+  const spelled = spokenMarks(name);
+  if (spelled === name) return first;
+  const second = resolveItem(spelled, input);
+  return second && (second.kind === "one" || second.kind === "several") ? second : first;
+}
+
+/** An object as the grammar parsed it: its name and, when said, its standard folder. */
+interface ItemRef extends FileCommandPlace {
+  name: string;
+}
+
+/** A resolved object: the resolution, the view it was found in (a said place's own) and the name as compared. */
+interface Resolved {
+  resolution: Resolution;
+  input: FileLaneInput;
+  name: string;
+}
+
+/**
+ * Where an object resolves: with a place, the whole object on what the take shows first (an item may be called "Fotos in
+ * Downloads"), then the name in that folder; without one, on what the take shows. Null: today's.
+ */
+async function resolveRef(ref: ItemRef, input: FileLaneInput, deps: FileCommandDeps): Promise<Resolved | null> {
+  if (!ref.place) {
+    const resolution = resolveName(ref.name, input);
+    return resolution ? { resolution, input, name: ref.name } : null;
+  }
+  if (ref.whole) {
+    const whole = resolveName(ref.whole, input);
+    if (whole && (whole.kind === "one" || whole.kind === "several")) return { resolution: whole, input, name: ref.whole };
+  }
+  const view = await placeView(ref.place, input, deps);
+  if (!view) return null;
+  const placed = { ...input, visible: view };
+  const resolution = resolveName(ref.name, placed);
+  return resolution ? { resolution, input: placed, name: ref.name } : null;
+}
+
+// ---------------------------------------------------------------------------------------------
 // Outcomes (decideFileCommand renders them into a body)
 
 interface Option { plan: FileOpPlan; row: FileOpRow }
@@ -378,10 +558,11 @@ function oneRowList(input: FileLaneInput, resolution: Resolution, name: string, 
   return { kind: "list", options: [{ plan, row: itemRow(entry) }], title: whichTitle(input, resolution, name), heard: resolution.target.heard };
 }
 
-/** "lösche test": the item's folder is where the take shows it. */
-async function deleteOutcome(input: FileLaneInput, name: string): Promise<Outcome | null> {
-  const resolution = resolveItem(name, input);
-  if (!resolution) return null;
+/** "lösche test": the item's folder is where the take shows it (or the said standard folder: "lösche test in Downloads"). */
+async function deleteOutcome(shown: FileLaneInput, ref: ItemRef, deps: FileCommandDeps): Promise<Outcome | null> {
+  const resolved = await resolveRef(ref, shown, deps);
+  if (!resolved) return null;
+  const { resolution, input, name } = resolved;
   const plan = (entry: VisibleEntry): FileOpPlan => deletePlan(planItem(entry), parentPath(entry.item.path), words(input, entry.item.name));
   if (resolution.kind === "none") return missing(input, resolution, name);
   if (resolution.kind !== "one" || incomplete(input.visible)) return listOf(input, resolution, name, plan);
@@ -406,7 +587,15 @@ async function missing(input: FileLaneInput, resolution: Resolution, name: strin
   return notFound(input, name);
 }
 
-function createOutcome(input: FileLaneInput, name: string, kind: "folder" | "file"): Outcome {
+/** "erstelle Ordner test": in the folder the take shows, or in the said standard folder ("… in Dokumente"). */
+async function createOutcome(take: FileLaneInput, name: string, kind: "folder" | "file", place: string | undefined,
+  deps: FileCommandDeps): Promise<Outcome | null> {
+  let input = take;
+  if (place !== undefined) {
+    const view = await placeView(place, take, deps);
+    if (!view) return null;
+    input = { ...take, visible: view };
+  }
   const de = input.german;
   const shown = shownFolder(input.visible, input.home);
   if (!shown.path) return answer(de ? "Ich sehe nicht, welcher Ordner das ist." : "I can't tell which folder that is.");
@@ -448,9 +637,10 @@ function copyName(entry: VisibleEntry, visible: VisibleSnapshot, german: boolean
   return null;
 }
 
-async function duplicateOutcome(input: FileLaneInput, name: string): Promise<Outcome | null> {
-  const resolution = resolveItem(name, input);
-  if (!resolution) return null;
+async function duplicateOutcome(shown: FileLaneInput, ref: ItemRef, deps: FileCommandDeps): Promise<Outcome | null> {
+  const resolved = await resolveRef(ref, shown, deps);
+  if (!resolved) return null;
+  const { resolution, input, name } = resolved;
   if (resolution.kind === "none") return missing(input, resolution, name);
   const plan = (entry: VisibleEntry): FileOpPlan | null => {
     const copy = copyName(entry, input.visible, input.german);
@@ -498,23 +688,25 @@ function transferTitle(input: FileLaneInput, op: "copy" | "move", plan: FileOpPl
   return de ? `${quote(true, name)} nach ${dest} verschieben` : `Move ${quote(false, name)} to ${dest}`;
 }
 
-async function transferOutcome(input: FileLaneInput, op: "copy" | "move", splits: readonly FileCommandSplit[], deps: FileCommandDeps): Promise<Outcome | null> {
+async function transferOutcome(shown: FileLaneInput, op: "copy" | "move", splits: readonly FileCommandSplit[], deps: FileCommandDeps): Promise<Outcome | null> {
   // The reading whose object resolves best ("kopiere Fotos in Rom nach Archiv": the last preposition first).
   const RANK = { one: 0, several: 1, sound: 2, none: 3 } as const;
-  let chosen: { split: FileCommandSplit; resolution: Resolution } | undefined;
+  let chosen: { split: FileCommandSplit; resolved: Resolved } | undefined;
   for (const split of splits) {
-    const resolution = resolveItem(split.name, input);
-    if (resolution && (!chosen || RANK[resolution.kind] < RANK[chosen.resolution.kind])) chosen = { split, resolution };
+    const resolved = await resolveRef(split, shown, deps);
+    if (resolved && (!chosen || RANK[resolved.resolution.kind] < RANK[chosen.resolved.resolution.kind])) chosen = { split, resolved };
   }
   if (!chosen) return null;
-  const { split, resolution } = chosen;
-  if (resolution.kind === "none") return missing(input, resolution, split.name);
-  const dest = await destination(split.dest, input, deps);
+  const { split } = chosen;
+  // The object's view (a said place's own); the destination is named from what the take shows ("hierher", a visible folder).
+  const { resolution, input, name } = chosen.resolved;
+  if (resolution.kind === "none") return missing(input, resolution, name);
+  const dest = await destination(split.dest, shown, deps);
   const guard = guardOf(input);
   if (resolution.kind !== "one") {
     // "Which one?" needs a destination; asking two questions at once is pi's job.
     if (!dest) return null;
-    return listOf(input, resolution, split.name, (entry) => {
+    return listOf(input, resolution, name, (entry) => {
       const planned = transferPlan(input, op, entry, dest);
       return isPlan(planned) ? planned : null;
     });
@@ -539,13 +731,13 @@ async function transferOutcome(input: FileLaneInput, op: "copy" | "move", splits
   }
   const planned = transferPlan(input, op, entry, dest);
   if (!isPlan(planned)) return planned;
-  if (op === "move" && incomplete(input.visible)) return oneRowList(input, resolution, split.name, entry, planned);
+  if (op === "move" && incomplete(input.visible)) return oneRowList(input, resolution, name, entry, planned);
   return actOf(input, entry, planned, transferTitle(input, op, planned), resolution.target.heard);
 }
 
 async function renameOutcome(input: FileLaneInput, name: string, newName: string): Promise<Outcome | null> {
   const de = input.german;
-  const resolution = resolveItem(name, input);
+  const resolution = resolveName(name, input);
   if (!resolution) return null;
   if (resolution.kind === "none") return missing(input, resolution, name);
   if (nameProblem(newName)) return answer(de ? `${quote(true, newName)} ist kein gültiger Name.` : `${quote(false, newName)} isn't a valid name.`, "warning");
@@ -604,12 +796,12 @@ async function closeOutcome(input: FileLaneInput, command: Extract<FileCommand, 
   return null;
 }
 
-/** The items a reading names exactly (every reading of a move counts), by path. */
-function namedItems(input: FileLaneInput, command: FileCommand): Set<string> {
-  const names = "splits" in command ? command.splits.map((split) => split.name) : [command.name];
+/** The items a reading names exactly (every reading of a move counts, each in its said place), by path. */
+async function namedItems(input: FileLaneInput, command: FileCommand, deps: FileCommandDeps): Promise<Set<string>> {
+  const refs: readonly ItemRef[] = "splits" in command ? command.splits : [command.op === "delete" ? command : { name: command.name }];
   const out = new Set<string>();
-  for (const name of names) {
-    const resolution = resolveItem(name, input);
+  for (const ref of refs) {
+    const resolution = (await resolveRef(ref, input, deps))?.resolution;
     if (resolution?.kind === "one" || resolution?.kind === "several") for (const match of resolution.matches) out.add(match.entry.item.path);
   }
   return out;
@@ -623,23 +815,23 @@ const SAID_FIRST: ReadonlySet<FileCommand["op"]> = new Set(["delete", "move", "r
  * name items and those differ neither is acted on (null: today's handling). Both naming the same items: the core
  * ("rename Backup to Archive now" is "Archive").
  */
-function readingOf(input: FileLaneInput): FileCommand | null {
+async function readingOf(input: FileLaneInput, deps: FileCommandDeps): Promise<FileCommand | null> {
   const { command, said } = input;
   if (!said || said.op !== command.op || !SAID_FIRST.has(command.op)) return command;
-  const asSaid = namedItems(input, said);
+  const asSaid = await namedItems(input, said, deps);
   if (!asSaid.size) return command;
-  const asCore = namedItems(input, command);
+  const asCore = await namedItems(input, command, deps);
   if (!asCore.size) return said;
   return asCore.size === asSaid.size && [...asCore].every((path) => asSaid.has(path)) ? command : null;
 }
 
 async function outcomeOf(input: FileLaneInput, deps: FileCommandDeps): Promise<Outcome | null> {
-  const command = readingOf(input);
+  const command = await readingOf(input, deps);
   if (!command) return null;
   switch (command.op) {
-    case "delete": return deleteOutcome(input, command.name);
-    case "create": return createOutcome(input, command.name, command.kind);
-    case "duplicate": return duplicateOutcome(input, command.name);
+    case "delete": return deleteOutcome(input, command, deps);
+    case "create": return createOutcome(input, command.name, command.kind, command.place, deps);
+    case "duplicate": return duplicateOutcome(input, command, deps);
     case "copy":
     case "move": return transferOutcome(input, command.op, command.splits, deps);
     case "rename": return renameOutcome(input, command.name, command.newName);
@@ -662,7 +854,10 @@ function metaOf(input: FileLaneInput, heard: string): { voice?: VoiceMeta } {
  */
 export async function decideFileCommand(input: FileLaneInput, deps: FileCommandDeps): Promise<InstantBody | null> {
   if (!laneVisible(input.visible)) return null;
-  const outcome = await outcomeOf(deps.guard && !input.guard ? { ...input, guard: deps.guard } : input, deps);
+  const guarded = deps.guard && !input.guard ? { ...input, guard: deps.guard } : input;
+  // A final decides on the shown folders as they are now (DESIGN7 §2a); previews on the host's capture.
+  const visible = await currentView(guarded, deps);
+  const outcome = await outcomeOf(visible === guarded.visible ? guarded : { ...guarded, visible }, deps);
   if (!outcome) return null;
   const request = input.request;
   const final = request.phase === "final";

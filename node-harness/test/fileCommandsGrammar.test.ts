@@ -39,6 +39,33 @@ const ROWS: readonly (readonly [text: string, locale: string, expected: FileComm
   ["create a new file called notes.txt", "en-US", { op: "create", name: "notes.txt", kind: "file" }],
   ["new folder test", "en-US", { op: "create", name: "test", kind: "folder" }],
   ["make a folder Archive", "en-US", { op: "create", name: "Archive", kind: "folder" }],
+  // create: the name before the noun, definite articles, a text file by its extension, a standard folder to create in
+  ["create teast folder", "en-US", { op: "create", name: "teast", kind: "folder" }],
+  ["make a test folder", "en-US", { op: "create", name: "test", kind: "folder" }],
+  ["new teast file", "en-US", { op: "create", name: "teast", kind: "file" }],
+  ["create the folder Plans", "en-US", { op: "create", name: "Plans", kind: "folder" }],
+  ["erstelle einen test Ordner", "de-DE", { op: "create", name: "test", kind: "folder" }],
+  ["erstelle den Ordner Plans", "de-DE", { op: "create", name: "Plans", kind: "folder" }],
+  ["neuer test Ordner", "de-DE", { op: "create", name: "test", kind: "folder" }],
+  ["test Ordner anlegen", "de-DE", { op: "create", name: "test", kind: "folder" }],
+  ["lege einen test Ordner an", "de-DE", { op: "create", name: "test", kind: "folder" }],
+  ["erstelle notes.txt", "de-DE", { op: "create", name: "notes.txt", kind: "file" }],
+  ["create todo.md", "en-US", { op: "create", name: "todo.md", kind: "file" }],
+  ["notes.txt anlegen", "de-DE", { op: "create", name: "notes.txt", kind: "file" }],
+  ["erstelle Ordner Belege in Dokumente", "de-DE", { op: "create", name: "Belege", kind: "folder", place: "Dokumente" }],
+  ["erstelle einen test Ordner in Dokumente", "de-DE", { op: "create", name: "test", kind: "folder", place: "Dokumente" }],
+  // a standard folder as the object's place
+  ["lösche test in Downloads", "de-DE", { op: "delete", name: "test", place: "Downloads", whole: "test in Downloads" }],
+  ["lösche test aus dem Ordner Dokumente", "de-DE", { op: "delete", name: "test", place: "Dokumente", whole: "test aus dem Ordner Dokumente" }],
+  ["Lösche Radfotos auf dem Schreibtisch.", "de-DE", { op: "delete", name: "Radfotos", place: "Schreibtisch", whole: "Radfotos auf dem Schreibtisch" }],
+  ["lösche test im Downloads-Ordner", "de-DE", { op: "delete", name: "test", place: "Downloads", whole: "test im Downloads-Ordner" }],
+  ["delete test from my Downloads", "en-US", { op: "delete", name: "test", place: "Downloads", whole: "test from my Downloads" }],
+  ["dupliziere test in Downloads", "de-DE", { op: "duplicate", name: "test", place: "Downloads", whole: "test in Downloads" }],
+  ["kopiere Rechnung aus Downloads nach Dokumente", "de-DE",
+    { op: "copy", splits: [{ name: "Rechnung", place: "Downloads", whole: "Rechnung aus Downloads", dest: "Dokumente" }] }],
+  ["kopiere test aus Downloads", "de-DE", { op: "copy", splits: [{ name: "test", place: "Downloads", whole: "test aus Downloads", dest: "" }] }],
+  ["verschiebe test vom Schreibtisch nach Dokumente", "de-DE",
+    { op: "move", splits: [{ name: "test", place: "Schreibtisch", whole: "test vom Schreibtisch", dest: "Dokumente" }] }],
   // copy (every preposition is a reading, the last one first) and duplicate
   ["kopiere test nach Dokumente", "de-DE", { op: "copy", splits: [{ name: "test", dest: "Dokumente" }] }],
   ["kopiere test in den Ordner Archiv", "de-DE", { op: "copy", splits: [{ name: "test", dest: "den Ordner Archiv" }] }],
@@ -123,6 +150,9 @@ test("file-command grammar: policy first — today's handling for the Trash, com
     // New names that are prose, and forms without a name.
     ["erstelle eine Datei mit einer Einkaufsliste", "de-DE"], ["create a file for my notes", "en-US"], ["neuer Ordner", "de-DE"], ["create a folder", "en-US"],
     ["neue Datei erstellen", "de-DE"],
+    // Name-first forms that name no folder: articles and "new" only, plain adjectives, phrases, possessives; no empty zip.
+    ["create a new folder", "en-US"], ["make a new file", "en-US"], ["erstelle einen neuen Ordner", "de-DE"], ["erstelle einen leeren Ordner", "de-DE"],
+    ["make a backup of the folder", "en-US"], ["erstelle eine Kopie vom Ordner", "de-DE"], ["create my project folder", "en-US"], ["create archive.zip", "en-US"],
     // Nothing to do with files.
     ["öffne test", "de-DE"], ["open Radfotos", "en-US"], ["Albert Einstein", "de-DE"], ["15% of 340", "en-US"], ["wie spät ist es in Tokio", "de-DE"],
   ];

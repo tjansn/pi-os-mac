@@ -686,16 +686,20 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
   /** A comparable identity of a file command (its op and matching keys): first-tier readings agree when theirs are equal. */
   function fileCommandKey(command: FileCommand): string {
     const key = (name: string): string => visibleTarget(name)?.key ?? matchKey(name);
+    const at = (place: string | undefined): string => (place === undefined ? "" : `@${matchKey(place)}`);
     switch (command.op) {
       case "copy":
       case "move": {
         const split = command.splits[0];
-        return `${command.op}:${split ? `${key(split.name)}>${key(split.dest)}` : ""}`;
+        return `${command.op}:${split ? `${key(split.name)}${at(split.place)}>${key(split.dest)}` : ""}`;
       }
       case "rename":
         return `rename:${key(command.name)}>${matchKey(command.newName)}`;
       case "create":
-        return `create:${command.kind}:${matchKey(command.name)}`;
+        return `create:${command.kind}:${matchKey(command.name)}${at(command.place)}`;
+      case "delete":
+      case "duplicate":
+        return `${command.op}:${key(command.name)}${at(command.place)}`;
       default:
         return `${command.op}:${key(command.name)}`;
     }
@@ -1711,6 +1715,17 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
     try {
       if (typeof request?.text !== "string" || !PHASES.includes(request.phase) || request.text.length > MAX_INSTANT_TEXT) return finish(fallthrough("no_match"));
       if (!enabled()) return finish(fallthrough("disabled"));
+      // A host that asks only certain lanes (DESIGN7 §3: a follow-up typed in a pi thread): they decide a final, or
+      // nothing does and the text goes where the host would have sent it.
+      if (request.lanes) {
+        if (phase !== "final" || !request.lanes.includes("file")) return finish(fallthrough("no_match"));
+        const n = normalize(request.text, request.locale);
+        const file = fileCommandOf(n, request.text, request, false);
+        if (!file) return finish(fallthrough("no_match"));
+        intentLabel = `file_${file.op}`;
+        const visible = await visibleFor(request, () => true, signal);
+        return finish((await fileStep(file, request, n, visible, signal)) ?? fallthrough("no_match"));
+      }
       const dictionary = options.dictionary ?? deps.dictionary ?? NO_DICTIONARY;
       const voice = request.inputMode === "voice" && phase !== "typing";
       if (voice && phase === "final") {

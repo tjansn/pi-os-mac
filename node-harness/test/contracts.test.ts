@@ -9,7 +9,8 @@ import { bindingToHostAction, buildCard, type CardSpec, ui } from "../src/contra
 import { parseContext } from "../src/contracts/context.js";
 import {
   accepts, appleDictationRecognizer, appleSpeechRecognizer, FILL_IMPLICIT_KINDS, FILL_NEVER_KINDS, FILL_OPT_IN_KINDS, fillActConsistent, fillSubmitAllowed,
-  INSTANT_ACCEPTS, INSTANT_APP_CLASSES, INSTANT_FIELD_KINDS, INSTANT_LIMITS, isRecognizerId, parseInstantAccept, parseInstantRequest, parseInstantTarget,
+  INSTANT_ACCEPTS, INSTANT_APP_CLASSES, INSTANT_FIELD_KINDS, INSTANT_LANES, INSTANT_LIMITS, isRecognizerId, parseInstantAccept, parseInstantLanes,
+  parseInstantRequest, parseInstantTarget,
   parseVoiceHypothesis, parseVoiceMeta, RECOGNIZERS, recognizerEngine, SUBMIT_AUTO_KINDS, SUBMIT_NEVER_KINDS, VOICE_FILLS, VOICE_VIAS, type InstantFieldKind,
   type InstantRequest, type InstantResponse,
 } from "../src/contracts/instant.js";
@@ -217,6 +218,16 @@ test("instant request: accept vocabulary, hypotheses and limits", () => {
   assert.equal(accepts(request, "check"), true);
   assert.equal(accepts(request, "confirm"), false);
   assert.equal(accepts({}, "suggest"), false, "no accept: today's vocabulary");
+  // `lanes` (DESIGN7 §3): unknown names dropped, a list left empty decides nothing; malformed is a 400.
+  assert.deepEqual(INSTANT_LANES, ["file"]);
+  assert.deepEqual(parseInstantLanes(["futureLane", "file", "file"]), { ok: true, value: ["file"] });
+  assert.deepEqual(parseInstantLanes(["futureLane"]), { ok: true, value: [] });
+  assert.deepEqual(parseInstantLanes(null), { ok: true, value: undefined });
+  for (const bad of ["file", [1], ["File"], Array(9).fill("file")]) assert.equal(parseInstantLanes(bad).ok, false, JSON.stringify(bad));
+  const laned = parseInstantRequest({ text: "lösche test", phase: "final", seq: 1, lanes: ["file"] });
+  assert.ok(laned.ok && JSON.stringify(laned.value.lanes) === "[\"file\"]");
+  const unlaned = parseInstantRequest({ text: "lösche test", phase: "final", seq: 1 });
+  assert.ok(unlaned.ok && unlaned.value.lanes === undefined, "no lanes: every lane, as today");
   // null on optional members is absent; unknown keys are dropped.
   assert.deepEqual(parseVoiceHypothesis({ text: "open Pages", source: "apple-dt/en-US", role: "peer", confidence: null, minConfidence: null, locale: null, extra: 1 }),
     { ok: true, value: { text: "open Pages", source: "apple-dt/en-US", role: "peer" } });

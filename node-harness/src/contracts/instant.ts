@@ -128,6 +128,15 @@ export interface VoiceHypothesis {
 export const INSTANT_ACCEPTS = ["suggest", "check", "confirm", "fill"] as const;
 export type InstantAccept = (typeof INSTANT_ACCEPTS)[number];
 
+/**
+ * `lanes` (DESIGN7 §3): the only lanes that may decide this request, for a host asking about text that already has a
+ * place to go. `file`: the file-command lane (a follow-up typed in a pi thread: a file command there is still pi-os's;
+ * anything else goes on to pi as a follow-up). Finals only; with `lanes`, everything outside them is a `fallthrough`
+ * at once (no continuity, learned steps, grammar, hints). Unknown names are dropped; a list left empty decides nothing.
+ */
+export const INSTANT_LANES = ["file"] as const;
+export type InstantLane = (typeof INSTANT_LANES)[number];
+
 export interface InstantRequest {
   /** 0..500; for voice the host's pick (normally also a first-tier hypothesis). */
   text: string;
@@ -154,6 +163,8 @@ export interface InstantRequest {
   hypotheses?: VoiceHypothesis[];
   /** Decision kinds the host understands (INSTANT_ACCEPTS). Absent or empty means today's set. */
   accept?: InstantAccept[];
+  /** The only lanes that may decide (INSTANT_LANES; finals only). Absent: every lane, as today. */
+  lanes?: InstantLane[];
   /**
    * macOS host, `final` phase (typed and voice): content-free facts about the take's pinned target at the
    * final. Parsed on every phase, used on finals only. Absent (Windows never sends it; older Mac builds;
@@ -427,6 +438,15 @@ export function accepts(request: Pick<InstantRequest, "accept">, kind: InstantAc
   return request.accept?.includes(kind) === true;
 }
 
+/** `lanes`: absent/null → undefined; an array of ≤ 8 lowerCamel words, unknown ones dropped (it may end up empty). */
+export function parseInstantLanes(value: unknown): InstantParse<InstantLane[] | undefined> {
+  if (!present(value)) return { ok: true, value: undefined };
+  if (!Array.isArray(value) || value.length > INSTANT_LIMITS.maxAccept || !value.every((item) => typeof item === "string" && ACCEPT_VALUE.test(item))) {
+    return { ok: false, error: "lanes must be an array of at most 8 lane names" };
+  }
+  return { ok: true, value: INSTANT_LANES.filter((lane) => value.includes(lane)) };
+}
+
 /**
  * Strict validation of a POST /instant body (400 on failure). Unknown keys are dropped; JSON null on an
  * optional member is absent. Same rules as the Swift `InstantRequest` decoder.
@@ -462,6 +482,9 @@ export function parseInstantRequest(value: unknown): InstantParse<InstantRequest
   const accept = parseInstantAccept(value.accept);
   if (!accept.ok) return accept;
   if (accept.value) request.accept = accept.value;
+  const lanes = parseInstantLanes(value.lanes);
+  if (!lanes.ok) return lanes;
+  if (lanes.value) request.lanes = lanes.value;
   const target = parseInstantTarget(value.target);
   if (!target.ok) return target;
   if (target.value) request.target = target.value;
