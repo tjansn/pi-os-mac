@@ -696,10 +696,27 @@ async function deleteOutcome(shown: FileLaneInput, ref: ItemRef, deps: FileComma
   if (resolution.kind !== "one" || incomplete(input.visible)) return listOf(input, resolution, name, plan);
   const entry = resolution.matches[0]!.entry;
   const planned = plan(entry);
-  const title = needsOwnConfirm(planned)
-    ? (input.german ? `${quote(true, entry.item.name)} endgültig löschen?` : `Delete ${quote(false, entry.item.name)} permanently?`)
-    : (input.german ? `Löschen: ${entry.item.name}` : `Delete ${entry.item.name}`);
-  return actOf(input, entry, planned, title, resolution.target.heard);
+  return actOf(input, entry, planned, deleteTitle(shown, planned, entry.item.name, [entry.item.path]), resolution.target.heard);
+}
+
+/** The folder items are in when that is not one the take shows (a said place): the confirm says where. */
+function elsewhere(shown: FileLaneInput, paths: readonly string[]): string | undefined {
+  const folders = [...new Set(paths.map((path) => parentPath(path)))];
+  const seen = new Set(takeFolders(shown).map(foldName));
+  if (folders.length !== 1 || seen.has(foldName(folders[0]!))) return undefined;
+  return basename(folders[0]!) || folders[0]!;
+}
+
+/** "„x“ endgültig löschen?" (pi-os's Return) or "Löschen: x" (dcg's dialog), with the folder when it is not in view. */
+function deleteTitle(shown: FileLaneInput, plan: FileOpPlan, label: string, paths: readonly string[]): string {
+  const de = shown.german;
+  const where = elsewhere(shown, paths);
+  if (needsOwnConfirm(plan)) {
+    const at = where ? (de ? ` in ${quote(true, where)}` : ` in ${quote(false, where)}`) : "";
+    return de ? `${quote(true, label)}${at} endgültig löschen?` : `Delete ${quote(false, label)}${at} permanently?`;
+  }
+  const at = where ? (de ? ` (in ${quote(true, where)})` : ` (in ${quote(false, where)})`) : "";
+  return de ? `Löschen: ${label}${at}` : `Delete ${label}${at}`;
 }
 
 /**
@@ -718,9 +735,7 @@ async function deleteAll(shown: FileLaneInput, ref: ItemRef, deps: FileCommandDe
     ? deletePlan(planItem(first), parentPath(first.item.path), words(input, first.item.name))
     : deleteAllPlan(entries.map(planItem), parentPath(first.item.path), words(input, label));
   if (planProblem(plan, guardOf(input))) return protectedAnswer(input, label);
-  const title = needsOwnConfirm(plan)
-    ? (de ? `${quote(true, label)} endgültig löschen?` : `Delete ${quote(false, label)} permanently?`)
-    : (de ? `Löschen: ${label}` : `Delete ${label}`);
+  const title = deleteTitle(shown, plan, label, entries.map((entry) => entry.item.path));
   const option = { plan, row: entries.length === 1 ? itemRow(first) : { name: label, subtitle: `in ${first.parent}` } };
   const heard = ref.name.toLowerCase();
   if (incomplete(input.visible)) return { kind: "list", options: [option], title, heard };
@@ -1097,6 +1112,37 @@ async function undoOutcome(input: FileLaneInput, deps: FileCommandDeps): Promise
 // ---------------------------------------------------------------------------------------------
 // Rendering
 
+/** The folders the take shows (its desktop and Finder window), as paths. */
+function takeFolders(input: FileLaneInput): string[] {
+  return [...new Set(input.visible.sources.flatMap((source) => {
+    if (!LANE_SOURCES.has(source.kind)) return [];
+    const folder = laneFolder(source, input.home);
+    return folder ? [folder] : [];
+  }))];
+}
+
+/**
+ * Every op carries the folders the take shows, so the safety rules keep them (and their ancestors) out of reach even
+ * when the op runs in a said place ("lösche Projekte in Dokumente" while the window shows Dokumente/Projekte/2026):
+ * a refused act is the protected answer, refused rows are dropped.
+ */
+function withShownFolders(outcome: Outcome, input: FileLaneInput): Outcome | null {
+  const shown = takeFolders(input);
+  if (!shown.length || (outcome.kind !== "act" && outcome.kind !== "list")) return outcome;
+  const guard = guardOf(input);
+  const protect = (option: Option): Option | null => {
+    // An undo keeps the folders its op protected, too.
+    const plan = { ...option.plan, shown: [...new Set([...(option.plan.shown ?? []), ...shown])] };
+    return planProblem(plan, guard) ? null : { ...option, plan };
+  };
+  if (outcome.kind === "act") {
+    const option = protect(outcome.option);
+    return option ? { ...outcome, option } : protectedAnswer(input, outcome.option.plan.words.name);
+  }
+  const options = outcome.options.map(protect).filter((option): option is Option => option !== null);
+  return options.length ? { ...outcome, options } : protectedAnswer(input, outcome.options[0]?.plan.words.name ?? "");
+}
+
 function metaOf(input: FileLaneInput, heard: string): { voice?: VoiceMeta } {
   if (!input.voice) return {};
   const meta = voiceMeta({ heard, ...(input.voice.source ? { source: input.voice.source } : {}), via: "file" });
@@ -1108,12 +1154,17 @@ function metaOf(input: FileLaneInput, heard: string): { voice?: VoiceMeta } {
  * in `deps.store` (bound to the request's takeId and contextId); typing and partial previews only show an act's plan.
  */
 export async function decideFileCommand(input: FileLaneInput, deps: FileCommandDeps): Promise<InstantBody | null> {
-  // An undo needs no folder in front: the journal says where (DESIGN8 C5).
-  if (input.command.op !== "undo" && !laneVisible(input.visible)) return null;
+  // Every file command, undo included, needs the desktop or a Finder window in front (an "undo" typed in an app is the
+  // app's).
+  if (!laneVisible(input.visible)) return null;
   const guarded = deps.guard && !input.guard ? { ...input, guard: deps.guard } : input;
-  // A final decides on the shown folders as they are now (DESIGN7 §2a); previews on the host's capture.
-  const visible = await currentView(guarded, deps);
-  const outcome = await outcomeOf(visible === guarded.visible ? guarded : { ...guarded, visible }, deps);
+  // A final decides on the shown folders as they are now (DESIGN7 §2a); previews on the host's capture. A close or an
+  // undo reads no folder.
+  const op = input.command.op;
+  const visible = op === "close" || op === "undo" ? guarded.visible : await currentView(guarded, deps);
+  const decided = await outcomeOf(visible === guarded.visible ? guarded : { ...guarded, visible }, deps);
+  if (!decided) return null;
+  const outcome = withShownFolders(decided, input);
   if (!outcome) return null;
   const request = input.request;
   const final = request.phase === "final";

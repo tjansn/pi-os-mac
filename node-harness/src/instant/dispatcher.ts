@@ -118,6 +118,11 @@ export interface InstantDispatcherDeps extends InstantDeps {
     /** Quiet period before a typed (phase "typing") file search reaches the host (default 150 ms). */
     typingFileQuietMs?: number;
     networkMs?: number;
+    /**
+     * A file command's final (default 1000 ms): it reads the shown folders and a said place from disk (DESIGN7/8); a
+     * timeout would hand the command to pi, whose bash is no exact-name lane. Previews keep `defaultMs`.
+     */
+    fileCommandFinalMs?: number;
     classifierMs?: number;
     /**
      * How long a final open form waits for a context's visible items that are not cached yet (default 150 ms,
@@ -311,6 +316,7 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
     fileSearchPreviewMs: deps.budgets?.fileSearchPreviewMs ?? deps.budgets?.fileSearchMs ?? 600,
     typingFileQuietMs: deps.budgets?.typingFileQuietMs ?? 150,
     networkMs: deps.budgets?.networkMs ?? 250,
+    fileCommandFinalMs: deps.budgets?.fileCommandFinalMs ?? 1_000,
     classifierMs: deps.budgets?.classifierMs ?? 250,
     visibleMs: deps.budgets?.visibleMs ?? 150,
   };
@@ -667,7 +673,7 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
     voice?: { text: string; source?: string; hold: boolean; said?: FileCommand }): Promise<Body | null> {
     const lane = deps.fileCommands;
     if (!lane) return null;
-    const budget = deadline(signal, budgets.defaultMs);
+    const budget = deadline(signal, request.phase === "final" ? budgets.fileCommandFinalMs : budgets.defaultMs);
     try {
       const work = decideFileCommand({
         command, request, visible, german: (fileCommandLanguage(n) ?? n.lang) === "de", home, isWord, nowMs: now().getTime(),
@@ -1724,7 +1730,8 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
         if (phase !== "final" || !request.lanes.includes("file")) return finish(fallthrough("no_match"));
         const n = normalize(request.text, request.locale);
         const file = fileCommandOf(n, request.text, request, false);
-        if (!file) return finish(fallthrough("no_match"));
+        // "mach das rückgängig" in a pi thread is about pi's own last step: the thread's, never pi-os's undo.
+        if (!file || file.op === "undo") return finish(fallthrough("no_match"));
         intentLabel = `file_${file.op}`;
         const visible = await visibleFor(request, () => true, signal);
         return finish((await fileStep(file, request, n, visible, signal)) ?? fallthrough("no_match"));

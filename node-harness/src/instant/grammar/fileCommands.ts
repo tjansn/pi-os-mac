@@ -339,6 +339,8 @@ function sourceObject(raw: string, many = false): ({ name: string } & FileComman
   const object = placed(raw);
   const name = sourceName(object.name);
   if (!name) return null;
+  // The whole object passes the same checks: "delete the intro from the presentation" stays a text edit.
+  if (object.whole !== undefined && sourceName(object.whole) === null) return null;
   const names = many ? listedNames(object.name) : undefined;
   return { name, ...(object.place ? { place: object.place, whole: object.whole! } : {}), ...(names ? { names } : {}) };
 }

@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { accessSync, constants, realpathSync, statSync } from "node:fs";
-import { lstat, realpath } from "node:fs/promises";
+import { lstat, readdir, realpath } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { basename, delimiter, isAbsolute, join } from "node:path";
 import { FILE_OP_LIMITS, type FileOpOutcome } from "../contracts/actions.js";
@@ -72,6 +72,13 @@ export interface FileOpPlan {
    * `source`, `sourceDir` and `target` are absent.
    */
   entries?: readonly FileOpEntry[];
+  /**
+   * The folders the take shows (its desktop and Finder window), when they differ from `cwd`: never acted on, nor an
+   * ancestor of one — an op in a said place ("lösche Projekte in Dokumente") never removes the window's own folder.
+   */
+  shown?: readonly string[];
+  /** An undo (DESIGN8 C): when it runs, nothing is left to undo (a second "rückgängig" is never a redo). */
+  undo?: true;
   words: FileOpWords;
 }
 
@@ -195,8 +202,8 @@ export function removeEmptyFolderPlan(path: string, shown: string, words: FileOp
   return { kind: "delete", argv: [BINARIES.rmdir, "--", path], cwd: shown, source: path, sourceDir: true, words };
 }
 
-/** An undo of the last done op (DESIGN8 C3), or why there is none. */
-export type UndoPlan = { plan: FileOpPlan } | { why: "delete" | "changed" | "unsupported" };
+/** An undo of the last done op (DESIGN8 C3), or why there is none. `large`: a copied folder too big to vouch for. */
+export type UndoPlan = { plan: FileOpPlan } | { why: "delete" | "changed" | "large" | "unsupported" };
 
 /**
  * The op that undoes `done` (DESIGN8 C3), built from the journal only. Every result must still be the very item the
@@ -213,7 +220,14 @@ export async function undoPlanOf(done: DoneFileOp, german: boolean, read: LstatF
     if (unit.target === undefined || !result) return { why: "unsupported" };
     const now = await identityOf(unit.target, read);
     if (!now.ok || now.identity.dev !== result.dev || now.identity.ino !== result.ino || now.identity.kind !== result.kind) return { why: "changed" };
+    // A file must be unwritten; a copied folder (which the undo deletes) unchanged inside, to its last entry (its own
+    // mtime also moves when Finder writes its .DS_Store, which the fingerprint leaves out).
     if (result.kind === "file" && now.identity.mtimeNs !== result.mtimeNs) return { why: "changed" };
+    if (plan.kind === "copy" && result.kind === "dir") {
+      const tree = done.trees[index];
+      if (tree === null || tree === undefined) return { why: "large" };
+      if ((await treeFingerprint(unit.target)) !== tree) return { why: "changed" };
+    }
   }
   const name = (path: string): string => basename(path);
   const label = (paths: readonly string[]): string => {
@@ -222,27 +236,29 @@ export async function undoPlanOf(done: DoneFileOp, german: boolean, read: LstatF
     return names.length <= 1 ? names[0] ?? "" : `${names.slice(0, -1).join(", ")} ${and} ${names.at(-1)}`;
   };
   const quoted = (text: string): string => (german ? `„${text}“` : `“${text}”`);
+  // The same protected folders as the op it undoes; once it runs, nothing is left to undo.
+  const undo = (built: FileOpPlan): UndoPlan => ({ plan: { ...built, ...(plan.shown ? { shown: plan.shown } : {}), undo: true } });
   switch (plan.kind) {
     case "rename":
-      return { plan: renamePlan({ path: plan.target!, isDirectory: plan.sourceDir === true }, name(plan.source!), plan.cwd,
-        { german, name: name(plan.target!), newName: name(plan.source!) }) };
+      return undo(renamePlan({ path: plan.target!, isDirectory: plan.sourceDir === true }, name(plan.source!), plan.cwd,
+        { german, name: name(plan.target!), newName: name(plan.source!) }));
     case "move": {
       const back = new Set(units.map((unit) => parentPath(unit.source!)));
       if (back.size !== 1) return { why: "unsupported" };
       const folder = [...back][0]!;
       const items = units.map((unit) => ({ path: unit.target!, isDirectory: unit.sourceDir === true }));
       const words = { german, name: label(items.map((item) => item.path)), dest: quoted(name(folder)) };
-      return { plan: items.length === 1 ? movePlan(items[0]!, folder, plan.cwd, words) : transferAllPlan("move", items, folder, plan.cwd, words) };
+      return undo(items.length === 1 ? movePlan(items[0]!, folder, plan.cwd, words) : transferAllPlan("move", items, folder, plan.cwd, words));
     }
     case "copy": {
       const items = units.map((unit) => ({ path: unit.target!, isDirectory: unit.sourceDir === true }));
       const words = { german, name: label(items.map((item) => item.path)) };
-      return { plan: items.length === 1 ? deletePlan(items[0]!, plan.cwd, words) : deleteAllPlan(items, plan.cwd, words) };
+      return undo(items.length === 1 ? deletePlan(items[0]!, plan.cwd, words) : deleteAllPlan(items, plan.cwd, words));
     }
     case "create": {
       const path = plan.target!;
       const words = { german, name: name(path) };
-      return { plan: plan.targetDir ? removeEmptyFolderPlan(path, plan.cwd, words) : deletePlan({ path, isDirectory: false }, plan.cwd, words) };
+      return undo(plan.targetDir ? removeEmptyFolderPlan(path, plan.cwd, words) : deletePlan({ path, isDirectory: false }, plan.cwd, words));
     }
   }
 }
@@ -374,11 +390,14 @@ export function pathProblem(path: string, guard: PathGuard, shown?: string): Pat
 export function planProblem(plan: FileOpPlan, guard: PathGuard): PathProblem | null {
   const units = planUnits(plan);
   if (plan.entries && plan.entries.length === 0) return "invalid";
+  if (plan.shown?.some((folder) => !isAbsoluteHostPath(folder) && folder !== "/")) return "invalid";
   for (const unit of units) {
     for (const path of [unit.source, unit.target]) {
       if (path === undefined) continue;
-      const problem = pathProblem(path, guard, plan.cwd);
-      if (problem) return problem;
+      for (const shown of [plan.cwd, ...(plan.shown ?? [])]) {
+        const problem = pathProblem(path, guard, shown);
+        if (problem) return problem;
+      }
     }
     // Never into itself ("kopiere test nach test/sub").
     if (unit.target !== undefined && unit.source !== undefined && pathKey(unit.target).startsWith(`${pathKey(unit.source)}/`)) return "invalid";
@@ -406,12 +425,14 @@ export type RealPathFn = (path: string) => Promise<string>;
 export async function realPathProblem(plan: FileOpPlan, guard: PathGuard, resolve: RealPathFn = realpath): Promise<PathProblem | "unreadable" | null> {
   try {
     const shown = await resolve(plan.cwd);
+    const others = await Promise.all((plan.shown ?? []).map((folder) => resolve(folder)));
     for (const path of planUnits(plan).flatMap((unit) => [unit.source, unit.target])) {
       if (path === undefined) continue;
       const real = childPath(await resolve(parentPath(path)), basename(path));
-      if (real === path && shown === plan.cwd) continue;
-      const problem = pathProblem(real, guard, shown);
-      if (problem) return problem;
+      for (const folder of [shown, ...others]) {
+        const problem = pathProblem(real, guard, folder);
+        if (problem) return problem;
+      }
     }
     return null;
   } catch {
@@ -451,6 +472,44 @@ function sameIdentity(a: SourceIdentity, b: SourceIdentity): boolean {
   return a.dev === b.dev && a.ino === b.ino && a.mtimeNs === b.mtimeNs && a.kind === b.kind;
 }
 
+/** Entries a folder's fingerprint covers at most; a larger copy is never undone (nothing could vouch for it). */
+const MAX_TREE_ENTRIES = 5_000;
+
+/**
+ * A folder's whole contents (every entry's relative path, kind, size and mtime; Finder's ".DS_Store" view files left
+ * out), as one hash: equal later only when nothing inside was added, removed, renamed or written. Null when larger than
+ * MAX_TREE_ENTRIES or unreadable. Symlinks are entries, never followed.
+ */
+export async function treeFingerprint(root: string, limit = MAX_TREE_ENTRIES): Promise<string | null> {
+  const hash = createHash("sha256");
+  let count = 0;
+  const walk = async (dir: string, rel: string): Promise<boolean> => {
+    let dirents;
+    try {
+      dirents = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return false;
+    }
+    dirents.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    for (const dirent of dirents) {
+      if (dirent.name === ".DS_Store") continue;
+      if (++count > limit) return false;
+      const path = join(dir, dirent.name);
+      let stats;
+      try {
+        stats = await lstat(path, { bigint: true });
+      } catch {
+        return false;
+      }
+      const kind = stats.isSymbolicLink() ? "l" : stats.isDirectory() ? "d" : stats.isFile() ? "f" : "o";
+      hash.update(`${rel}/${dirent.name}\0${kind}\0${stats.size}\0${stats.mtimeNs}\n`);
+      if (kind === "d" && !(await walk(path, `${rel}/${dirent.name}`))) return false;
+    }
+    return true;
+  };
+  return (await walk(root, "")) ? hash.digest("hex") : null;
+}
+
 // ---------------------------------------------------------------------------------------------
 // The store
 
@@ -471,6 +530,8 @@ export interface StagedFileOp {
 export interface DoneFileOp {
   readonly plan: FileOpPlan;
   readonly results: readonly (SourceIdentity | undefined)[];
+  /** A copied folder's whole contents right after the copy (treeFingerprint; null: too large to vouch for). */
+  readonly trees: readonly (string | null | undefined)[];
   readonly at: number;
 }
 
@@ -573,8 +634,13 @@ export class FileOpStore {
   }
 
   /** runFileOp: an op ran to `done` (it replaces the one before; DESIGN8 C2). */
-  remember(plan: FileOpPlan, results: readonly (SourceIdentity | undefined)[]): void {
-    this.done = { plan, results, at: this.clock() };
+  remember(plan: FileOpPlan, results: readonly (SourceIdentity | undefined)[], trees: readonly (string | null | undefined)[] = []): void {
+    this.done = { plan, results, trees, at: this.clock() };
+  }
+
+  /** runFileOp: an undo ran — nothing is left to undo (a second "rückgängig" is never a redo). */
+  forget(): void {
+    this.done = undefined;
   }
 
   /** The last done op while "rückgängig" may still undo it (≤ undoTtlMs), else undefined. */
@@ -819,7 +885,8 @@ async function verified(plan: FileOpPlan, read: LstatFn): Promise<(SourceIdentit
         ok = target?.ok === true && target.identity.kind === (plan.targetDir ? "dir" : "file");
         break;
       case "copy":
-        ok = target?.ok === true && source?.ok === true;
+        // The same kind as the source: a folder that appeared at the target at the last moment is no copy of a file.
+        ok = target?.ok === true && source?.ok === true && target.identity.kind === source.identity.kind;
         break;
       case "move":
       case "rename":
@@ -922,8 +989,16 @@ export async function runFileOp(store: FileOpStore, opId: string, options: FileO
     if (ran.killed) return finish("failed", failedLine(plan, "killed"), "allow");
     const results = ran.code === 0 ? await verified(plan, read) : null;
     if (results) {
-      // "rückgängig" may undo it for a while (DESIGN8 C2).
-      store.remember(plan, results);
+      // "rückgängig" may undo it for a while (DESIGN8 C2); an undo itself leaves nothing to undo. A copied folder's
+      // contents are fingerprinted now, so its undo never deletes what was put into the copy since.
+      if (plan.undo) {
+        store.forget();
+      } else {
+        const trees = plan.kind === "copy"
+          ? await Promise.all(planUnits(plan).map((unit) => (unit.sourceDir && unit.target ? treeFingerprint(unit.target) : Promise.resolve(undefined))))
+          : [];
+        store.remember(plan, results, trees);
+      }
       return finish("done", doneLine(plan), "allow");
     }
     return finish("failed", failedLine(plan, "op"), "allow");

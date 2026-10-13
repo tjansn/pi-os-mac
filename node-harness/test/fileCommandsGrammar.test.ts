@@ -178,6 +178,8 @@ test("file-command grammar: policy first — today's handling for the Trash, com
     ["make a backup of the folder", "en-US"], ["erstelle eine Kopie vom Ordner", "de-DE"], ["create my project folder", "en-US"], ["create archive.zip", "en-US"],
     // Undo is the whole line, never an app's undo of something named.
     ["mach den letzten Schritt in Pages rückgängig", "de-DE"], ["undo the typing in Notes", "en-US"],
+    // A place never turns an in-app edit into a file command: the whole object passes the same checks.
+    ["delete the intro from the presentation", "en-US"], ["delete the second slide from the presentation", "en-US"],
     // Nothing to do with files.
     ["öffne test", "de-DE"], ["open Radfotos", "en-US"], ["Albert Einstein", "de-DE"], ["15% of 340", "en-US"], ["wie spät ist es in Tokio", "de-DE"],
   ];

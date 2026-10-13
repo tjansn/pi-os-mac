@@ -740,6 +740,18 @@ test("undo (DESIGN8 C): the last done op for 3 minutes; a rename goes back, a ne
     assert.deepEqual(back.plan.argv, ["/bin/mv", "-n", "--", join(box.desktop, "Plan-alt"), plan]);
     assert.deepEqual(await run(back.plan, "r2"), { outcome: "done", line: "„Plan-alt“ in „Plan“ umbenannt.", verdict: "allow" });
     assert.ok(existsSync(plan) && !existsSync(join(box.desktop, "Plan-alt")));
+    assert.equal(store.lastDone(), undefined, "an undo is used up: a second one is never a redo");
+    // A copied folder goes back only while nothing inside it changed, however deep.
+    const project = join(box.desktop, "Projekt");
+    mkdirSync(join(project, "sub"), { recursive: true });
+    writeFileSync(join(project, "sub", "a.txt"), "a");
+    const copied = copyPlan({ path: project, isDirectory: true }, box.desktop, "Projekt Kopie", box.desktop, { ...DE, name: "Projekt", newName: "Projekt Kopie", duplicate: true });
+    assert.equal((await run(copied, "k1")).outcome, "done");
+    const untouched = await undoPlanOf(store.lastDone()!, true);
+    assert.ok("plan" in untouched);
+    assert.deepEqual(untouched.plan.argv, ["/bin/rm", "-r", "--", join(box.desktop, "Projekt Kopie")]);
+    writeFileSync(join(box.desktop, "Projekt Kopie", "sub", "new.txt"), "work");
+    assert.deepEqual(await undoPlanOf(store.lastDone()!, true), { why: "changed" }, "work saved deep inside the copy is never deleted");
     // A new folder: rmdir, which leaves a folder that has something in it.
     assert.equal((await run(createPlan(box.desktop, "Neu", true, { ...DE, name: "Neu" }), "c1")).outcome, "done");
     const remove = await undoPlanOf(store.lastDone()!, true);

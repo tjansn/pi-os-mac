@@ -730,9 +730,9 @@ test("a said standard folder: decided on that folder as it is on disk, the whole
   });
   const { dispatcher, ops } = make(desktopOf([RADFOTOS]), { listFolder: fs.listFolder });
   const file = asAct(await dispatcher.dispatch(typed("lösche Rechnung in Downloads", { accept: ["confirm"] })));
-  assert.deepEqual([file.title, file.confirm], ["„Rechnung.pdf“ endgültig löschen?", true]);
+  assert.deepEqual([file.title, file.confirm], ["„Rechnung.pdf“ in „Downloads“ endgültig löschen?", true], "the confirm says where, when it is not in view");
   assert.deepEqual(argvOf(ops, "take-typed"), [["/bin/rm", "--", "/Users/fixture/Downloads/Rechnung.pdf"]]);
-  assert.equal(asAct(await dispatcher.dispatch(typed("delete Belege from my Downloads", { locale: "en-US", takeId: "take-en" }))).title, "Delete Belege");
+  assert.equal(asAct(await dispatcher.dispatch(typed("delete Belege from my Downloads", { locale: "en-US", takeId: "take-en" }))).title, "Delete Belege (in “Downloads”)");
   assert.deepEqual(argvOf(ops, "take-en"), [["/bin/rm", "-r", "--", "/Users/fixture/Downloads/Belege"]]);
   assert.equal(asAnswer(await dispatcher.dispatch(typed("lösche Steuer aus Downloads", { takeId: "take-none" }))).title, "In „Downloads“ gibt es nichts namens „Steuer“.");
   // An item called with the place words wins on what the take shows.
@@ -796,7 +796,7 @@ test("any folder by name: a place or a destination is a folder of that name in t
   const shown = desktopOf([RADFOTOS]);
   const { dispatcher, ops } = make(shown, { listFolder: fs.listFolder });
   const file = asAct(await dispatcher.dispatch(typed("lösche test in Projekte", { accept: ["confirm"] })));
-  assert.deepEqual([file.title, file.confirm], ["„test.txt“ endgültig löschen?", true]);
+  assert.deepEqual([file.title, file.confirm], ["„test.txt“ in „Projekte“ endgültig löschen?", true]);
   assert.deepEqual(argvOf(ops, "take-typed"), [["/bin/rm", "--", "/Users/fixture/Documents/Projekte/test.txt"]]);
   asAct(await dispatcher.dispatch(typed("erstelle Ordner Belege in Projekte", { takeId: "take-create" })));
   assert.deepEqual(argvOf(ops, "take-create"), [["/bin/mkdir", "--", "/Users/fixture/Documents/Projekte/Belege"]]);
@@ -810,6 +810,16 @@ test("any folder by name: a place or a destination is a folder of that name in t
   const today = make(shown, { lane: false });
   assert.equal(stable(await dispatcher.dispatch(typed("lösche test in Nirgendwo", { takeId: "take-today" }))),
     stable(await today.dispatcher.dispatch(typed("lösche test in Nirgendwo", { takeId: "take-today" }))));
+});
+
+test("a said place never reaches the folder the window shows, nor one of its ancestors", async () => {
+  const fs = disk({ "/Users/fixture/Documents/Projekte/2026": ["Plan.txt"], "/Users/fixture/Documents": ["Projekte/"] });
+  const window = windowOf("/Users/fixture/Documents/Projekte/2026", []);
+  const { dispatcher, ops } = make(window, { listFolder: fs.listFolder });
+  assert.equal(asAnswer(await dispatcher.dispatch(typed("lösche Projekte in Dokumente"))).title, "pi-os rührt „Projekte“ nicht an.");
+  assert.equal(asAnswer(await dispatcher.dispatch(typed("verschiebe Projekte aus Dokumente nach Downloads", { takeId: "take-move" }))).title,
+    "pi-os rührt „Projekte“ nicht an.");
+  assert.equal(ops.size, 0);
 });
 
 test("several names: one op for all after the whole name; any name that names nothing stages nothing", async () => {
@@ -831,9 +841,9 @@ test("several names: one op for all after the whole name; any name that names no
   assert.equal(asAnswer(await dispatcher.dispatch(typed("verschiebe a und b hierher", { takeId: "take-here" }))).title, "„a.txt“ liegt schon in Schreibtisch.");
 });
 
-test("undo: the last op pi-os ran, always behind one Return, with no folder in front; nothing to undo is today's", async () => {
-  const { dispatcher, ops } = make(NONE);
-  const today = make(NONE, { lane: false });
+test("undo: the last op pi-os ran, always behind one Return; nothing to undo, an app in front or a pi thread is not pi-os's", async () => {
+  const { dispatcher, ops } = make(desktopOf([]));
+  const today = make(desktopOf([]), { lane: false });
   assert.equal(stable(await dispatcher.dispatch(typed("rückgängig"))), stable(await today.dispatcher.dispatch(typed("rückgängig"))), "nothing done yet");
   // What the faked lstat reads for every path.
   const identity = { dev: "1", ino: "2", mtimeNs: "3", kind: "dir" as const };
@@ -844,6 +854,14 @@ test("undo: the last op pi-os ran, always behind one Return, with no folder in f
   assert.deepEqual(argvOf(ops, "take-undo"), [["/bin/mv", "-n", "--", "/Users/fixture/Desktop/Plan-alt", "/Users/fixture/Desktop/Plan"]]);
   assert.equal(asList(await dispatcher.dispatch(typed("undo", { locale: "en-US", takeId: "take-list" }))).title, "Rename “Plan-alt” back to “Plan”?",
     "without confirm: a one-row list");
+  // An app in front (no desktop or Finder window): its own undo. A pi thread's follow-up: pi's own last step.
+  const app = make(NONE);
+  app.ops.remember(renamed, [identity]);
+  const appToday = make(NONE, { lane: false });
+  assert.equal(stable(await app.dispatcher.dispatch(typed("rückgängig", { accept: ["confirm"] }))),
+    stable(await appToday.dispatcher.dispatch(typed("rückgängig", { accept: ["confirm"] }))));
+  const thread = await dispatcher.dispatch(typed("mach das rückgängig", { lanes: ["file"], takeId: "take-thread" }));
+  assert.deepEqual([thread.decision, thread.decision === "fallthrough" ? thread.reason : null], ["fallthrough", "no_match"]);
   ops.remember(renamed, [{ ...identity, ino: "99" }]);
   assert.equal(asAnswer(await dispatcher.dispatch(typed("rückgängig", { takeId: "take-changed" }))).title, "Das hat sich inzwischen geändert – nichts rückgängig gemacht.");
   ops.remember(deletePlan({ path: "/Users/fixture/Desktop/x", isDirectory: true }, "/Users/fixture/Desktop", { german: true, name: "x" }), [undefined]);
