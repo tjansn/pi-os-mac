@@ -640,8 +640,17 @@ import PiOSCore
         return CommandTake(contextId: id, takeId: takeId, contextualStrings: strings, preparation: prepared, context: chip)
     }
     private func followup(_ text: String) {
-        if thread != nil {
-            submit(AgentRequest(prompt: text, question: text, kind: .followup, context: followupChip?.wire)); return
+        if let asked = thread {
+            // DESIGN7 §3: a file command typed here is still pi-os's (exact names, dcg), not pi's guess; the lane answers
+            // in the reader. Anything it does not decide goes on to pi as the thread's follow-up, as before.
+            let context = followupChip?.wire
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if await self.controller.fileFollowup(text) { return }
+                guard self.thread == asked else { return }
+                self.submit(AgentRequest(prompt: text, question: text, kind: .followup, context: context))
+            }
+            return
         }
         // No agent thread: a follow-up under a quick answer becomes a fresh invocation.
         _ = controller.followup(text)

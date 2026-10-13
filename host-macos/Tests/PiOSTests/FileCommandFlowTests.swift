@@ -90,6 +90,42 @@ import XCTest
         }
     }
 
+    // MARK: A pi thread's follow-up (DESIGN7 §3)
+
+    func testAThreadFollowupAsksTheFileLaneOnlyRunsItsOpAndLeavesEverythingElseToThePiThread() async throws {
+        let noMatch = #"{"seq":0,"elapsedMs":1,"source":"grammar","decision":"fallthrough","reason":"no_match"}"#
+        // A take that went to pi: its take stays the thread's.
+        finals(noMatch)
+        type("make a plan for the week"); await settle()
+        XCTAssertEqual(host.agent.count, 1)
+        host.hasThread = true
+        // Not a file command: the lane falls through and nothing is handed off here (the caller sends the follow-up).
+        let decided = await controller.fileFollowup("and on Friday?")
+        XCTAssertFalse(decided)
+        let asked = try XCTUnwrap(harness.requests.last)
+        XCTAssertEqual(asked.lanes, [.file]); XCTAssertEqual(asked.phase, .final); XCTAssertEqual(asked.text, "and on Friday?")
+        XCTAssertNil(asked.accept, "no confirm: the reader shows no confirm preview")
+        XCTAssertNil(asked.target, "no continuity target: never a fill")
+        XCTAssertEqual(host.agent.count, 1, "no fresh agent turn")
+        // A file command: its op runs through Node; pi hears nothing of it.
+        finals(Self.act(Self.fileOpAction(Self.folderOp), via: nil))
+        let ran = await controller.fileFollowup("lösche test")
+        XCTAssertTrue(ran)
+        await eventually("run") { self.fileOps.runs.count == 1 }
+        XCTAssertEqual(fileOps.runs, [FileOpRunRequest(opId: Self.folderOp)])
+        XCTAssertEqual(host.agent.count, 1)
+        // A "which one?" list shows in the reader; a confirm (the reader cannot show one) is left to pi instead.
+        finals(Self.which)
+        surface.instant = []
+        let listed = await controller.fileFollowup("lösche test")
+        XCTAssertTrue(listed)
+        XCTAssertEqual(surface.instant.count, 1)
+        finals(Self.act(Self.fileOpAction(Self.fileOp), title: "„test.txt“ endgültig löschen?", confirm: true, via: nil))
+        let confirmed = await controller.fileFollowup("lösche test.txt")
+        XCTAssertFalse(confirmed)
+        XCTAssertEqual(fileOps.runs.count, 1)
+    }
+
     // MARK: Acts
 
     func testAFolderDeleteRunsAtOnceThroughNodeShowsWhatRunsAndTheLineAndLearnsNothing() async throws {

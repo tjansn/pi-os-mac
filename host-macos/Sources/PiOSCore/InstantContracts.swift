@@ -23,6 +23,10 @@ public enum InstantLimits {
 /// is on and computer control is ready. Without them Node answers with today's vocabulary.
 public enum InstantAccept: String, Codable, CaseIterable, Sendable { case suggest, check, confirm, fill }
 
+/// The only lanes that may decide a request (`InstantRequest.lanes`, INSTANT_LANES; DESIGN7 §3). `file`: the file-command
+/// lane, asked about a follow-up typed in a pi thread; anything it does not decide is a fallthrough and goes on to pi.
+public enum InstantLane: String, Codable, CaseIterable, Sendable { case file }
+
 // MARK: - Continuity target (DESIGN5 §8.1 with TOM-ANSWERS; INSTANT_APP_CLASSES / INSTANT_FIELD_KINDS in instant.ts)
 
 /// Host class of the take's pinned app. Closed: an unknown value is a decoding error, as in Node.
@@ -159,18 +163,21 @@ public struct InstantRequest: Codable, Equatable {
     public var hypotheses: [VoiceHypothesis]?
     /// Nil keeps today's decision vocabulary.
     public var accept: [InstantAccept]?
+    /// Finals only: the only lanes that may decide (a pi thread's follow-up asks `[.file]`). Nil: every lane, as today.
+    public var lanes: [InstantLane]?
     /// Finals only (typed and voice): the pinned target's content-free facts. Nil keeps today's request.
     public var target: InstantTarget?
     public init(text: String, phase: InstantPhase, seq: Int, takeId: String? = nil, contextId: String? = nil,
                 locale: String? = nil, inputMode: String? = nil, silenceMs: Int? = nil,
-                hypotheses: [VoiceHypothesis]? = nil, accept: [InstantAccept]? = nil, target: InstantTarget? = nil) {
+                hypotheses: [VoiceHypothesis]? = nil, accept: [InstantAccept]? = nil, lanes: [InstantLane]? = nil,
+                target: InstantTarget? = nil) {
         self.text = text; self.phase = phase; self.seq = seq; self.takeId = takeId
         self.contextId = contextId; self.locale = locale; self.inputMode = inputMode; self.silenceMs = silenceMs
-        self.hypotheses = hypotheses; self.accept = accept; self.target = target
+        self.hypotheses = hypotheses; self.accept = accept; self.lanes = lanes; self.target = target
     }
 
     private enum CodingKeys: String, CodingKey {
-        case text, phase, seq, takeId, contextId, locale, inputMode, silenceMs, hypotheses, accept, target
+        case text, phase, seq, takeId, contextId, locale, inputMode, silenceMs, hypotheses, accept, lanes, target
     }
 
     /// The same rules as parseInstantRequest (Node answers 400 otherwise). Unknown `accept` words are dropped.
@@ -187,6 +194,7 @@ public struct InstantRequest: Codable, Equatable {
         let silence = try c.decodeIfPresent(Double.self, forKey: .silenceMs)
         hypotheses = try c.decodeIfPresent([VoiceHypothesis].self, forKey: .hypotheses)
         let words = try c.decodeIfPresent([String].self, forKey: .accept)
+        let laneWords = try c.decodeIfPresent([String].self, forKey: .lanes)
         target = try c.decodeIfPresent(InstantTarget.self, forKey: .target)
         guard text.utf16.count <= InstantLimits.maxText else { throw reject(.text, "text too long") }
         guard (0...9_007_199_254_740_991).contains(seq) else { throw reject(.seq, "seq must be a non-negative safe integer") }
@@ -202,6 +210,13 @@ public struct InstantRequest: Codable, Equatable {
             accept = InstantAccept.allCases.filter { words.contains($0.rawValue) }
         } else {
             accept = nil
+        }
+        // As Node: unknown lane names are dropped, and a list left empty decides nothing.
+        if let laneWords {
+            guard laneWords.count <= InstantLimits.maxAccept, laneWords.allSatisfy(Self.isAcceptWord) else { throw reject(.lanes, "invalid lanes") }
+            lanes = InstantLane.allCases.filter { laneWords.contains($0.rawValue) }
+        } else {
+            lanes = nil
         }
     }
 

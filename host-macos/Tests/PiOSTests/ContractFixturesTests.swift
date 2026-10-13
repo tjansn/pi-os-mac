@@ -754,6 +754,20 @@ final class ContractFixturesTests: XCTestCase {
 
     // MARK: File commands (DESIGN6 with BUILD6: fileOp, quitApp, closeFinderWindow, VisibleSource.path)
 
+    /// `lanes` (DESIGN7 §3) as Node's parseInstantLanes: unknown names dropped, a list left empty decides nothing, a
+    /// malformed name rejects the body; nil keeps today's request (no key on the wire).
+    func testInstantRequestLanesDecodeAsNode() throws {
+        func decode(_ json: String) throws -> InstantRequest { try JSONDecoder().decode(InstantRequest.self, from: Data(json.utf8)) }
+        XCTAssertEqual(try decode(#"{"text":"x","phase":"final","seq":1,"lanes":["futureLane","file","file"]}"#).lanes, [.file])
+        XCTAssertEqual(try decode(#"{"text":"x","phase":"final","seq":1,"lanes":["futureLane"]}"#).lanes, [])
+        XCTAssertNil(try decode(#"{"text":"x","phase":"final","seq":1}"#).lanes)
+        XCTAssertThrowsError(try decode(#"{"text":"x","phase":"final","seq":1,"lanes":["File"]}"#))
+        let laned = String(decoding: try JSONEncoder().encode(InstantRequest(text: "x", phase: .final, seq: 1, lanes: [.file])), as: UTF8.self)
+        XCTAssertTrue(laned.contains(#""lanes":["file"]"#))
+        let plain = String(decoding: try JSONEncoder().encode(InstantRequest(text: "x", phase: .final, seq: 1)), as: UTF8.self)
+        XCTAssertFalse(plain.contains("lanes"))
+    }
+
     /// The Node builder's shared fixtures (BUILD6 "Wire contract"): every act, list and answer decodes with the shape it names.
     func testFileCommandInstantFixturesDecode() throws {
         func decode(_ name: String) throws -> InstantResponse {

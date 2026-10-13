@@ -1330,6 +1330,19 @@ public enum SpokenPick: Equatable {
         case voice(VoiceTake)
         /// The check state's Return: the same take, a newer seq, `inputMode: "text"` (DESIGN4 §6.6 #4).
         case checkResend(Check, edited: Bool)
+        /// A follow-up typed in a pi thread (DESIGN7 §3): only the file lane may decide it (`lanes: [.file]`, no
+        /// `confirm`, no fill); anything else is not handed off here but returns false, and the caller sends it to pi.
+        case fileFollowup
+
+        var isFileFollowup: Bool { if case .fileFollowup = self { true } else { false } }
+    }
+
+    /// A follow-up typed in a pi thread (DESIGN7 §3): the file lane decides it first, in the thread's take. True when it
+    /// did (an answer or a list shown, or an op run, in the reader); false sends it on to pi as today (nothing decided, no
+    /// take, a busy take, Node unreachable).
+    public func fileFollowup(_ text: String) async -> Bool {
+        guard take != nil, !listening, !finalizing else { return false }
+        return await resolve(text, input: typedInput, mode: .fileFollowup)
     }
 
     /// Final decision for a released take or a Return. Never blocks the user: any instant
@@ -1364,19 +1377,19 @@ public enum SpokenPick: Equatable {
             resetTake(); host?.finishInstant(); return true
         }
         guard let preparation = take.preparation, trimmed.utf16.count <= Self.maximumInstantText else {
-            if early { return false }
+            if early || mode.isFileFollowup { return false }
             handOff(trimmed, input: input, mode: mode, response: nil); return true
         }
         let started = clock()
         // Continuity (DESIGN5 §8.1): the pinned target's content-free facts at this final (nil from a host without them:
         // today's request byte for byte). A take racing a pi-os launch may be re-pinned meanwhile (≤ 150 ms), so its context
-        // is read again afterwards.
-        let target = await continuityTarget(take)
+        // is read again afterwards. A thread's follow-up asks the file lane only: no target, never a fill.
+        let target = mode.isFileFollowup ? nil : await continuityTarget(take)
         guard self.take?.takeId == take.takeId, mine == seq else { return false }
         let contextId = self.take?.contextId ?? take.contextId
-        let fill = declaresFill(target, contextId: contextId)
+        let fill = mode.isFileFollowup ? false : declaresFill(target, contextId: contextId)
         do { try await preparation.readyForInstant() } catch {
-            guard self.take?.takeId == take.takeId, mine == seq, !early else { return false }
+            guard self.take?.takeId == take.takeId, mine == seq, !early, !mode.isFileFollowup else { return false }
             handOff(trimmed, input: input, mode: mode, response: nil); return true
         }
         let request: InstantRequest
@@ -1394,6 +1407,10 @@ public enum SpokenPick: Equatable {
         case .checkResend(let check, _):
             request = InstantRequest(text: trimmed, phase: .final, seq: mine, takeId: check.take.takeId, contextId: contextId,
                                      locale: input.locale, inputMode: "text", accept: Self.typedAccepts + (fill ? [.fill] : []), target: target)
+        case .fileFollowup:
+            // No `confirm`: the reader shows no confirm preview, so a file delete comes back as a one-row list to pick.
+            request = InstantRequest(text: trimmed, phase: .final, seq: mine, takeId: take.takeId, contextId: contextId,
+                                     locale: input.locale, inputMode: "text", lanes: [.file])
         }
         let response = try? await harness.instant(request)
         guard self.take?.takeId == take.takeId, mine == seq else { return false }
@@ -1402,9 +1419,11 @@ public enum SpokenPick: Equatable {
             fflush(stdout)
         }
         guard let response, response.seq == mine else {
-            if early { return false }
+            if early || mode.isFileFollowup { return false }
             handOff(trimmed, input: input, mode: mode, response: nil); return true
         }
+        // A thread's follow-up the file lane did not decide (or anything but a file command's decision) goes on to pi.
+        if mode.isFileFollowup, !Self.decidesFileFollowup(response) { return false }
         if early {
             guard Self.settlesEarly(response) else { return false }
             settled = true
@@ -1413,8 +1432,9 @@ public enum SpokenPick: Equatable {
         // Anything but a fill is newer than pi-os's last fill: a bare "nein" no longer undoes it (a fill's own "nein, X"
         // replace still finds it).
         if !response.isFill { forgetFill() }
-        // The final scope unless the user chose: the chip shows it before the request is sent.
-        take.context?.apply(response, text: trimmed)
+        // The final scope unless the user chose: the chip shows it before the request is sent. A thread's follow-up has
+        // its own chip (the thread's), which this decision does not move.
+        if !mode.isFileFollowup { take.context?.apply(response, text: trimmed) }
         var spoken: VoiceTake?
         if case .voice(var voiceTake) = mode {
             voiceTake.response = response
@@ -1515,6 +1535,9 @@ public enum SpokenPick: Equatable {
             writeTiming(otherwise: "agent")
         case .checkResend(let check, let edited):
             journalUpdate(check.take.takeId, .agent, corrected: edited ? text : nil)
+        case .fileFollowup:
+            // Never a fresh agent turn: resolve returns false first and the caller sends the thread's follow-up.
+            return
         }
         submit(AgentRequest(prompt: prompt ?? text, question: text, takeId: take.takeId, input: input))
     }
@@ -1584,6 +1607,16 @@ public enum SpokenPick: Equatable {
     }
     /// Node's file-command intents: an answer of these is shown as it is, never handed to pi.
     static let fileCommandIntents: Set<String> = ["file_op", "close"]
+    /// A file command's decision that a pi thread's follow-up shows instead of asking pi (DESIGN7 §3): an op or a close
+    /// at once, a "which one?" list, or the lane's own answer. Never a confirm (the reader shows none) or anything else.
+    static func decidesFileFollowup(_ response: InstantResponse) -> Bool {
+        switch response.decision {
+        case .act(_, _, let action, let confirm, _): !confirm && isFileCommand(action)
+        case .list(let intent, _, _, _): intent == "file_op"
+        case .answer(let intent, _, _, _): fileCommandIntents.contains(intent)
+        case .refuse, .handOff: false
+        }
+    }
     /// A file command (BUILD6): a staged file operation, an app's quit or a Finder window's close.
     static func isFileCommand(_ action: HostAction) -> Bool {
         switch action {
