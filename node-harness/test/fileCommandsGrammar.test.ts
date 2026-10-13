@@ -66,13 +66,36 @@ const ROWS: readonly (readonly [text: string, locale: string, expected: FileComm
   ["kopiere test aus Downloads", "de-DE", { op: "copy", splits: [{ name: "test", place: "Downloads", whole: "test aus Downloads", dest: "" }] }],
   ["verschiebe test vom Schreibtisch nach Dokumente", "de-DE",
     { op: "move", splits: [{ name: "test", place: "Schreibtisch", whole: "test vom Schreibtisch", dest: "Dokumente" }] }],
+  // any folder by name (DESIGN8 A1): 1–3 words after the last place preposition
+  ["lösche test in Projekte", "de-DE", { op: "delete", name: "test", place: "Projekte", whole: "test in Projekte" }],
+  ["lösche test aus dem Ordner Rechnungen 2026", "de-DE", { op: "delete", name: "test", place: "Rechnungen 2026", whole: "test aus dem Ordner Rechnungen 2026" }],
+  ["lösche Fotos in Rom in Projekte", "de-DE", { op: "delete", name: "Fotos in Rom", place: "Projekte", whole: "Fotos in Rom in Projekte" }],
+  ["delete test from my Archive folder", "en-US", { op: "delete", name: "test", place: "Archive", whole: "test from my Archive folder" }],
+  ["erstelle Ordner Belege in Projekte", "de-DE", { op: "create", name: "Belege", kind: "folder", place: "Projekte" }],
+  // several names (DESIGN8 B1): delete, copy and move; the whole object stays the name
+  ["lösche a und b", "de-DE", { op: "delete", name: "a und b", names: ["a", "b"] }],
+  ["lösche Rechnung, Angebot und Notizen", "de-DE", { op: "delete", name: "Rechnung, Angebot und Notizen", names: ["Rechnung", "Angebot", "Notizen"] }],
+  ["delete a, b, and c", "en-US", { op: "delete", name: "a, b, and c", names: ["a", "b", "c"] }],
+  ["lösche a und b in Downloads", "de-DE", { op: "delete", name: "a und b", names: ["a", "b"], place: "Downloads", whole: "a und b in Downloads" }],
+  ["copy a and b to Dokumente", "en-US", { op: "copy", splits: [{ name: "a and b", names: ["a", "b"], dest: "Dokumente" }] }],
+  ["dupliziere a und b", "de-DE", { op: "duplicate", name: "a und b" }],
+  ["lösche a und a", "de-DE", { op: "delete", name: "a und a" }],
+  // undo (DESIGN8 C1): the whole line
+  ["rückgängig", "de-DE", { op: "undo" }],
+  ["Mach das rückgängig.", "de-DE", { op: "undo" }],
+  ["das rückgängig machen", "de-DE", { op: "undo" }],
+  ["undo", "en-US", { op: "undo" }],
+  ["Undo that.", "en-US", { op: "undo" }],
+  ["undo the last change", "en-US", { op: "undo" }],
   // copy (every preposition is a reading, the last one first) and duplicate
   ["kopiere test nach Dokumente", "de-DE", { op: "copy", splits: [{ name: "test", dest: "Dokumente" }] }],
   ["kopiere test in den Ordner Archiv", "de-DE", { op: "copy", splits: [{ name: "test", dest: "den Ordner Archiv" }] }],
   ["test nach Downloads kopieren", "de-DE", { op: "copy", splits: [{ name: "test", dest: "Downloads" }] }],
   ["kopiere test hierher", "de-DE", { op: "copy", splits: [{ name: "test", dest: "hierher" }] }],
   ["kopiere test", "de-DE", { op: "copy", splits: [{ name: "test", dest: "" }] }],
-  ["kopiere Fotos in Rom nach Archiv", "de-DE", { op: "copy", splits: [{ name: "Fotos in Rom", dest: "Archiv" }, { name: "Fotos", dest: "Rom nach Archiv" }] }],
+  // Any folder by name is a place (DESIGN8 A1); the lane tries the whole object ("Fotos in Rom") first.
+  ["kopiere Fotos in Rom nach Archiv", "de-DE",
+    { op: "copy", splits: [{ name: "Fotos", place: "Rom", whole: "Fotos in Rom", dest: "Archiv" }, { name: "Fotos", dest: "Rom nach Archiv" }] }],
   ["copy test to Downloads", "en-US", { op: "copy", splits: [{ name: "test", dest: "Downloads" }] }],
   ["copy test to ~/Projects", "en-US", { op: "copy", splits: [{ name: "test", dest: "~/Projects" }] }],
   ["dupliziere test", "de-DE", { op: "duplicate", name: "test" }],
@@ -153,6 +176,8 @@ test("file-command grammar: policy first — today's handling for the Trash, com
     // Name-first forms that name no folder: articles and "new" only, plain adjectives, phrases, possessives; no empty zip.
     ["create a new folder", "en-US"], ["make a new file", "en-US"], ["erstelle einen neuen Ordner", "de-DE"], ["erstelle einen leeren Ordner", "de-DE"],
     ["make a backup of the folder", "en-US"], ["erstelle eine Kopie vom Ordner", "de-DE"], ["create my project folder", "en-US"], ["create archive.zip", "en-US"],
+    // Undo is the whole line, never an app's undo of something named.
+    ["mach den letzten Schritt in Pages rückgängig", "de-DE"], ["undo the typing in Notes", "en-US"],
     // Nothing to do with files.
     ["öffne test", "de-DE"], ["open Radfotos", "en-US"], ["Albert Einstein", "de-DE"], ["15% of 340", "en-US"], ["wie spät ist es in Tokio", "de-DE"],
   ];

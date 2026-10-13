@@ -67,12 +67,42 @@ export interface FileOpPlan {
   target?: string;
   /** create: mkdir (else touch). */
   targetDir?: boolean;
+  /**
+   * Several items in one op (DESIGN8 B3: "lösche a und b"): one argv, one dcg review, every check per entry. Then
+   * `source`, `sourceDir` and `target` are absent.
+   */
+  entries?: readonly FileOpEntry[];
   words: FileOpWords;
+}
+
+/** One item of an op with several (DESIGN8 B3): the source, whether it is a directory on disk, and its target. */
+export interface FileOpEntry {
+  readonly source: string;
+  readonly sourceDir: boolean;
+  readonly target?: string;
+}
+
+/** What one item of an op touches: a plan's own fields, or one of its `entries`. */
+export interface FileOpUnit {
+  readonly source?: string;
+  readonly sourceDir?: boolean;
+  readonly target?: string;
+}
+
+/** The items an op touches, in argv order (one for a plan without `entries`). */
+export function planUnits(plan: FileOpPlan): readonly FileOpUnit[] {
+  if (plan.entries) return plan.entries;
+  return [{
+    ...(plan.source !== undefined ? { source: plan.source, sourceDir: plan.sourceDir === true } : {}),
+    ...(plan.target !== undefined ? { target: plan.target } : {}),
+  }];
 }
 
 export const FILE_OPS = Object.freeze({
   /** A staged op runs within this long (DESIGN6 §4.4). */
   ttlMs: 2 * 60_000,
+  /** "rückgängig" undoes the last done op within this long (DESIGN8 C2); later it is today's handling. */
+  undoTtlMs: 3 * 60_000,
   /** Staged ops kept (oldest out). */
   maxOps: 64,
   /** dcg's review, its dialog included (the pi bridge's 140 s). */
@@ -91,7 +121,7 @@ export const FILE_OPS = Object.freeze({
   minExecMs: 30_000,
 });
 
-export const BINARIES = Object.freeze({ rm: "/bin/rm", mkdir: "/bin/mkdir", touch: "/usr/bin/touch", cp: "/bin/cp", mv: "/bin/mv" });
+export const BINARIES = Object.freeze({ rm: "/bin/rm", rmdir: "/bin/rmdir", mkdir: "/bin/mkdir", touch: "/usr/bin/touch", cp: "/bin/cp", mv: "/bin/mv" });
 
 // ---------------------------------------------------------------------------------------------
 // Plans
@@ -139,9 +169,87 @@ export function renamePlan(item: PlanItem, newName: string, shown: string, words
   return { kind: "rename", argv: [BINARIES.mv, "-n", "--", item.path, target], cwd: shown, source: item.path, sourceDir: item.isDirectory, target, words };
 }
 
-/** A file or symlink delete: dcg allows `rm` without asking, so pi-os asks first (BUILD6 §2). */
+/**
+ * Several items deleted by one `rm` (DESIGN8 B3): `-r` when any is a directory on disk (dcg's dialog then reviews the
+ * whole command), plain `rm` for files and symlinks only (pi-os's one Return).
+ */
+export function deleteAllPlan(items: readonly PlanItem[], shown: string, words: FileOpWords): FileOpPlan {
+  const recursive = items.some((item) => item.isDirectory);
+  const argv = [BINARIES.rm, ...(recursive ? ["-r"] : []), "--", ...items.map((item) => item.path)];
+  return { kind: "delete", argv, cwd: shown, entries: items.map((item) => ({ source: item.path, sourceDir: item.isDirectory })), words };
+}
+
+/** Several items copied or moved into one folder by one `cp -R -n` / `mv -n` (BSD forms: each lands as <destDir>/<name>). */
+export function transferAllPlan(kind: "copy" | "move", items: readonly PlanItem[], destDir: string, shown: string, words: FileOpWords): FileOpPlan {
+  const paths = items.map((item) => item.path);
+  const argv = kind === "copy" ? [BINARIES.cp, "-R", "-n", "--", ...paths, destDir] : [BINARIES.mv, "-n", "--", ...paths, destDir];
+  const entries = items.map((item) => ({ source: item.path, sourceDir: item.isDirectory, target: childPath(destDir, basename(item.path)) }));
+  return { kind, argv, cwd: shown, entries, words };
+}
+
+/**
+ * Undoing a just-created folder (DESIGN8 C3): `rmdir`, which only ever removes an empty folder, so nothing put into
+ * it since can go.
+ */
+export function removeEmptyFolderPlan(path: string, shown: string, words: FileOpWords): FileOpPlan {
+  return { kind: "delete", argv: [BINARIES.rmdir, "--", path], cwd: shown, source: path, sourceDir: true, words };
+}
+
+/** An undo of the last done op (DESIGN8 C3), or why there is none. */
+export type UndoPlan = { plan: FileOpPlan } | { why: "delete" | "changed" | "unsupported" };
+
+/**
+ * The op that undoes `done` (DESIGN8 C3), built from the journal only. Every result must still be the very item the
+ * op left (same device, inode and kind; a file also unwritten since): a rename or move goes back with `mv -n`, a copy's
+ * copies are deleted (as any delete: dcg's dialog or pi-os's Return), a new folder is `rmdir`'d (only while empty), a new
+ * file deleted. A delete is never undone (there is no trash). Every check of a normal run applies again when it runs.
+ */
+export async function undoPlanOf(done: DoneFileOp, german: boolean, read: LstatFn = defaultLstat): Promise<UndoPlan> {
+  const plan = done.plan;
+  if (plan.kind === "delete") return { why: "delete" };
+  const units = planUnits(plan);
+  for (const [index, unit] of units.entries()) {
+    const result = done.results[index];
+    if (unit.target === undefined || !result) return { why: "unsupported" };
+    const now = await identityOf(unit.target, read);
+    if (!now.ok || now.identity.dev !== result.dev || now.identity.ino !== result.ino || now.identity.kind !== result.kind) return { why: "changed" };
+    if (result.kind === "file" && now.identity.mtimeNs !== result.mtimeNs) return { why: "changed" };
+  }
+  const name = (path: string): string => basename(path);
+  const label = (paths: readonly string[]): string => {
+    const names = paths.map(name);
+    const and = german ? "und" : "and";
+    return names.length <= 1 ? names[0] ?? "" : `${names.slice(0, -1).join(", ")} ${and} ${names.at(-1)}`;
+  };
+  const quoted = (text: string): string => (german ? `„${text}“` : `“${text}”`);
+  switch (plan.kind) {
+    case "rename":
+      return { plan: renamePlan({ path: plan.target!, isDirectory: plan.sourceDir === true }, name(plan.source!), plan.cwd,
+        { german, name: name(plan.target!), newName: name(plan.source!) }) };
+    case "move": {
+      const back = new Set(units.map((unit) => parentPath(unit.source!)));
+      if (back.size !== 1) return { why: "unsupported" };
+      const folder = [...back][0]!;
+      const items = units.map((unit) => ({ path: unit.target!, isDirectory: unit.sourceDir === true }));
+      const words = { german, name: label(items.map((item) => item.path)), dest: quoted(name(folder)) };
+      return { plan: items.length === 1 ? movePlan(items[0]!, folder, plan.cwd, words) : transferAllPlan("move", items, folder, plan.cwd, words) };
+    }
+    case "copy": {
+      const items = units.map((unit) => ({ path: unit.target!, isDirectory: unit.sourceDir === true }));
+      const words = { german, name: label(items.map((item) => item.path)) };
+      return { plan: items.length === 1 ? deletePlan(items[0]!, plan.cwd, words) : deleteAllPlan(items, plan.cwd, words) };
+    }
+    case "create": {
+      const path = plan.target!;
+      const words = { german, name: name(path) };
+      return { plan: plan.targetDir ? removeEmptyFolderPlan(path, plan.cwd, words) : deletePlan({ path, isDirectory: false }, plan.cwd, words) };
+    }
+  }
+}
+
+/** A delete of files and symlinks only: dcg allows `rm` without asking, so pi-os asks first (BUILD6 §2). */
 export function needsOwnConfirm(plan: FileOpPlan): boolean {
-  return plan.kind === "delete" && plan.sourceDir !== true;
+  return plan.kind === "delete" && planUnits(plan).every((unit) => unit.sourceDir !== true);
 }
 
 const SHELL_SAFE = /^[A-Za-z0-9_@%+=:,./-]+$/;
@@ -259,17 +367,31 @@ export function pathProblem(path: string, guard: PathGuard, shown?: string): Pat
   return SYSTEM_ROOTS.has(parts[0]!) ? "system" : null;
 }
 
-/** The first problem of a plan's source and target (each checked against the shown folder too). */
+/**
+ * The first problem of a plan's sources and targets (each checked against the shown folder too). Several entries
+ * (DESIGN8 B3) also never name an item twice, never nest, and never put a target into or onto another source.
+ */
 export function planProblem(plan: FileOpPlan, guard: PathGuard): PathProblem | null {
-  for (const path of [plan.source, plan.target]) {
-    if (path === undefined) continue;
-    const problem = pathProblem(path, guard, plan.cwd);
-    if (problem) return problem;
-  }
-  if (plan.target !== undefined && plan.source !== undefined) {
+  const units = planUnits(plan);
+  if (plan.entries && plan.entries.length === 0) return "invalid";
+  for (const unit of units) {
+    for (const path of [unit.source, unit.target]) {
+      if (path === undefined) continue;
+      const problem = pathProblem(path, guard, plan.cwd);
+      if (problem) return problem;
+    }
     // Never into itself ("kopiere test nach test/sub").
-    const source = pathKey(plan.source);
-    if (pathKey(plan.target).startsWith(`${source}/`)) return "invalid";
+    if (unit.target !== undefined && unit.source !== undefined && pathKey(unit.target).startsWith(`${pathKey(unit.source)}/`)) return "invalid";
+  }
+  if (plan.entries) {
+    const sources = plan.entries.map((entry) => pathKey(entry.source));
+    const targets = plan.entries.flatMap((entry) => (entry.target === undefined ? [] : [pathKey(entry.target)]));
+    if (new Set(sources).size !== sources.length || new Set(targets).size !== targets.length) return "invalid";
+    const inside = (path: string, folder: string): boolean => path === folder || path.startsWith(`${folder}/`);
+    for (const source of sources) {
+      if (sources.some((other) => other !== source && inside(source, other))) return "invalid";
+      if (targets.some((target) => inside(target, source))) return "invalid";
+    }
   }
   return isAbsoluteHostPath(plan.cwd) || plan.cwd === "/" ? null : "invalid";
 }
@@ -284,7 +406,7 @@ export type RealPathFn = (path: string) => Promise<string>;
 export async function realPathProblem(plan: FileOpPlan, guard: PathGuard, resolve: RealPathFn = realpath): Promise<PathProblem | "unreadable" | null> {
   try {
     const shown = await resolve(plan.cwd);
-    for (const path of [plan.source, plan.target]) {
+    for (const path of planUnits(plan).flatMap((unit) => [unit.source, unit.target])) {
       if (path === undefined) continue;
       const real = childPath(await resolve(parentPath(path)), basename(path));
       if (real === path && shown === plan.cwd) continue;
@@ -338,12 +460,23 @@ export interface StagedFileOp {
   readonly takeId?: string;
   readonly contextId?: string;
   readonly stagedAt: number;
-  /** The source's identity, read when the op was staged. */
-  readonly snapshot?: Promise<IdentityRead>;
+  /** Each unit's source identity (planUnits order; undefined without a source), read when the op was staged. */
+  readonly snapshots: readonly (Promise<IdentityRead> | undefined)[];
+}
+
+/**
+ * The last op that ran to `done` (DESIGN8 C2), for "rückgängig": its plan and, per unit, the identity its result had
+ * right after (a create's, copy's, move's or rename's target). In memory only, never logged, one at a time.
+ */
+export interface DoneFileOp {
+  readonly plan: FileOpPlan;
+  readonly results: readonly (SourceIdentity | undefined)[];
+  readonly at: number;
 }
 
 export interface FileOpStoreOptions {
   ttlMs?: number;
+  undoTtlMs?: number;
   maxOps?: number;
   /** Epoch ms (default Date.now). */
   clock?: () => number;
@@ -358,13 +491,16 @@ export type FileOpClaim = { ok: true; op: StagedFileOp } | { ok: false; op?: Sta
 export class FileOpStore {
   private readonly ops = new Map<string, StagedFileOp>();
   private readonly ttlMs: number;
+  private readonly undoTtlMs: number;
   private readonly maxOps: number;
   private readonly clock: () => number;
   readonly lstat: LstatFn;
   private readonly mintId: () => string;
+  private done?: DoneFileOp;
 
   constructor(options: FileOpStoreOptions = {}) {
     this.ttlMs = options.ttlMs ?? FILE_OPS.ttlMs;
+    this.undoTtlMs = options.undoTtlMs ?? FILE_OPS.undoTtlMs;
     this.maxOps = options.maxOps ?? FILE_OPS.maxOps;
     this.clock = options.clock ?? (() => Date.now());
     this.lstat = options.lstat ?? defaultLstat;
@@ -385,13 +521,15 @@ export class FileOpStore {
     return plans.map((plan) => {
       let opId = this.mintId();
       while (this.ops.has(opId)) opId = this.mintId();
-      const snapshot = plan.source === undefined ? undefined
-        : reads.get(plan.source) ?? identityOf(plan.source, this.lstat);
-      if (plan.source !== undefined && snapshot) reads.set(plan.source, snapshot);
+      const snapshots = planUnits(plan).map(({ source }) => {
+        if (source === undefined) return undefined;
+        const snapshot = reads.get(source) ?? identityOf(source, this.lstat);
+        reads.set(source, snapshot);
+        return snapshot;
+      });
       this.ops.set(opId, {
-        opId, plan, stagedAt: at,
+        opId, plan, stagedAt: at, snapshots,
         ...(binding.takeId ? { takeId: binding.takeId } : {}), ...(binding.contextId ? { contextId: binding.contextId } : {}),
-        ...(snapshot ? { snapshot } : {}),
       });
       while (this.ops.size > this.maxOps) {
         const oldest = this.ops.keys().next().value;
@@ -434,8 +572,22 @@ export class FileOpStore {
     return [...this.ops.values()].filter((op) => op.takeId === takeId);
   }
 
+  /** runFileOp: an op ran to `done` (it replaces the one before; DESIGN8 C2). */
+  remember(plan: FileOpPlan, results: readonly (SourceIdentity | undefined)[]): void {
+    this.done = { plan, results, at: this.clock() };
+  }
+
+  /** The last done op while "rückgängig" may still undo it (≤ undoTtlMs), else undefined. */
+  lastDone(): DoneFileOp | undefined {
+    const done = this.done;
+    if (!done) return undefined;
+    const age = this.clock() - done.at;
+    return age >= 0 && age <= this.undoTtlMs ? done : undefined;
+  }
+
   clear(): void {
     this.ops.clear();
+    this.done = undefined;
   }
 }
 
@@ -648,21 +800,36 @@ function execArgv(argv: readonly string[], cwd: string, timeoutMs: number): Prom
   });
 }
 
-/** The op did what it says: the source is gone (delete, move, rename) and the target is there with the right kind. */
-async function verified(plan: FileOpPlan, read: LstatFn): Promise<boolean> {
-  const source = plan.source === undefined ? undefined : await identityOf(plan.source, read);
-  const target = plan.target === undefined ? undefined : await identityOf(plan.target, read);
-  switch (plan.kind) {
-    case "delete":
-      return source?.ok === false && source.code === "gone";
-    case "create":
-      return target?.ok === true && target.identity.kind === (plan.targetDir ? "dir" : "file");
-    case "copy":
-      return target?.ok === true && source?.ok === true;
-    case "move":
-    case "rename":
-      return target?.ok === true && source?.ok === false && source.code === "gone";
+/**
+ * The op did what it says, for every item: the source is gone (delete, move, rename) and the target is there with the
+ * right kind. The targets' identities (undefined for a unit without one), or null when any item is not as it should be.
+ */
+async function verified(plan: FileOpPlan, read: LstatFn): Promise<(SourceIdentity | undefined)[] | null> {
+  const results: (SourceIdentity | undefined)[] = [];
+  for (const unit of planUnits(plan)) {
+    const source = unit.source === undefined ? undefined : await identityOf(unit.source, read);
+    const target = unit.target === undefined ? undefined : await identityOf(unit.target, read);
+    const gone = source?.ok === false && source.code === "gone";
+    let ok: boolean;
+    switch (plan.kind) {
+      case "delete":
+        ok = gone;
+        break;
+      case "create":
+        ok = target?.ok === true && target.identity.kind === (plan.targetDir ? "dir" : "file");
+        break;
+      case "copy":
+        ok = target?.ok === true && source?.ok === true;
+        break;
+      case "move":
+      case "rename":
+        ok = target?.ok === true && gone;
+        break;
+    }
+    if (!ok) return null;
+    results.push(target?.ok ? target.identity : undefined);
   }
+  return results;
 }
 
 /**
@@ -686,7 +853,8 @@ export async function runFileOp(store: FileOpStore, opId: string, options: FileO
   try {
     const claimed = store.claim(opId);
     if (!claimed.ok) return finish("expired", expiredLine(claimed.op?.plan.words, "time"));
-    const { plan, snapshot } = claimed.op;
+    const { plan, snapshots } = claimed.op;
+    const units = planUnits(plan);
     kind = plan.kind;
     const words = plan.words;
     if (options.enabled && !options.enabled()) return finish("failed", failedLine(plan, "off"));
@@ -698,21 +866,27 @@ export async function runFileOp(store: FileOpStore, opId: string, options: FileO
       return problem === null ? null : problem === "unreadable" ? "unreadable" : "protected";
     };
 
-    // The source as staged: still there, still the same item.
-    let staged: SourceIdentity | undefined;
-    if (plan.source !== undefined) {
-      const before = snapshot ? await snapshot : await identityOf(plan.source, read);
+    // Every source as staged: still there, still the same item.
+    const staged: (SourceIdentity | undefined)[] = [];
+    for (const [index, unit] of units.entries()) {
+      if (unit.source === undefined) {
+        staged.push(undefined);
+        continue;
+      }
+      const pending = snapshots[index];
+      const before = pending ? await pending : await identityOf(unit.source, read);
       if (!before.ok) return before.code === "gone" ? finish("expired", expiredLine(words, "gone")) : finish("failed", failedLine(plan, "unreadable"));
-      staged = before.identity;
-      // A delete runs rm with or without -r as staged: the item must still be of that kind.
-      if (plan.kind === "delete" && (staged.kind === "dir") !== (plan.sourceDir === true)) return finish("expired", expiredLine(words, "changed"));
-      const now = await identityOf(plan.source, read);
+      // A delete runs rm with or without -r (or rmdir) as staged: each item must still be of that kind.
+      if (plan.kind === "delete" && (before.identity.kind === "dir") !== (unit.sourceDir === true)) return finish("expired", expiredLine(words, "changed"));
+      const now = await identityOf(unit.source, read);
       if (!now.ok) return now.code === "gone" ? finish("expired", expiredLine(words, "gone")) : finish("failed", failedLine(plan, "unreadable"));
-      if (!sameIdentity(staged, now.identity)) return finish("expired", expiredLine(words, "changed"));
+      if (!sameIdentity(before.identity, now.identity)) return finish("expired", expiredLine(words, "changed"));
+      staged.push(before.identity);
     }
-    if (plan.target !== undefined) {
-      const target = await identityOf(plan.target, read);
-      if (target.ok) return finish("failed", failedLine(plan, "exists"));
+    for (const unit of units) {
+      if (unit.target === undefined) continue;
+      const target = await identityOf(unit.target, read);
+      if (target.ok) return finish("failed", failedLine(plan, "exists", unit.target));
       if (target.code !== "gone") return finish("failed", failedLine(plan, "unreadable"));
     }
     const real = await realProblem();
@@ -729,12 +903,16 @@ export async function runFileOp(store: FileOpStore, opId: string, options: FileO
     if (verdict.kind === "deny") return finish("denied", deniedLine(plan, verdict.reason), "deny");
     if (verdict.kind !== "allow") return finish("failed", failedLine(plan, "dcg_error"), "error");
 
-    // The dialog may have been open for minutes: the same item, the target still free.
-    if (plan.source !== undefined && staged) {
-      const again = await identityOf(plan.source, read);
-      if (!again.ok || !sameIdentity(staged, again.identity)) return finish("expired", expiredLine(words, !again.ok && again.code === "gone" ? "gone" : "changed"), "allow");
+    // The dialog may have been open for minutes: every item the same, every target still free.
+    for (const [index, unit] of units.entries()) {
+      const before = staged[index];
+      if (unit.source === undefined || !before) continue;
+      const again = await identityOf(unit.source, read);
+      if (!again.ok || !sameIdentity(before, again.identity)) return finish("expired", expiredLine(words, !again.ok && again.code === "gone" ? "gone" : "changed"), "allow");
     }
-    if (plan.target !== undefined && (await identityOf(plan.target, read)).ok) return finish("failed", failedLine(plan, "exists"), "allow");
+    for (const unit of units) {
+      if (unit.target !== undefined && (await identityOf(unit.target, read)).ok) return finish("failed", failedLine(plan, "exists", unit.target), "allow");
+    }
     const realAfter = await realProblem();
     if (realAfter) return finish("failed", failedLine(plan, realAfter), "allow");
 
@@ -742,7 +920,12 @@ export async function runFileOp(store: FileOpStore, opId: string, options: FileO
     const execMs = options.execTimeoutMs ?? Math.max(FILE_OPS.minExecMs, FILE_OPS.runBudgetMs - (clock() - started));
     const ran = await execArgv(plan.argv, plan.cwd, execMs);
     if (ran.killed) return finish("failed", failedLine(plan, "killed"), "allow");
-    if (ran.code === 0 && await verified(plan, read)) return finish("done", doneLine(plan), "allow");
+    const results = ran.code === 0 ? await verified(plan, read) : null;
+    if (results) {
+      // "rückgängig" may undo it for a while (DESIGN8 C2).
+      store.remember(plan, results);
+      return finish("done", doneLine(plan), "allow");
+    }
     return finish("failed", failedLine(plan, "op"), "allow");
   } catch {
     return finish("failed", failedLine(undefined, "op"));
@@ -791,12 +974,14 @@ export function deniedLine(plan: FileOpPlan, reason: string): string {
 
 type FailedWhy = "op" | "killed" | "exists" | "protected" | "no_dcg" | "dcg_error" | "aborted" | "off" | "unreadable";
 
-export function failedLine(plan: FileOpPlan | undefined, why: FailedWhy): string {
+/** `existing`: the target that was already there ("exists"; an op with several items has several targets). */
+export function failedLine(plan: FileOpPlan | undefined, why: FailedWhy, existing?: string): string {
   const w = plan?.words ?? { german: false, name: "" };
   const de = w.german;
   switch (why) {
     case "exists": {
-      const taken = q(w, plan?.target ? basename(plan.target) : w.name);
+      const target = existing ?? plan?.target;
+      const taken = q(w, target ? basename(target) : w.name);
       return de ? `${taken} gibt es dort schon – nichts überschrieben.` : `${taken} already exists there — nothing was overwritten.`;
     }
     case "protected":

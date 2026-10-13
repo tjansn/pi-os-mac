@@ -43,6 +43,11 @@ export type FileCommandOp = "delete" | "create" | "copy" | "duplicate" | "move" 
 export interface FileCommandPlace {
   place?: string;
   whole?: string;
+  /**
+   * Several names in one object (DESIGN8 B1: "lösche a und b", "copy a, b and c to …"): each a name; `name` stays the
+   * object as said, which the lane tries first ("Fotos und Videos" may be one folder). Delete, copy and move only.
+   */
+  names?: readonly string[];
 }
 
 /** One reading of "X nach Y": the object and the destination as said ("" when none was said). */
@@ -58,6 +63,8 @@ export type FileCommand =
   /** Readings from the last preposition to the first ("kopiere Fotos in Rom nach Archiv": "nach" first). */
   | { op: "copy" | "move"; splits: readonly FileCommandSplit[] }
   | ({ op: "duplicate"; name: string } & FileCommandPlace)
+  /** "rückgängig", "undo" (DESIGN8 C1): the last op pi-os ran, from Node's journal — never what was said. */
+  | { op: "undo" }
   | { op: "rename"; name: string; newName: string }
   /**
    * `quit`: said with beende/quit (else schließe/close); the lane resolves both the same way (BUILD6 §5). `window`: a
@@ -131,6 +138,17 @@ const PLACE_TAIL = new RegExp(
     + "(?:[\\s-]+(?:ordner|folder))?$",
   "diu",
 );
+/** One word of a folder's name in a place: no path, wildcard or home sign, and never a place preposition itself. */
+const PLACE_WORD = "(?!(?:in|im|aus|von|vom|from|inside|out|of)(?:\\s|$))[^\\s/\\\\*?~]+";
+/**
+ * Any folder by name (DESIGN8 A1): "… in Projekte", "… aus dem Ordner Rechnungen 2026", "… from my Archive folder" —
+ * 1–3 words after the last place preposition (group 1). "auf"/"on" stay the desktop's (PLACE_TAIL).
+ */
+const NAMED_PLACE_TAIL = new RegExp(
+  `\\s+(?:in|im|aus|von|vom|from|inside|out\\s+of)(?:\\s+(?:dem|den|der|die|the|my|meinem|meinen|meiner))?(?:\\s+(?:ordner|folder))?`
+    + `\\s+(${PLACE_WORD}(?:\\s+${PLACE_WORD}){0,2}?)(?:[\\s-]+(?:ordner|folder))?$`,
+  "diu",
+);
 const COPY_FIRST = new RegExp(`^(?:kopiere|kopier|copy)${PARTICLES}\\s+(.+)$`, "du");
 const COPY_LAST = /^(.+)\s+kopieren$/du;
 const DUPLICATE_FIRST = new RegExp(`^(?:dupliziere|duplizier|duplicate)${PARTICLES}\\s+(.+)$`, "du");
@@ -198,7 +216,7 @@ export function matchFileCommand(n: Normalized, options: FileCommandOptions = {}
     if (core && core !== n.lower) forms.unshift({ lower: core, cased: casedCore(n, core) });
   }
   for (const form of forms) {
-    const command = deleteForm(form) ?? createForm(form) ?? copyMoveForm(form) ?? renameForm(form) ?? closeForm(form);
+    const command = undoForm(form) ?? deleteForm(form) ?? createForm(form) ?? copyMoveForm(form) ?? renameForm(form) ?? closeForm(form);
     if (command) return command;
   }
   return null;
@@ -216,8 +234,9 @@ export function fileCommandOf(text: string, locale?: string, voice = true): File
 // The command verbs of the forms above, by language (the "neu" and "new" adjectives of CREATE_NEW included).
 const GERMAN_VERB = new RegExp(`${WORD_START}(?:lösche|lösch|loesche|loesch|löschen|loeschen|entferne|entfern|entfernen|erstelle|erstell|erstellen|` +
   `anlegen|neuer|neuen|neue|neues|kopiere|kopier|kopieren|dupliziere|duplizier|duplizieren|verschiebe|verschieb|verschieben|` +
-  `benenne|benenn|nenne|nenn|umbenennen|schließe|schließ|schliesse|schliess|schließen|schliessen|beende|beend|beenden)${WORD_END}`, "u");
-const ENGLISH_VERB = new RegExp(`${WORD_START}(?:delete|remove|create|make|new|copy|duplicate|move|rename|close|quit)${WORD_END}`, "u");
+  `benenne|benenn|nenne|nenn|umbenennen|schließe|schließ|schliesse|schliess|schließen|schliessen|beende|beend|beenden|`
+  + `rückgängig|ruckgangig|rueckgaengig)${WORD_END}`, "u");
+const ENGLISH_VERB = new RegExp(`${WORD_START}(?:delete|remove|create|make|new|copy|duplicate|move|rename|close|quit|undo)${WORD_END}`, "u");
 
 /**
  * The language of a file command's verb ("erstelle Ordner a/b" is German whatever the name reads like), or null when
@@ -284,29 +303,58 @@ function newName(raw: string): string | null {
   return isDeictic(normalize(name)) ? null : name;
 }
 
-/** An object with a standard folder at its end ("test in Downloads"): the name before it, the folder word and the whole. */
+/**
+ * An object with a folder at its end ("test in Downloads", "test in Projekte"): the name before it, the folder's name
+ * as said and the whole object. A standard folder first (its "auf dem Schreibtisch" too), then any folder name that is
+ * a name (no pronoun, quantifier, deixis or in-app object: "test in it" has no place).
+ */
 function placed(raw: string): { name: string; place?: string; whole?: string } {
   const whole = cleanName(raw);
-  const m = PLACE_TAIL.exec(whole);
-  const span = m?.indices?.[1];
-  if (!m || !span || m.index === 0) return { name: whole };
-  const name = whole.slice(0, m.index).trim();
-  return name ? { name, place: whole.slice(span[0], span[1]), whole } : { name: whole };
+  for (const pattern of [PLACE_TAIL, NAMED_PLACE_TAIL]) {
+    const m = pattern.exec(whole);
+    const span = m?.indices?.[1];
+    if (!m || !span || m.index === 0) continue;
+    const name = whole.slice(0, m.index).trim();
+    const place = whole.slice(span[0], span[1]);
+    if (name && (pattern === PLACE_TAIL || sourceName(place) === place)) return { name, place, whole };
+  }
+  return { name: whole };
 }
 
-/** A source object (sourceName) with its place, if one was said. */
-function sourceObject(raw: string): ({ name: string } & FileCommandPlace) | null {
+/** "a und b", "a, b und c", "a and b": where one name ends and the next starts. */
+const NAME_LIST = /\s*,\s*(?:(?:und|and)\s+)?|\s+(?:und|and)\s+/iu;
+const MAX_LISTED_NAMES = 5;
+
+/** 2–5 distinct names joined by "und"/"and"/commas, each a source name; else undefined (one name). */
+function listedNames(text: string): string[] | undefined {
+  const parts = text.split(NAME_LIST).map((part) => part.trim()).filter(Boolean);
+  if (parts.length < 2 || parts.length > MAX_LISTED_NAMES) return undefined;
+  const names = parts.map(sourceName);
+  if (!names.every((name): name is string => name !== null)) return undefined;
+  return new Set(names.map((name) => name.toLowerCase())).size === names.length ? names : undefined;
+}
+
+/** A source object (sourceName) with its place, if one was said, and its several names (`many`: delete, copy, move). */
+function sourceObject(raw: string, many = false): ({ name: string } & FileCommandPlace) | null {
   const object = placed(raw);
   const name = sourceName(object.name);
   if (!name) return null;
-  return object.place ? { name, place: object.place, whole: object.whole! } : { name };
+  const names = many ? listedNames(object.name) : undefined;
+  return { name, ...(object.place ? { place: object.place, whole: object.whole! } : {}), ...(names ? { names } : {}) };
 }
 
 function deleteForm(form: Form): FileCommand | null {
   const m = DELETE_FIRST.exec(form.lower) ?? DELETE_LAST.exec(form.lower);
   if (!m) return null;
-  const object = sourceObject(group(form, m, 1));
+  const object = sourceObject(group(form, m, 1), true);
   return object ? { op: "delete", ...object } : null;
+}
+
+/** "rückgängig", "mach das rückgängig", "das rückgängig machen", "undo", "undo that" — nothing else on the line. */
+const UNDO = /^(?:(?:bitte\s+)?mach(?:e)?\s+(?:das\s+|es\s+|dies\s+)?(?:bitte\s+)?r(?:ü|u|ue)ckg(?:ä|a|ae)ngig|(?:das\s+|es\s+)?r(?:ü|u|ue)ckg(?:ä|a|ae)ngig(?:\s+machen)?|undo(?:\s+(?:that|it|this|the\s+last\s+(?:change|one|thing)))?(?:\s+please)?)$/u;
+
+function undoForm(form: Form): FileCommand | null {
+  return UNDO.test(form.lower.replace(/[.!?…]+$/u, "").trim()) ? { op: "undo" } : null;
 }
 
 function kindOf(noun: string): "folder" | "file" {
@@ -345,12 +393,17 @@ function createParsed(form: Form): Extract<FileCommand, { op: "create" }> | null
 function createForm(form: Form): FileCommand | null {
   const direct = createParsed(form);
   if (direct) return direct;
-  // The place after the noun ("erstelle einen test Ordner in Dokumente", "create notes.txt in Documents").
-  const m = PLACE_TAIL.exec(form.lower);
-  const span = m?.indices?.[1];
-  if (!m || !span || m.index === 0) return null;
-  const inner = createParsed({ lower: form.lower.slice(0, m.index), cased: form.cased.slice(0, m.index) });
-  return inner && !inner.place ? { ...inner, place: form.cased.slice(span[0], span[1]) } : null;
+  // The place after the noun ("erstelle einen test Ordner in Dokumente", "create notes.txt in Projects").
+  for (const pattern of [PLACE_TAIL, NAMED_PLACE_TAIL]) {
+    const m = pattern.exec(form.lower);
+    const span = m?.indices?.[1];
+    if (!m || !span || m.index === 0) continue;
+    const place = form.cased.slice(span[0], span[1]);
+    if (pattern !== PLACE_TAIL && sourceName(place) !== place) continue;
+    const inner = createParsed({ lower: form.lower.slice(0, m.index), cased: form.cased.slice(0, m.index) });
+    if (inner && !inner.place) return { ...inner, place };
+  }
+  return null;
 }
 
 /** Every "object → destination" reading of a copy/move remainder, the last preposition first. */
@@ -359,20 +412,20 @@ function splits(form: Form, start: number, end: number): FileCommandSplit[] {
   const cased = form.cased.slice(start, end);
   const here = DEST_HERE.exec(lower);
   if (here) {
-    const object = sourceObject(cased.slice(0, here.index));
+    const object = sourceObject(cased.slice(0, here.index), true);
     return object ? [{ ...object, dest: here[1]! }] : [];
   }
   const out: FileCommandSplit[] = [];
   for (const m of [...lower.matchAll(DEST_PREPOSITION)].reverse()) {
     const at = m.index ?? 0;
-    const object = sourceObject(cased.slice(0, at));
+    const object = sourceObject(cased.slice(0, at), true);
     const dest = cleanName(cased.slice(at + m[0].length));
     if (object && dest) out.push({ ...object, dest });
   }
   // No destination said ("kopiere test", "kopiere test aus Downloads"): the lane asks where to. A remainder with a
   // preposition that gave no reading is no command.
   if (!out.length && !HAS_PREPOSITION.test(lower)) {
-    const object = sourceObject(cased);
+    const object = sourceObject(cased, true);
     if (object) out.push({ ...object, dest: "" });
   }
   return out;

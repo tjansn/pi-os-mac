@@ -13,7 +13,7 @@ import { fileOpActCard, fileOpRowsCard, noticeCard } from "../src/instant/cards.
 import { createInstantDispatcher, type InstantDispatcherDeps } from "../src/instant/dispatcher.js";
 import { DictionaryStore } from "../src/instant/dictionary.js";
 import type { FileCommandDeps, FolderListing } from "../src/instant/fileLane.js";
-import { FileOpStore, type LstatFn, type PathGuard } from "../src/instant/fileOps.js";
+import { deletePlan, FileOpStore, renamePlan, type LstatFn, type PathGuard } from "../src/instant/fileOps.js";
 import { createLearnLane, learnFromGesture } from "../src/instant/learned.js";
 import { InMemoryTakeMemo, takeRecordFor } from "../src/instant/takeMemo.js";
 import { VisibleItemsCache } from "../src/instant/visible.js";
@@ -784,4 +784,68 @@ test("lanes [file] (a pi thread's follow-up): a file command decides as on a tak
     assert.deepEqual([response.decision, response.decision === "fallthrough" ? response.reason : null], ["fallthrough", "no_match"], `${text} ${JSON.stringify(extra)}`);
   }
   assert.equal(other.ops.size, 0);
+});
+
+// ---------------------------------------------------------------- DESIGN8: any folder by name, several names, undo
+
+test("any folder by name: a place or a destination is a folder of that name in the view, else near home; several are listed", async () => {
+  const fs = disk({
+    "/Users/fixture/Desktop": ["Radfotos/"], "/Users/fixture": ["Documents/", "Downloads/"], "/Users/fixture/Documents": ["Projekte/", "Archiv/"],
+    "/Users/fixture/Downloads": ["Archiv/"], "/Users/fixture/Documents/Projekte": ["test.txt"],
+  });
+  const shown = desktopOf([RADFOTOS]);
+  const { dispatcher, ops } = make(shown, { listFolder: fs.listFolder });
+  const file = asAct(await dispatcher.dispatch(typed("lösche test in Projekte", { accept: ["confirm"] })));
+  assert.deepEqual([file.title, file.confirm], ["„test.txt“ endgültig löschen?", true]);
+  assert.deepEqual(argvOf(ops, "take-typed"), [["/bin/rm", "--", "/Users/fixture/Documents/Projekte/test.txt"]]);
+  asAct(await dispatcher.dispatch(typed("erstelle Ordner Belege in Projekte", { takeId: "take-create" })));
+  assert.deepEqual(argvOf(ops, "take-create"), [["/bin/mkdir", "--", "/Users/fixture/Documents/Projekte/Belege"]]);
+  asAct(await dispatcher.dispatch(typed("verschiebe Radfotos nach Projekte", { takeId: "take-move" })));
+  assert.deepEqual(argvOf(ops, "take-move"), [["/bin/mv", "-n", "--", "/Users/fixture/Desktop/Radfotos", "/Users/fixture/Documents/Projekte/Radfotos"]]);
+  // Two "Archiv" folders: which one, never a guess.
+  const where = asList(await dispatcher.dispatch(typed("kopiere Radfotos nach Archiv", { takeId: "take-two" })));
+  assert.equal(where.title, "Wohin soll „Radfotos“ kopiert werden?");
+  assert.deepEqual(rows(where.card).map((row) => [row.title, row.subtitle]), [["Archiv", "~/Documents/Archiv"], ["Archiv", "~/Downloads/Archiv"]]);
+  // No folder of that name: today's handling.
+  const today = make(shown, { lane: false });
+  assert.equal(stable(await dispatcher.dispatch(typed("lösche test in Nirgendwo", { takeId: "take-today" }))),
+    stable(await today.dispatcher.dispatch(typed("lösche test in Nirgendwo", { takeId: "take-today" }))));
+});
+
+test("several names: one op for all after the whole name; any name that names nothing stages nothing", async () => {
+  const fs = disk({ "/Users/fixture/Desktop": ["a.txt", "b.txt", "Ordner A/", "Fotos/", "Fotos und Videos/"] });
+  const { dispatcher, ops } = make(desktopOf([]), { listFolder: fs.listFolder });
+  const files = asAct(await dispatcher.dispatch(typed("lösche a und b", { accept: ["confirm"] })));
+  assert.deepEqual([files.title, files.confirm], ["„a.txt und b.txt“ endgültig löschen?", true]);
+  assert.deepEqual(argvOf(ops, "take-typed"), [["/bin/rm", "--", "/Users/fixture/Desktop/a.txt", "/Users/fixture/Desktop/b.txt"]]);
+  const mixed = asAct(await dispatcher.dispatch(typed("lösche a und Ordner A", { takeId: "take-mixed" })));
+  assert.deepEqual([mixed.title, mixed.confirm], ["Löschen: a.txt und Ordner A", false]);
+  assert.deepEqual(argvOf(ops, "take-mixed"), [["/bin/rm", "-r", "--", "/Users/fixture/Desktop/a.txt", "/Users/fixture/Desktop/Ordner A"]]);
+  assert.equal(asAnswer(await dispatcher.dispatch(typed("lösche a und c", { takeId: "take-c" }))).title, "„c“ gibt es hier nicht – nichts gelöscht.");
+  assert.equal(ops.forTake("take-c").length, 0);
+  // A folder called "Fotos und Videos" is the one meant.
+  asAct(await dispatcher.dispatch(typed("lösche Fotos und Videos", { takeId: "take-whole" })));
+  assert.deepEqual(argvOf(ops, "take-whole"), [["/bin/rm", "-r", "--", "/Users/fixture/Desktop/Fotos und Videos"]]);
+  asAct(await dispatcher.dispatch(typed("kopiere a und b nach Dokumente", { takeId: "take-copy" })));
+  assert.deepEqual(argvOf(ops, "take-copy"), [["/bin/cp", "-R", "-n", "--", "/Users/fixture/Desktop/a.txt", "/Users/fixture/Desktop/b.txt", "/Users/fixture/Documents"]]);
+  assert.equal(asAnswer(await dispatcher.dispatch(typed("verschiebe a und b hierher", { takeId: "take-here" }))).title, "„a.txt“ liegt schon in Schreibtisch.");
+});
+
+test("undo: the last op pi-os ran, always behind one Return, with no folder in front; nothing to undo is today's", async () => {
+  const { dispatcher, ops } = make(NONE);
+  const today = make(NONE, { lane: false });
+  assert.equal(stable(await dispatcher.dispatch(typed("rückgängig"))), stable(await today.dispatcher.dispatch(typed("rückgängig"))), "nothing done yet");
+  // What the faked lstat reads for every path.
+  const identity = { dev: "1", ino: "2", mtimeNs: "3", kind: "dir" as const };
+  const renamed = renamePlan({ path: "/Users/fixture/Desktop/Plan", isDirectory: true }, "Plan-alt", "/Users/fixture/Desktop", { german: true, name: "Plan", newName: "Plan-alt" });
+  ops.remember(renamed, [identity]);
+  const undo = asAct(await dispatcher.dispatch(typed("rückgängig", { accept: ["confirm"], takeId: "take-undo" })));
+  assert.deepEqual([undo.title, undo.confirm], ["„Plan-alt“ wieder in „Plan“ umbenennen?", true]);
+  assert.deepEqual(argvOf(ops, "take-undo"), [["/bin/mv", "-n", "--", "/Users/fixture/Desktop/Plan-alt", "/Users/fixture/Desktop/Plan"]]);
+  assert.equal(asList(await dispatcher.dispatch(typed("undo", { locale: "en-US", takeId: "take-list" }))).title, "Rename “Plan-alt” back to “Plan”?",
+    "without confirm: a one-row list");
+  ops.remember(renamed, [{ ...identity, ino: "99" }]);
+  assert.equal(asAnswer(await dispatcher.dispatch(typed("rückgängig", { takeId: "take-changed" }))).title, "Das hat sich inzwischen geändert – nichts rückgängig gemacht.");
+  ops.remember(deletePlan({ path: "/Users/fixture/Desktop/x", isDirectory: true }, "/Users/fixture/Desktop", { german: true, name: "x" }), [undefined]);
+  assert.equal(asAnswer(await dispatcher.dispatch(typed("rückgängig", { takeId: "take-delete" }))).title, "Löschen kann pi-os nicht rückgängig machen.");
 });

@@ -7,8 +7,8 @@ import type { FileCandidate, VisibleSource, VisibleSourceKind } from "../contrac
 import { SPOKEN, type AppMatcher } from "./apps.js";
 import { fileOpActCard, fileOpRowsCard, MAX_LIST_ITEMS, noticeCard, type FileOpRow } from "./cards.js";
 import {
-  childPath, copyPlan, createPlan, defaultPathGuard, deletePlan, movePlan, nameProblem, needsOwnConfirm, parentPath, planProblem, renamePlan,
-  type FileOpPlan, type FileOpStore, type FileOpWords, type PathGuard, type PlanItem,
+  childPath, copyPlan, createPlan, defaultPathGuard, deleteAllPlan, deletePlan, movePlan, nameProblem, needsOwnConfirm, parentPath, planProblem,
+  renamePlan, transferAllPlan, undoPlanOf, type FileOpPlan, type FileOpStore, type FileOpWords, type PathGuard, type PlanItem,
 } from "./fileOps.js";
 import { truncate } from "./format.js";
 import { phraseLike, type FileCommand, type FileCommandPlace, type FileCommandSplit } from "./grammar/fileCommands.js";
@@ -189,21 +189,35 @@ function standardDestination(folder: StandardFolder, home: string, german: boole
 }
 
 /**
- * The destination as said, or null (unresolved: the lane asks "where to?"). Never a guess. Its path is the folder's
- * real path (a symlinked "~/Link" to /Applications is /Applications), so the safety rules see where the op would go.
+ * The destinations a said one names: none (unresolved: the lane asks "where to?"), one, or several folders of that name
+ * near home (DESIGN8 A3: the lane lists them). Never a guess. Each path is the folder's real path (a symlinked
+ * "~/Link" to /Applications is /Applications), so the safety rules see where the op would go.
  */
-async function destination(said: string, input: FileLaneInput, deps: FileCommandDeps): Promise<Destination | null> {
-  const named = await namedDestination(said, input, deps);
-  if (!named) return null;
+async function destinations(said: string, input: FileLaneInput, deps: FileCommandDeps): Promise<Destination[]> {
+  const named = await namedDestinations(said, input, deps);
   const resolve = deps.realPath ?? ((path: string) => realpath(path).catch(() => null));
-  let real: string | null;
-  try {
-    real = await resolve(named.path);
-  } catch {
-    real = null;
+  const out: Destination[] = [];
+  for (const destination of named) {
+    let real: string | null;
+    try {
+      real = await resolve(destination.path);
+    } catch {
+      real = null;
+    }
+    const path = real ? folderPath(real) : undefined;
+    out.push(path && path !== destination.path ? { ...destination, path } : destination);
   }
-  const path = real ? folderPath(real) : undefined;
-  return path && path !== named.path ? { ...named, path } : named;
+  return out;
+}
+
+async function namedDestinations(said: string, input: FileLaneInput, deps: FileCommandDeps): Promise<Destination[]> {
+  const one = await namedDestination(said, input, deps);
+  if (one) return [one];
+  // A folder by name near home (finals: read from disk), "Archiv" in ~/Documents: one is it, several are listed.
+  const target = visibleTarget(said.trim());
+  if (!target || said.trim().startsWith("~") || said.trim().startsWith("/")) return [];
+  const folders = await foldersNearHome(said.trim(), input, deps);
+  return folders.map((path) => ({ path, label: quote(input.german, basename(path)) }));
 }
 
 async function namedDestination(said: string, input: FileLaneInput, deps: FileCommandDeps): Promise<Destination | null> {
@@ -413,17 +427,72 @@ async function currentView(input: FileLaneInput, deps: FileCommandDeps): Promise
   return visible;
 }
 
-/** A said standard folder ("lösche test in Downloads") as a view of its own, read from disk on finals; else null. */
-async function placeView(place: string, input: FileLaneInput, deps: FileCommandDeps): Promise<VisibleSnapshot | null> {
-  if (input.request.phase !== "final") return null;
+/** At most this many folders a name may stand for (DESIGN8 A2); more is today's. */
+const MAX_PLACES = 4;
+/** Where a folder named by name is looked for after the current view (direct children only). */
+const NAMED_FOLDER_ROOTS = ["Desktop", "Documents", "Downloads", ""] as const;
+
+/** Folder paths named exactly `name` among `entries` (folders only, lane-exact), in order, without repeats. */
+function foldersNamed(name: string, entries: readonly VisibleEntry[]): string[] {
+  const target = visibleTarget(name);
+  if (!target) return [];
+  return [...new Set(entries.filter((entry) => entry.folder && laneExact(target, entry)).map((entry) => entry.item.path))];
+}
+
+/**
+ * Folders directly inside ~/Desktop, ~/Documents, ~/Downloads and ~ named exactly `name` (DESIGN8 A2 tier 3, A3), read
+ * from disk; finals only. More than MAX_PLACES: none.
+ */
+async function foldersNearHome(name: string, input: FileLaneInput, deps: FileCommandDeps): Promise<string[]> {
+  if (input.request.phase !== "final") return [];
+  const list = deps.listFolder ?? listFolderOnDisk;
+  const found: string[] = [];
+  for (const dir of NAMED_FOLDER_ROOTS) {
+    const listing = await list(dir ? childPath(input.home, dir) : input.home).catch(() => null);
+    if (listing) found.push(...foldersNamed(name, listing.items.map((item) => visibleEntry(item))));
+  }
+  const unique = [...new Set(found)];
+  return unique.length <= MAX_PLACES ? unique : [];
+}
+
+/**
+ * The folders a said place names (DESIGN8 A2), finals only: a standard folder; else folders of that name in the
+ * take's current view; else directly inside Desktop, Documents, Downloads or home. Never more than MAX_PLACES.
+ */
+async function placeFolders(place: string, input: FileLaneInput, deps: FileCommandDeps): Promise<string[]> {
+  if (input.request.phase !== "final") return [];
   const standard = STANDARD_FOLDERS.find((folder) => folder.keys.includes(matchKey(place)));
-  if (!standard) return null;
-  const folder = standardDestination(standard, input.home, input.german).path;
+  if (standard) return [standardDestination(standard, input.home, input.german).path];
+  const shown = foldersNamed(place, input.visible.entries);
+  if (shown.length) return shown.length <= MAX_PLACES ? shown : [];
+  return foldersNearHome(place, input, deps);
+}
+
+/** One folder as a view of its own, read from disk; null when unreadable. */
+async function folderView(folder: string, input: FileLaneInput, deps: FileCommandDeps): Promise<VisibleSnapshot | null> {
   const listing = await (deps.listFolder ?? listFolderOnDisk)(folder).catch(() => null);
   if (!listing) return null;
-  const kind: VisibleSourceKind = standard.dir === "Desktop" ? "desktop" : "finderWindow";
+  const kind: VisibleSourceKind = folder === childPath(input.home, "Desktop") ? "desktop" : "finderWindow";
   const entries = listing.items.map((item) => visibleEntry({ ...item, source: kind })).filter((entry) => entry.key);
   return { supported: true, sources: [{ kind, via: "ax", complete: listing.complete, path: folder }], entries };
+}
+
+/**
+ * A said place ("lösche test in Downloads", "… in Projekte") as one view of every folder it names, read from disk on
+ * finals: the object resolves in all of them at once (rows say which). Null when it names none or one is unreadable.
+ */
+async function placeView(place: string, input: FileLaneInput, deps: FileCommandDeps): Promise<VisibleSnapshot | null> {
+  const folders = await placeFolders(place, input, deps);
+  if (!folders.length) return null;
+  const sources: VisibleSource[] = [];
+  const entries: VisibleEntry[] = [];
+  for (const folder of folders) {
+    const view = await folderView(folder, input, deps);
+    if (!view) return null;
+    sources.push(...view.sources);
+    entries.push(...view.entries);
+  }
+  return { supported: true, sources, entries };
 }
 
 /** Spoken punctuation between name parts ("notes punkt txt" → "notes.txt", "rad unterstrich tour" → "rad_tour"). */
@@ -457,6 +526,49 @@ interface Resolved {
   name: string;
 }
 
+/** Several named items (DESIGN8 B2), each exactly one, in the view they were found in; or the answer why not. */
+type Several = { entries: VisibleEntry[]; input: FileLaneInput } | { outcome: Outcome };
+
+/**
+ * Every one of several names (in the said place, if any) as exactly one item — two names for one item count once.
+ * Any name that names nothing, or more than one item, is an answer and nothing is staged (never a partial op); a view
+ * that may miss items, an app's name or an unresolvable place is today's (null). `done`: the op's participle.
+ */
+async function resolveAll(ref: ItemRef, shown: FileLaneInput, deps: FileCommandDeps, done: { de: string; en: string }): Promise<Several | null> {
+  let input = shown;
+  if (ref.place) {
+    const view = await placeView(ref.place, shown, deps);
+    if (!view) return null;
+    input = { ...shown, visible: view };
+  }
+  const entries: VisibleEntry[] = [];
+  const absent: string[] = [];
+  const twice: string[] = [];
+  for (const name of ref.names ?? []) {
+    const resolution = resolveName(name, input);
+    if (!resolution) return null;
+    if (resolution.kind === "one") {
+      const entry = resolution.matches[0]!.entry;
+      if (!entries.some((other) => other.item.path === entry.item.path)) entries.push(entry);
+    } else if (resolution.kind === "several") {
+      twice.push(name);
+    } else {
+      absent.push(name);
+    }
+  }
+  const de = input.german;
+  if (absent.length) {
+    if (incomplete(input.visible)) return null;
+    return { outcome: answer(de ? `${joinQuoted(absent, true)} gibt es hier nicht – nichts ${done.de}.`
+      : `${joinQuoted(absent, false)} ${absent.length > 1 ? "aren't" : "isn't"} here — nothing was ${done.en}.`) };
+  }
+  if (twice.length) {
+    return { outcome: answer(de ? `${joinQuoted(twice, true)} gibt es mehrmals – bitte einzeln sagen.`
+      : `There's more than one ${joinQuoted(twice, false)} — please say them one at a time.`) };
+  }
+  return entries.length ? { entries, input } : null;
+}
+
 /**
  * Where an object resolves: with a place, the whole object on what the take shows first (an item may be called "Fotos in
  * Downloads"), then the name in that folder; without one, on what the take shows. Null: today's.
@@ -483,7 +595,8 @@ async function resolveRef(ref: ItemRef, input: FileLaneInput, deps: FileCommandD
 interface Option { plan: FileOpPlan; row: FileOpRow }
 
 type Outcome =
-  | { kind: "act"; option: Option; title: string; heard: string }
+  /** `confirm`: one Return first even where the op would not need it (an undo: DESIGN8 C4). */
+  | { kind: "act"; option: Option; title: string; heard: string; confirm?: true }
   | { kind: "list"; options: Option[]; title: string; heard: string }
   | { kind: "answer"; title: string; tone: "info" | "warning" }
   | { kind: "close"; action: HostAction; title: string; heard: string };
@@ -498,6 +611,19 @@ function words(input: FileLaneInput, name: string, extra: Partial<FileOpWords> =
 
 function answer(title: string, tone: "info" | "warning" = "info"): Outcome {
   return { kind: "answer", title, tone };
+}
+
+/** "a, b und c" (≤ 3 names), else "a, b und 2 weitere" (DESIGN8 B4). */
+function joinNames(names: readonly string[], german: boolean): string {
+  const and = german ? "und" : "and";
+  if (names.length <= 1) return names[0] ?? "";
+  if (names.length <= 3) return `${names.slice(0, -1).join(", ")} ${and} ${names.at(-1)}`;
+  return `${names.slice(0, 2).join(", ")} ${and} ${names.length - 2} ${german ? "weitere" : "more"}`;
+}
+
+/** Each name quoted, then joined ("„a“ und „b“"). */
+function joinQuoted(names: readonly string[], german: boolean): string {
+  return joinNames(names.map((name) => quote(german, name)), german);
 }
 
 function notFound(input: FileLaneInput, name: string): Outcome {
@@ -561,6 +687,8 @@ function oneRowList(input: FileLaneInput, resolution: Resolution, name: string, 
 /** "lösche test": the item's folder is where the take shows it (or the said standard folder: "lösche test in Downloads"). */
 async function deleteOutcome(shown: FileLaneInput, ref: ItemRef, deps: FileCommandDeps): Promise<Outcome | null> {
   const resolved = await resolveRef(ref, shown, deps);
+  // "lösche a und b": the whole object first ("Fotos und Videos" may be one folder), then every name.
+  if (ref.names && !(resolved && (resolved.resolution.kind === "one" || resolved.resolution.kind === "several"))) return deleteAll(shown, ref, deps);
   if (!resolved) return null;
   const { resolution, input, name } = resolved;
   const plan = (entry: VisibleEntry): FileOpPlan => deletePlan(planItem(entry), parentPath(entry.item.path), words(input, entry.item.name));
@@ -572,6 +700,31 @@ async function deleteOutcome(shown: FileLaneInput, ref: ItemRef, deps: FileComma
     ? (input.german ? `${quote(true, entry.item.name)} endgültig löschen?` : `Delete ${quote(false, entry.item.name)} permanently?`)
     : (input.german ? `Löschen: ${entry.item.name}` : `Delete ${entry.item.name}`);
   return actOf(input, entry, planned, title, resolution.target.heard);
+}
+
+/**
+ * "lösche a und b" (DESIGN8 B2/B3): every name exactly one item, then one `rm` for all of them — pi-os's one Return for
+ * files only, dcg's dialog (the whole command) when any is a directory on disk. A view that may miss items: a one-row list.
+ */
+async function deleteAll(shown: FileLaneInput, ref: ItemRef, deps: FileCommandDeps): Promise<Outcome | null> {
+  const all = await resolveAll(ref, shown, deps, { de: "gelöscht", en: "deleted" });
+  if (!all || "outcome" in all) return all?.outcome ?? null;
+  const { entries, input } = all;
+  const de = input.german;
+  const names = entries.map((entry) => entry.item.name);
+  const label = joinNames(names, de);
+  const first = entries[0]!;
+  const plan = entries.length === 1
+    ? deletePlan(planItem(first), parentPath(first.item.path), words(input, first.item.name))
+    : deleteAllPlan(entries.map(planItem), parentPath(first.item.path), words(input, label));
+  if (planProblem(plan, guardOf(input))) return protectedAnswer(input, label);
+  const title = needsOwnConfirm(plan)
+    ? (de ? `${quote(true, label)} endgültig löschen?` : `Delete ${quote(false, label)} permanently?`)
+    : (de ? `Löschen: ${label}` : `Delete ${label}`);
+  const option = { plan, row: entries.length === 1 ? itemRow(first) : { name: label, subtitle: `in ${first.parent}` } };
+  const heard = ref.name.toLowerCase();
+  if (incomplete(input.visible)) return { kind: "list", options: [option], title, heard };
+  return { kind: "act", option, title, heard };
 }
 
 /**
@@ -587,15 +740,30 @@ async function missing(input: FileLaneInput, resolution: Resolution, name: strin
   return notFound(input, name);
 }
 
-/** "erstelle Ordner test": in the folder the take shows, or in the said standard folder ("… in Dokumente"). */
+/**
+ * "erstelle Ordner test": in the folder the take shows, or in the said one ("… in Dokumente", "… in Projekte"); a name
+ * that stands for several folders is a list with one row per folder (DESIGN8 A4).
+ */
 async function createOutcome(take: FileLaneInput, name: string, kind: "folder" | "file", place: string | undefined,
   deps: FileCommandDeps): Promise<Outcome | null> {
-  let input = take;
-  if (place !== undefined) {
-    const view = await placeView(place, take, deps);
+  if (place === undefined) return createIn(take, name, kind);
+  const folders = await placeFolders(place, take, deps);
+  if (!folders.length) return null;
+  const options: Option[] = [];
+  for (const folder of folders) {
+    const view = await folderView(folder, take, deps);
     if (!view) return null;
-    input = { ...take, visible: view };
+    const outcome = createIn({ ...take, visible: view }, name, kind);
+    if (folders.length === 1) return outcome;
+    if (outcome.kind === "act") options.push({ ...outcome.option, row: { ...outcome.option.row, subtitle: tildePath(folder, take.home) } });
   }
+  if (!options.length) return null;
+  const de = take.german;
+  return { kind: "list", options, title: de ? `In welchem Ordner ${quote(true, place)}?` : `In which ${quote(false, place)} folder?`, heard: name.toLowerCase() };
+}
+
+/** Create `name` in the folder `input` shows (its first lane source). */
+function createIn(input: FileLaneInput, name: string, kind: "folder" | "file"): Outcome {
   const de = input.german;
   const shown = shownFolder(input.visible, input.home);
   if (!shown.path) return answer(de ? "Ich sehe nicht, welcher Ordner das ist." : "I can't tell which folder that is.");
@@ -688,7 +856,80 @@ function transferTitle(input: FileLaneInput, op: "copy" | "move", plan: FileOpPl
   return de ? `${quote(true, name)} nach ${dest} verschieben` : `Move ${quote(false, name)} to ${dest}`;
 }
 
+/**
+ * Several items into one folder by one op (DESIGN8 B3); one item: transferPlan. Never into one of them, and never into
+ * their own folder (a move there changes nothing, a copy there is a duplicate of each: one at a time).
+ */
+function transferOf(input: FileLaneInput, op: "copy" | "move", entries: readonly VisibleEntry[], dest: Destination): FileOpPlan | Outcome {
+  if (entries.length === 1) return transferPlan(input, op, entries[0]!, dest);
+  const de = input.german;
+  const label = joinNames(entries.map((entry) => entry.item.name), de);
+  const destKey = foldName(dest.path);
+  const verb = op === "copy" ? (de ? "kopiert" : "copied") : (de ? "verschoben" : "moved");
+  for (const entry of entries) {
+    const path = foldName(entry.item.path);
+    if (destKey === path || destKey.startsWith(`${path}/`)) {
+      return answer(de ? `${quote(true, entry.item.name)} kann nicht in sich selbst ${verb} werden.` : `${quote(false, entry.item.name)} can't be ${verb} into itself.`);
+    }
+    if (destKey === foldName(parentPath(entry.item.path))) {
+      return answer(de ? `${quote(true, entry.item.name)} liegt schon in ${dest.label}.` : `${quote(false, entry.item.name)} is already in ${dest.label}.`);
+    }
+  }
+  return transferAllPlan(op, entries.map(planItem), dest.path, parentPath(entries[0]!.item.path), words(input, label, { dest: dest.label }));
+}
+
+/**
+ * Copy or move resolved items to what was said: one destination acts (a view that may miss items makes a move a one-row
+ * list); none is a "where to?" list of the standard folders (not the items' own); several folders of the said name are
+ * a list of those (DESIGN8 A3). `which`: the single item's resolution, for today's titles.
+ */
+async function transferEntries(input: FileLaneInput, shown: FileLaneInput, op: "copy" | "move", entries: readonly VisibleEntry[], said: string,
+  heard: string, deps: FileCommandDeps, which?: { resolution: Resolution; name: string }): Promise<Outcome | null> {
+  const de = input.german;
+  const guard = guardOf(input);
+  const label = joinNames(entries.map((entry) => entry.item.name), de);
+  const dests = await destinations(said, shown, deps);
+  if (dests.length !== 1) {
+    const standard = dests.length === 0;
+    const own = new Set(entries.map((entry) => foldName(parentPath(entry.item.path))));
+    const candidates = standard ? STANDARD_FOLDERS.map((folder) => standardDestination(folder, input.home, de)) : dests;
+    const options: Option[] = [];
+    for (const candidate of candidates) {
+      if (standard && own.has(foldName(candidate.path))) continue;
+      const planned = transferOf(input, op, entries, candidate);
+      if (!isPlan(planned) || planProblem(planned, guard)) continue;
+      const name = standard ? candidate.label : basename(candidate.path);
+      options.push({ plan: planned, row: { name, subtitle: tildePath(candidate.path, input.home), contentType: "public.folder" } });
+    }
+    if (!options.length) return protectedAnswer(input, label);
+    const verb = op === "copy" ? (de ? "kopiert" : "copied") : (de ? "verschoben" : "moved");
+    const title = de ? `Wohin soll ${quote(true, label)} ${verb} werden?` : `Where should ${quote(false, label)} be ${verb}?`;
+    return { kind: "list", options, title, heard };
+  }
+  const planned = transferOf(input, op, entries, dests[0]!);
+  if (!isPlan(planned)) return planned;
+  if (planProblem(planned, guard)) return protectedAnswer(input, label);
+  const first = entries[0]!;
+  const row = entries.length === 1 ? itemRow(first) : { name: label, subtitle: `in ${first.parent}` };
+  if (op === "move" && incomplete(input.visible)) {
+    const title = which ? whichTitle(input, which.resolution, which.name) : transferTitle(input, op, planned);
+    return { kind: "list", options: [{ plan: planned, row }], title, heard };
+  }
+  return { kind: "act", option: { plan: planned, row }, title: transferTitle(input, op, planned), heard };
+}
+
 async function transferOutcome(shown: FileLaneInput, op: "copy" | "move", splits: readonly FileCommandSplit[], deps: FileCommandDeps): Promise<Outcome | null> {
+  // "kopiere a und b nach Dokumente" (DESIGN8 B): the whole object first, then every name, in the last preposition's reading.
+  const first = splits[0];
+  if (first?.names) {
+    const whole = await resolveRef(first, shown, deps);
+    if (!whole || (whole.resolution.kind !== "one" && whole.resolution.kind !== "several")) {
+      const done = op === "copy" ? { de: "kopiert", en: "copied" } : { de: "verschoben", en: "moved" };
+      const all = await resolveAll(first, shown, deps, done);
+      if (!all || "outcome" in all) return all?.outcome ?? null;
+      return transferEntries(all.input, shown, op, all.entries, first.dest, first.name.toLowerCase(), deps);
+    }
+  }
   // The reading whose object resolves best ("kopiere Fotos in Rom nach Archiv": the last preposition first).
   const RANK = { one: 0, several: 1, sound: 2, none: 3 } as const;
   let chosen: { split: FileCommandSplit; resolved: Resolved } | undefined;
@@ -701,38 +942,16 @@ async function transferOutcome(shown: FileLaneInput, op: "copy" | "move", splits
   // The object's view (a said place's own); the destination is named from what the take shows ("hierher", a visible folder).
   const { resolution, input, name } = chosen.resolved;
   if (resolution.kind === "none") return missing(input, resolution, name);
-  const dest = await destination(split.dest, shown, deps);
-  const guard = guardOf(input);
   if (resolution.kind !== "one") {
-    // "Which one?" needs a destination; asking two questions at once is pi's job.
-    if (!dest) return null;
+    // "Which one?" needs one destination; asking two questions at once is pi's job.
+    const dests = await destinations(split.dest, shown, deps);
+    if (dests.length !== 1) return null;
     return listOf(input, resolution, name, (entry) => {
-      const planned = transferPlan(input, op, entry, dest);
+      const planned = transferPlan(input, op, entry, dests[0]!);
       return isPlan(planned) ? planned : null;
     });
   }
-  const entry = resolution.matches[0]!.entry;
-  if (!dest) {
-    // "Wohin soll „test“ kopiert werden?": the standard folders (not the item's own folder) as rows.
-    const folder = parentPath(entry.item.path).normalize("NFC").toLowerCase();
-    const options: Option[] = [];
-    for (const standard of STANDARD_FOLDERS) {
-      const candidate = standardDestination(standard, input.home, input.german);
-      if (candidate.path.normalize("NFC").toLowerCase() === folder) continue;
-      const planned = transferPlan(input, op, entry, candidate);
-      if (!isPlan(planned) || planProblem(planned, guard)) continue;
-      options.push({ plan: planned, row: { name: candidate.label, subtitle: tildePath(candidate.path, input.home), contentType: "public.folder" } });
-    }
-    if (!options.length) return protectedAnswer(input, entry.item.name);
-    const de = input.german;
-    const verb = op === "copy" ? (de ? "kopiert" : "copied") : (de ? "verschoben" : "moved");
-    const title = de ? `Wohin soll ${quote(true, entry.item.name)} ${verb} werden?` : `Where should ${quote(false, entry.item.name)} be ${verb}?`;
-    return { kind: "list", options, title, heard: resolution.target.heard };
-  }
-  const planned = transferPlan(input, op, entry, dest);
-  if (!isPlan(planned)) return planned;
-  if (op === "move" && incomplete(input.visible)) return oneRowList(input, resolution, name, entry, planned);
-  return actOf(input, entry, planned, transferTitle(input, op, planned), resolution.target.heard);
+  return transferEntries(input, shown, op, [resolution.matches[0]!.entry], split.dest, resolution.target.heard, deps, { resolution, name });
 }
 
 async function renameOutcome(input: FileLaneInput, name: string, newName: string): Promise<Outcome | null> {
@@ -798,6 +1017,7 @@ async function closeOutcome(input: FileLaneInput, command: Extract<FileCommand, 
 
 /** The items a reading names exactly (every reading of a move counts, each in its said place), by path. */
 async function namedItems(input: FileLaneInput, command: FileCommand, deps: FileCommandDeps): Promise<Set<string>> {
+  if (command.op === "undo") return new Set();
   const refs: readonly ItemRef[] = "splits" in command ? command.splits : [command.op === "delete" ? command : { name: command.name }];
   const out = new Set<string>();
   for (const ref of refs) {
@@ -836,7 +1056,42 @@ async function outcomeOf(input: FileLaneInput, deps: FileCommandDeps): Promise<O
     case "move": return transferOutcome(input, command.op, command.splits, deps);
     case "rename": return renameOutcome(input, command.name, command.newName);
     case "close": return closeOutcome(input, command);
+    case "undo": return undoOutcome(input, deps);
   }
+}
+
+/**
+ * "rückgängig" (DESIGN8 C): the last op pi-os ran to done (≤ 3 minutes), undone behind one Return — always, whatever the
+ * undo itself is. Nothing to undo: today's (the word stays the app's). A delete: an answer (there is no trash). Finals
+ * only: the journal's items are read for their identity.
+ */
+async function undoOutcome(input: FileLaneInput, deps: FileCommandDeps): Promise<Outcome | null> {
+  if (input.request.phase !== "final") return null;
+  const done = deps.store.lastDone();
+  if (!done) return null;
+  const de = input.german;
+  const undo = await undoPlanOf(done, de, deps.store.lstat);
+  if ("why" in undo) {
+    if (undo.why === "delete") return answer(de ? "Löschen kann pi-os nicht rückgängig machen." : "pi-os can't undo a delete.");
+    if (undo.why === "changed") return answer(de ? "Das hat sich inzwischen geändert – nichts rückgängig gemacht." : "That changed in the meantime — nothing was undone.");
+    return null;
+  }
+  const { plan } = undo;
+  if (planProblem(plan, guardOf(input))) return protectedAnswer(input, plan.words.name);
+  const name = quote(de, plan.words.name);
+  const title = (() => {
+    switch (done.plan.kind) {
+      case "rename": return de ? `${name} wieder in ${quote(true, plan.words.newName ?? "")} umbenennen?` : `Rename ${name} back to ${quote(false, plan.words.newName ?? "")}?`;
+      case "move": return de ? `${name} zurück nach ${plan.words.dest ?? ""} verschieben?` : `Move ${name} back to ${plan.words.dest ?? ""}?`;
+      case "copy": return de ? `Kopie ${name} wieder löschen?` : `Delete the copy ${name} again?`;
+      default: return de ? `${done.plan.targetDir ? "Neuen Ordner" : "Neue Datei"} ${name} wieder entfernen?` : `Remove the new ${done.plan.targetDir ? "folder" : "file"} ${name} again?`;
+    }
+  })();
+  const where = plan.source ?? plan.entries?.[0]?.source ?? "";
+  return {
+    kind: "act", title, heard: de ? "rückgängig" : "undo", confirm: true,
+    option: { plan, row: { name: plan.words.name, subtitle: `in ${basename(parentPath(where)) || "/"}` } },
+  };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -853,7 +1108,8 @@ function metaOf(input: FileLaneInput, heard: string): { voice?: VoiceMeta } {
  * in `deps.store` (bound to the request's takeId and contextId); typing and partial previews only show an act's plan.
  */
 export async function decideFileCommand(input: FileLaneInput, deps: FileCommandDeps): Promise<InstantBody | null> {
-  if (!laneVisible(input.visible)) return null;
+  // An undo needs no folder in front: the journal says where (DESIGN8 C5).
+  if (input.command.op !== "undo" && !laneVisible(input.visible)) return null;
   const guarded = deps.guard && !input.guard ? { ...input, guard: deps.guard } : input;
   // A final decides on the shown folders as they are now (DESIGN7 §2a); previews on the host's capture.
   const visible = await currentView(guarded, deps);
@@ -883,10 +1139,11 @@ export async function decideFileCommand(input: FileLaneInput, deps: FileCommandD
       return { decision: "list", intent: "file_op", title: outcome.title, card: fileOpRowsCard(outcome.title, rows), ...metaOf(input, outcome.heard) };
     }
     case "act": {
-      const own = needsOwnConfirm(outcome.option.plan);
+      // pi-os's own Return: a delete of files only, and every undo (DESIGN8 C4).
+      const own = needsOwnConfirm(outcome.option.plan) || outcome.confirm === true;
       const confirm = own || input.hold === true;
       if (confirm && !accepts(request, "confirm")) {
-        // A held act without "confirm" is today's; a file delete becomes a one-row list whose row must be picked.
+        // A held act without "confirm" is today's; a file delete or an undo becomes a one-row list whose row must be picked.
         if (!own) return null;
         const [opId] = deps.store.stage([outcome.option.plan], binding);
         return {

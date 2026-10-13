@@ -5,9 +5,9 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { FILE_OP_ID, FILE_OP_LIMITS } from "../src/contracts/actions.js";
 import {
-  BINARIES, childPath, copyPlan, createPlan, defaultPathGuard, deletePlan, failedLine, FILE_OPS, FileOpStore, identityOf, movePlan, nameProblem, needsOwnConfirm,
-  parentPath, pathProblem, planProblem, realPathProblem, renamePlan, resolveDcg, reviewCommand, reviewWithDcg, runFileOp, shellQuote,
-  type FileOpLogFields, type FileOpPlan, type FileOpRunOptions, type LstatFn, type PathGuard,
+  BINARIES, childPath, copyPlan, createPlan, defaultPathGuard, deleteAllPlan, deletePlan, failedLine, FILE_OPS, FileOpStore, identityOf, movePlan, nameProblem,
+  needsOwnConfirm, parentPath, pathProblem, planProblem, planUnits, realPathProblem, renamePlan, resolveDcg, reviewCommand, reviewWithDcg, runFileOp, shellQuote,
+  transferAllPlan, undoPlanOf, type FileOpLogFields, type FileOpPlan, type FileOpRunOptions, type LstatFn, type PathGuard,
 } from "../src/instant/fileOps.js";
 
 /*
@@ -406,7 +406,7 @@ test("staged ops: single use, two minutes, bound to the take; the source must no
     const staged = async (p: FileOpPlan = plan): Promise<string> => {
       const takeId = `take-settled-${++takes}`;
       const [id] = store.stage([p], { takeId });
-      await Promise.all(store.forTake(takeId).map((op) => op.snapshot));
+      await Promise.all(store.forTake(takeId).flatMap((op) => op.snapshots));
       return id!;
     };
 
@@ -656,4 +656,108 @@ test("run budget: dcg's longest review plus the op's minimum fit the run's budge
   assert.ok(FILE_OPS.dcgTimeoutMs + FILE_OPS.minExecMs <= FILE_OPS.runBudgetMs);
   assert.ok(FILE_OPS.runBudgetMs < FILE_OP_LIMITS.hostTimeoutMs);
   assert.equal(FILE_OP_LIMITS.hostTimeoutMs, 180_000, "the host's FileOpLimits.runTimeout");
+});
+
+// ---------------------------------------------------------------- DESIGN8: several items in one op, undo
+
+test("plans for several items (DESIGN8 B3): one rm / cp / mv argv; never an item twice, nested, or into one of them", () => {
+  const guard: PathGuard = { home: "/Users/fixture", temp: [] };
+  const desk = "/Users/fixture/Desktop";
+  const a = { path: `${desk}/a.txt`, isDirectory: false }, b = { path: `${desk}/b.txt`, isDirectory: false }, dir = { path: `${desk}/Ordner A`, isDirectory: true };
+  const files = deleteAllPlan([a, b], desk, { ...DE, name: "a.txt und b.txt" });
+  assert.deepEqual(files.argv, ["/bin/rm", "--", a.path, b.path]);
+  assert.equal(needsOwnConfirm(files), true, "files only: pi-os's own Return");
+  const mixed = deleteAllPlan([a, dir], desk, { ...DE, name: "a.txt und Ordner A" });
+  assert.deepEqual(mixed.argv, ["/bin/rm", "-r", "--", a.path, dir.path]);
+  assert.equal(needsOwnConfirm(mixed), false, "a directory: dcg's dialog");
+  assert.equal(reviewCommand(mixed.argv), `rm -r -- ${a.path} '${dir.path}'`);
+  const copy = transferAllPlan("copy", [a, dir], "/Users/fixture/Documents", desk, { ...DE, name: "x", dest: "Dokumente" });
+  assert.deepEqual(copy.argv, ["/bin/cp", "-R", "-n", "--", a.path, dir.path, "/Users/fixture/Documents"]);
+  assert.deepEqual(planUnits(copy).map((unit) => unit.target), ["/Users/fixture/Documents/a.txt", "/Users/fixture/Documents/Ordner A"]);
+  assert.equal(planProblem(copy, guard), null);
+  assert.equal(planProblem(deleteAllPlan([a, a], desk, { ...DE, name: "x" }), guard), "invalid", "an item twice");
+  assert.equal(planProblem(deleteAllPlan([dir, { path: `${dir.path}/inner`, isDirectory: false }], desk, { ...DE, name: "x" }), guard), "invalid", "nested");
+  assert.equal(planProblem(transferAllPlan("move", [a, dir], dir.path, desk, { ...DE, name: "x" }), guard), "invalid", "into one of them");
+  assert.equal(planProblem(deleteAllPlan([a, { path: "/Users/fixture/Documents", isDirectory: true }], desk, { ...DE, name: "x" }), guard), "standard_folder");
+  assert.equal(planProblem({ ...files, entries: [] }, guard), "invalid");
+});
+
+test("run several items as one op: one dcg review of the whole command, every item checked first, every effect verified", { skip: SKIP }, async () => {
+  const box = sandbox();
+  try {
+    const dcg = fakeDcg(box.root, "allow");
+    const store = new FileOpStore();
+    const run = (plan: FileOpPlan, takeId: string) => runFileOp(store, store.stage([plan], { takeId })[0]!, options(box.guard, dcg.path));
+    const a = join(box.desktop, "a.txt"), b = join(box.desktop, "b.txt"), folder = join(box.desktop, "Ordner A");
+    writeFileSync(a, "a");
+    writeFileSync(b, "b");
+    mkdirSync(folder);
+    const copy = transferAllPlan("copy", [{ path: a, isDirectory: false }, { path: folder, isDirectory: true }], box.documents, box.desktop,
+      { ...DE, name: "a.txt und Ordner A", dest: "Dokumente" });
+    assert.deepEqual(await run(copy, "t1"), { outcome: "done", line: "„a.txt und Ordner A“ nach Dokumente kopiert.", verdict: "allow" });
+    assert.equal((dcg.stdin() as { tool_input: { command: string } }).tool_input.command, `cp -R -n -- ${a} '${folder}' ${box.documents}`);
+    assert.ok(existsSync(join(box.documents, "a.txt")) && lstatSync(join(box.documents, "Ordner A")).isDirectory() && existsSync(a));
+    // A taken target refuses the whole op before dcg is asked: nothing moves.
+    const asked = dcg.stdin();
+    const move = transferAllPlan("move", [{ path: b, isDirectory: false }, { path: folder, isDirectory: true }], box.documents, box.desktop,
+      { ...DE, name: "b.txt und Ordner A", dest: "Dokumente" });
+    const refused = await run(move, "t2");
+    assert.equal(refused.outcome, "failed");
+    assert.match(refused.line, /„Ordner A“ gibt es dort schon/u);
+    assert.deepEqual(dcg.stdin(), asked, "dcg was not asked again");
+    assert.ok(existsSync(b) && existsSync(folder));
+    // Files only: one plain rm, every one gone.
+    const files = deleteAllPlan([{ path: a, isDirectory: false }, { path: b, isDirectory: false }], box.desktop, { ...DE, name: "a.txt und b.txt" });
+    assert.deepEqual(await run(files, "t3"), { outcome: "done", line: "„a.txt und b.txt“ gelöscht.", verdict: "allow" });
+    assert.equal(existsSync(a) || existsSync(b), false);
+    // One item changed after staging: the whole op expires, nothing runs.
+    writeFileSync(a, "a");
+    writeFileSync(b, "b");
+    const staged = store.stage([deleteAllPlan([{ path: a, isDirectory: false }, { path: b, isDirectory: false }], box.desktop, { ...DE, name: "a.txt und b.txt" })], { takeId: "t4" })[0]!;
+    await Promise.all(store.forTake("t4").flatMap((op) => op.snapshots));
+    utimesSync(b, new Date(2000, 0, 1), new Date(2000, 0, 1));
+    assert.equal((await runFileOp(store, staged, options(box.guard, dcg.path))).outcome, "expired");
+    assert.ok(existsSync(a) && existsSync(b));
+  } finally {
+    box.cleanup();
+  }
+});
+
+test("undo (DESIGN8 C): the last done op for 3 minutes; a rename goes back, a new folder goes only while empty, a written file or a delete never", { skip: SKIP }, async () => {
+  const box = sandbox();
+  try {
+    const dcg = fakeDcg(box.root, "allow");
+    let now = 1_000_000;
+    const store = new FileOpStore({ clock: () => now });
+    const run = (plan: FileOpPlan, takeId: string) => runFileOp(store, store.stage([plan], { takeId })[0]!, options(box.guard, dcg.path));
+    assert.equal(store.lastDone(), undefined);
+    // Rename, then undo it.
+    const plan = join(box.desktop, "Plan");
+    mkdirSync(plan);
+    assert.equal((await run(renamePlan({ path: plan, isDirectory: true }, "Plan-alt", box.desktop, { ...DE, name: "Plan", newName: "Plan-alt" }), "r1")).outcome, "done");
+    const back = await undoPlanOf(store.lastDone()!, true);
+    assert.ok("plan" in back);
+    assert.deepEqual(back.plan.argv, ["/bin/mv", "-n", "--", join(box.desktop, "Plan-alt"), plan]);
+    assert.deepEqual(await run(back.plan, "r2"), { outcome: "done", line: "„Plan-alt“ in „Plan“ umbenannt.", verdict: "allow" });
+    assert.ok(existsSync(plan) && !existsSync(join(box.desktop, "Plan-alt")));
+    // A new folder: rmdir, which leaves a folder that has something in it.
+    assert.equal((await run(createPlan(box.desktop, "Neu", true, { ...DE, name: "Neu" }), "c1")).outcome, "done");
+    const remove = await undoPlanOf(store.lastDone()!, true);
+    assert.ok("plan" in remove);
+    assert.deepEqual(remove.plan.argv, ["/bin/rmdir", "--", join(box.desktop, "Neu")]);
+    writeFileSync(join(box.desktop, "Neu", "inside.txt"), "keep");
+    assert.equal((await run(remove.plan, "c2")).outcome, "failed");
+    assert.equal(readFileSync(join(box.desktop, "Neu", "inside.txt"), "utf8"), "keep");
+    // A new file written to since: not undone.
+    assert.equal((await run(createPlan(box.desktop, "notes.md", false, { ...DE, name: "notes.md" }), "f1")).outcome, "done");
+    utimesSync(join(box.desktop, "notes.md"), new Date(2001, 0, 1), new Date(2001, 0, 1));
+    assert.deepEqual(await undoPlanOf(store.lastDone()!, true), { why: "changed" });
+    // A delete is final; after 3 minutes nothing is left to undo.
+    assert.equal((await run(deletePlan({ path: join(box.desktop, "notes.md"), isDirectory: false }, box.desktop, { ...DE, name: "notes.md" }), "d1")).outcome, "done");
+    assert.deepEqual(await undoPlanOf(store.lastDone()!, true), { why: "delete" });
+    now += FILE_OPS.undoTtlMs + 1;
+    assert.equal(store.lastDone(), undefined);
+  } finally {
+    box.cleanup();
+  }
 });

@@ -687,11 +687,12 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
   function fileCommandKey(command: FileCommand): string {
     const key = (name: string): string => visibleTarget(name)?.key ?? matchKey(name);
     const at = (place: string | undefined): string => (place === undefined ? "" : `@${matchKey(place)}`);
+    const all = (names: readonly string[] | undefined): string => (names ? `+${names.map(key).join("+")}` : "");
     switch (command.op) {
       case "copy":
       case "move": {
         const split = command.splits[0];
-        return `${command.op}:${split ? `${key(split.name)}${at(split.place)}>${key(split.dest)}` : ""}`;
+        return `${command.op}:${split ? `${key(split.name)}${all(split.names)}${at(split.place)}>${key(split.dest)}` : ""}`;
       }
       case "rename":
         return `rename:${key(command.name)}>${matchKey(command.newName)}`;
@@ -699,7 +700,9 @@ export function createInstantDispatcher(deps: InstantDispatcherDeps = {}): Insta
         return `create:${command.kind}:${matchKey(command.name)}${at(command.place)}`;
       case "delete":
       case "duplicate":
-        return `${command.op}:${key(command.name)}${at(command.place)}`;
+        return `${command.op}:${key(command.name)}${all(command.names)}${at(command.place)}`;
+      case "undo":
+        return "undo";
       default:
         return `${command.op}:${key(command.name)}`;
     }
