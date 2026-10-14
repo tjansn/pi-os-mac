@@ -707,7 +707,7 @@ public enum VoiceAvailability {
         }
         if let primaryStage, let early = await collector.awaitPrimary(limit: Self.finalizeTimeout) {
             guard current === take else { throw CancellationError() }
-            primaryStage(collector.final(early, audio: take.capture.takeAudio()))
+            primaryStage(stamped(collector.final(early, audio: take.capture.takeAudio()), take))
         }
         let outcome = await collector.awaitSettlement(limit: Self.finalizeTimeout)
         take.primary?.cancel()
@@ -724,7 +724,16 @@ public enum VoiceAvailability {
             for task in results { task.cancel() }
             Task { await analyzer.cancelAndFinishNow() }
         }
-        return collector.final(outcome, audio: take.capture.takeAudio())
+        return stamped(collector.final(outcome, audio: take.capture.takeAudio()), take)
+    }
+
+    /// The final with the take's microphone, for the timing log's `mic=` and `mic_pick=`.
+    private func stamped(_ final: VoiceFinal, _ take: Take) -> VoiceFinal {
+        guard let microphone = take.capture.microphoneInUse else { return final }
+        var final = final
+        final.timing.microphone = microphone.transport.rawValue
+        final.timing.microphonePick = microphone.reason.rawValue
+        return final
     }
 
     public func abandon() {
@@ -922,6 +931,7 @@ final class MicrophoneCapture: @unchecked Sendable {
     private var finished = false
     private var lastLevel = 0.0
     private var deliveredFrames: AVAudioFramePosition = 0
+    private var microphoneUsed: (transport: MicrophoneTransport, reason: MicrophonePick.Reason)?
     private let teeFormat: AVAudioFormat
     private var teeConverter: AVAudioConverter?
     private var teeBegan = false
@@ -978,14 +988,41 @@ final class MicrophoneCapture: @unchecked Sendable {
     }
 
     /// Queue-confined. Always a new engine: after a Bluetooth headset switches to its hands-free
-    /// profile, a reused engine can keep reporting the stale 48 kHz input format.
+    /// profile, a reused engine can keep reporting the stale 48 kHz input format. The microphone is picked anew each
+    /// time (MicrophoneChoice): a restart after a headset connected keeps away from it when something better is there.
     private func startEngine() throws {
+        let microphones = MicrophoneDevices.snapshot()
+        let pick = microphones.pick(MicrophoneDevices.preference())
+        // Only a closed lid is a reason to refuse; a device list that came back empty keeps the system's input.
+        if pick.device == nil, pick.lidClosed { throw VoiceError.unavailable(MicrophoneText.lidClosed) }
+        let system = microphones.devices.first { $0.id == microphones.systemDefault }
+        guard let device = pick.device, pick.overrides else {
+            return try startEngine(on: nil, using: pick.device ?? system, reason: pick.reason)
+        }
+        do {
+            try startEngine(on: device.id, using: device, reason: pick.reason)
+        } catch {
+            // An engine that does not start on the picked device records from the system's input, as before.
+            stopEngine()
+            try startEngine(on: nil, using: system, reason: .failed)
+        }
+    }
+
+    /// One engine on `device` (nil: the system's input); `using` and `reason` are what the timing log reports.
+    private func startEngine(on device: AudioDeviceID?, using: MicrophoneDevice?, reason: MicrophonePick.Reason) throws {
         let engine = AVAudioEngine()
         self.engine = engine
+        if let device, !MicrophoneDevices.use(device, on: engine) { throw VoiceError.unavailable(MicrophoneText.unavailable) }
+        lock.lock(); microphoneUsed = using.map { ($0.transport, reason) }; lock.unlock()
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else {
-            throw VoiceError.unavailable("No microphone input is available.")
+            throw VoiceError.unavailable(MicrophoneText.unavailable)
+        }
+        // A tap on a format the device does not deliver raises instead of throwing: on a picked device the node must
+        // report the device's own rate, else the caller records from the system's input.
+        if let device, let rate = MicrophoneDevices.nominalSampleRate(device), abs(rate - format.sampleRate) > 1 {
+            throw VoiceError.unavailable(MicrophoneText.unavailable)
         }
         // Observed before start(), so a change between start() and registration is not missed.
         observer = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine,
@@ -1030,6 +1067,11 @@ final class MicrophoneCapture: @unchecked Sendable {
     private var isEnding: Bool { lock.lock(); defer { lock.unlock() }; return ending }
 
     var usesMicrophone: Bool { microphone }
+
+    /// The microphone the take records from (its transport and why it was picked), once the engine started.
+    var microphoneInUse: (transport: MicrophoneTransport, reason: MicrophonePick.Reason)? {
+        lock.lock(); defer { lock.unlock() }; return microphoneUsed
+    }
 
     /// The stream finished: the take's audio (`takeAudio()`) is complete.
     var isFinished: Bool { lock.lock(); defer { lock.unlock() }; return finished }

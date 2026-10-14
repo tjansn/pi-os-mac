@@ -397,8 +397,13 @@ public struct VoiceTiming: Codable, Equatable, Sendable {
     public var firstPartialMs: Int?
     /// Key-up → each engine's final, by recognizer id.
     public var finalMs: [String: Int]
-    public init(holdMs: Int? = nil, firstPartialMs: Int? = nil, finalMs: [String: Int] = [:]) {
+    /// The microphone the take recorded from: its `MicrophoneTransport` and why it was picked (`MicrophonePick.Reason`).
+    public var microphone: String?
+    public var microphonePick: String?
+    public init(holdMs: Int? = nil, firstPartialMs: Int? = nil, finalMs: [String: Int] = [:], microphone: String? = nil,
+                microphonePick: String? = nil) {
         self.holdMs = holdMs; self.firstPartialMs = firstPartialMs; self.finalMs = finalMs
+        self.microphone = microphone; self.microphonePick = microphonePick
     }
 }
 

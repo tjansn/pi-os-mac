@@ -94,6 +94,8 @@ extension HarnessClient: ModelSettingsService {}
     private let speechStatus = PanelStyle.label("", size: 12, color: .labelColor)
     private let microphoneButton = NSButton(title: "Request Access…", target: nil, action: nil)
     private let speechButton = NSButton(title: "Request Access…", target: nil, action: nil)
+    /// Settings → Voice → Microphone input: Automatic, the system input or one device (MicrophoneChoice).
+    private let microphonePopup = NSPopUpButton()
     private let voiceNote = NSTextField(wrappingLabelWithString: "")
     // Settings → Voice scrolls: languages, recognition and instant commands no longer fit one page.
     private let voiceScroll = NSScrollView()
@@ -461,6 +463,15 @@ extension HarnessClient: ModelSettingsService {}
             _ = note("pi-os asks for access only when you press a button here; the shortcut never shows a permission prompt. Both grants are needed for voice.",
                      NSRect(x: 28, y: 80, width: 502, height: 30), in: block)
         }
+        section(80, gap: 20) { block in
+            let label = PanelStyle.label(MicrophoneText.rowTitle, size: 13, color: .labelColor)
+            label.frame = NSRect(x: 28, y: 4, width: 190, height: 22); block.addSubview(label)
+            microphonePopup.frame = NSRect(x: 226, y: 0, width: 306, height: 28)
+            microphonePopup.target = self; microphonePopup.action = #selector(microphoneChosen)
+            microphonePopup.setAccessibilityLabel(MicrophoneText.rowTitle)
+            block.addSubview(microphonePopup)
+            _ = note(MicrophoneText.hint, NSRect(x: 28, y: 36, width: 502, height: 44), in: block)
+        }
         let languages = VoiceLanguage.allCases
         section(28 + CGFloat(languages.count) * 34 + 34, gap: 14) { block in
             let heading = PanelStyle.label("Languages I speak", size: 13, weight: .semibold, color: .labelColor)
@@ -690,6 +701,41 @@ extension HarnessClient: ModelSettingsService {}
 
     // MARK: Voice (host-local: TCC status and AssetInventory, never the harness)
 
+    /// The microphone menu: Automatic (with what it would use now), the system input, then every microphone; a chosen
+    /// device that is not connected stays listed and selected. Items carry the stored preference.
+    private func refreshMicrophones(available: Bool) {
+        let microphones = voice.microphones()
+        let preference = voiceSettings.microphone
+        let menu = NSMenu()
+        func add(_ title: String, _ value: MicrophonePreference, name: String? = nil) {
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            item.representedObject = [value.stored, name ?? ""]
+            menu.addItem(item)
+        }
+        add(MicrophoneText.automaticItem(using: microphones.pick(.automatic).device), .automatic)
+        add(MicrophoneText.system, .system)
+        let listed = microphones.devices.filter { $0.alive && $0.transport != .aggregate && !$0.uid.isEmpty }
+        if !listed.isEmpty { menu.addItem(.separator()) }
+        for device in listed {
+            add(MicrophoneText.device(device, lidClosed: microphones.lidClosed), .device(uid: device.uid), name: device.name)
+        }
+        if case .device(let uid) = preference, !listed.contains(where: { $0.uid == uid }) {
+            add(MicrophoneText.missing(voiceSettings.microphoneName ?? ""), preference, name: voiceSettings.microphoneName)
+        }
+        microphonePopup.menu = menu
+        let selected = menu.items.firstIndex { ($0.representedObject as? [String])?.first == preference.stored } ?? 0
+        microphonePopup.selectItem(at: selected)
+        microphonePopup.isEnabled = available
+    }
+
+    @objc private func microphoneChosen() {
+        guard let value = microphonePopup.selectedItem?.representedObject as? [String], value.count == 2 else { return }
+        let preference = MicrophonePreference(stored: value[0])
+        guard preference != voiceSettings.microphone else { return }
+        voiceSettings.setMicrophone(preference, name: value[1].isEmpty ? nil : value[1])
+        refreshMicrophones(available: microphonePopup.isEnabled)
+    }
+
     private func refreshVoice() {
         let available = voice.engineAvailable
         let enabled = voiceSettings.enabled
@@ -707,6 +753,7 @@ extension HarnessClient: ModelSettingsService {}
             button.setAccessibilityLabel(action.map { name + ": " + $0.replacingOccurrences(of: "…", with: "") })
             fitVoiceButton(button, status: label, right: 530)
         }
+        refreshMicrophones(available: available)
         let spoken = voiceSettings.languages
         for language in VoiceLanguage.allCases {
             let on = spoken.contains(language)

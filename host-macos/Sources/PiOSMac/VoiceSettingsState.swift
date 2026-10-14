@@ -59,6 +59,20 @@ import PiOSCore
             NotificationCenter.default.post(name: Self.changed, object: self)
         }
     }
+    /// Settings → Voice → Microphone input. Each take reads the same key (MicrophoneDevices.preference).
+    public var microphone: MicrophonePreference {
+        MicrophonePreference(stored: defaults.string(forKey: MicrophonePreference.defaultsKey))
+    }
+    /// The chosen device's name when it was chosen (Settings names it while it is not connected).
+    public var microphoneName: String? { defaults.string(forKey: MicrophonePreference.nameKey) }
+    /// Stores the choice; `name` is kept for a chosen device only.
+    public func setMicrophone(_ preference: MicrophonePreference, name: String? = nil) {
+        defaults.set(preference.stored, forKey: MicrophonePreference.defaultsKey)
+        if case .device = preference, let name { defaults.set(name, forKey: MicrophonePreference.nameKey) }
+        else { defaults.removeObject(forKey: MicrophonePreference.nameKey) }
+        NotificationCenter.default.post(name: Self.changed, object: self)
+    }
+
     /// True while the one-time note about the languages migration is still to be shown.
     public var languagesNotePending: Bool { defaults.bool(forKey: Self.languagesNoteKey) }
     public func dismissLanguagesNote() { defaults.removeObject(forKey: Self.languagesNoteKey) }
@@ -117,6 +131,8 @@ import PiOSCore
     func releaseAssets(_ language: VoiceLanguage) async
     /// Ready when any of `languages` has an installed model.
     func readiness(enabled: Bool, languages: [VoiceLanguage]) async -> VoiceReadiness
+    /// The Mac's microphones (Settings → Voice → Microphone input). Reads only; opens none.
+    func microphones() -> MicrophoneSnapshot
 }
 
 public extension VoiceSystem {
@@ -134,6 +150,8 @@ public extension VoiceSystem {
     func readiness(enabled: Bool, languages: [VoiceLanguage]) async -> VoiceReadiness {
         await readiness(enabled: enabled, language: languages.first ?? .defaultValue)
     }
+    /// Fakes and previews list no microphone: Settings then offers Automatic and the system input only.
+    func microphones() -> MicrophoneSnapshot { MicrophoneSnapshot() }
 }
 
 @MainActor public final class SystemVoice: VoiceSystem {
@@ -156,6 +174,7 @@ public extension VoiceSystem {
     public func readiness(enabled: Bool, languages: [VoiceLanguage]) async -> VoiceReadiness {
         await VoiceAvailability.readiness(enabled: enabled, languages: languages)
     }
+    public func microphones() -> MicrophoneSnapshot { MicrophoneDevices.snapshot() }
 }
 
 /// Text for the Voice settings rows. Pure, so the wording is testable without TCC.

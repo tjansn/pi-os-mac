@@ -8,7 +8,7 @@ import PiOSCore
 // settled it), plus the decision's kind and source.
 //
 // Privacy: an entry can only hold durations, counts and closed vocabulary (decision kinds, recognizer ids, `via`,
-// fallthrough reasons). Values that do not fit their pattern are dropped when the line is written, so a transcript,
+// fallthrough reasons, the microphone's kind of connection, never its name). Values that do not fit their pattern are dropped when the line is written, so a transcript,
 // a heard name or an app choice can never reach the file.
 
 /// One voice take's timing. Milliseconds; nil means "not reached" (for example no partial before key-up).
@@ -42,14 +42,18 @@ public struct VoiceTimingEntry: Equatable, Sendable {
     public var via: String?
     /// A fallthrough's reason (`no_match`, `low_confidence`, …).
     public var reason: String?
+    /// The microphone's `MicrophoneTransport` (`usb`, `builtin`, `bluetooth`, …) and why it was picked (`auto`, `chosen`, …).
+    public var microphone: String?
+    public var microphonePick: String?
 
     public init(holdMs: Int? = nil, firstPartialMs: Int? = nil, finishMs: Int? = nil, finalMs: [String: Int] = [:], cutModules: Int = 0,
                 hypotheses: Int = 0, decisionMs: Int? = nil, hiddenMs: Int? = nil, decision: String, source: String? = nil,
-                recognizer: String? = nil, via: String? = nil, reason: String? = nil, finals: Int = 0) {
+                recognizer: String? = nil, via: String? = nil, reason: String? = nil, finals: Int = 0, microphone: String? = nil,
+                microphonePick: String? = nil) {
         self.holdMs = holdMs; self.firstPartialMs = firstPartialMs; self.finishMs = finishMs; self.finalMs = finalMs
         self.cutModules = cutModules; self.hypotheses = hypotheses; self.decisionMs = decisionMs; self.hiddenMs = hiddenMs
         self.decision = decision; self.source = source; self.recognizer = recognizer; self.via = via; self.reason = reason
-        self.finals = finals
+        self.finals = finals; self.microphone = microphone; self.microphonePick = microphonePick
     }
 
     /// The log line (no trailing newline). Every word is a closed-vocabulary token or a number.
@@ -68,6 +72,8 @@ public struct VoiceTimingEntry: Equatable, Sendable {
         parts.append("recognizer=" + (recognizer.flatMap { RecognizerID.isValid($0) ? $0 : nil } ?? "-"))
         parts.append("via=" + (via.flatMap(Self.token) ?? "-"))
         parts.append("reason=" + (reason.flatMap(Self.token) ?? "-"))
+        parts.append("mic=" + (microphone.flatMap(Self.token) ?? "-"))
+        parts.append("mic_pick=" + (microphonePick.flatMap(Self.token) ?? "-"))
         return parts.joined(separator: " ")
     }
 

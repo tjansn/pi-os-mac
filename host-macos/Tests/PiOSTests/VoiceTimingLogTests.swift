@@ -15,21 +15,23 @@ final class VoiceTimingLogTests: XCTestCase {
     func testALineHasEveryStageAndNothingElse() {
         let entry = VoiceTimingEntry(holdMs: 1_200, firstPartialMs: 640, finishMs: 47, finalMs: ["apple-dt/en-US": 41, "apple-dt/de-DE": 57],
                                      cutModules: 1, hypotheses: 4, decisionMs: 2, hiddenMs: 401, decision: "act", source: "grammar",
-                                     recognizer: "apple-dt/de-DE", via: "sound", reason: nil, finals: 1)
+                                     recognizer: "apple-dt/de-DE", via: "sound", reason: nil, finals: 1, microphone: "usb", microphonePick: "auto")
         let line = entry.line(at: Date(timeIntervalSince1970: 1_791_000_000))
         XCTAssertEqual(line, "at=2026-10-03T04:00:00.000Z decision=act hold=1200 first_partial=640 finish=47 "
                        + "final=apple-dt/de-DE:57,apple-dt/en-US:41 cut=1 hypotheses=4 finals=1 decide=2 hidden=401 source=grammar "
-                       + "recognizer=apple-dt/de-DE via=sound reason=-")
+                       + "recognizer=apple-dt/de-DE via=sound reason=- mic=usb mic_pick=auto")
         let empty = VoiceTimingEntry(decision: "empty").line(at: Date(timeIntervalSince1970: 0))
         XCTAssertTrue(empty.contains("hold=- first_partial=- finish=- final=- cut=0 hypotheses=0 finals=0"), empty)
+        XCTAssertTrue(empty.hasSuffix(" mic=- mic_pick=-"), empty)
     }
 
     func testContentCanNeverReachTheLine() {
         // Every free-text slot is pattern-checked: a transcript, an app name or a path is dropped, never written.
         let hostile = VoiceTimingEntry(holdMs: -5, finalMs: ["open Pages": 3, "apple-dt/en-US": 9_999_999], decision: "Open Pages",
-                                       source: "/Users/tom/secret", recognizer: "Öffne Keynote", via: "kein note", reason: "no_match because")
+                                       source: "/Users/tom/secret", recognizer: "Öffne Keynote", via: "kein note", reason: "no_match because",
+                                       microphone: "AirPods Pro von Tom", microphonePick: "USB Camera")
         let line = hostile.line(at: Date())
-        for content in ["Pages", "secret", "Keynote", "kein", "because", "/Users", "Öffne"] {
+        for content in ["Pages", "secret", "Keynote", "kein", "because", "/Users", "Öffne", "AirPods", "Tom", "Camera"] {
             XCTAssertFalse(line.contains(content), "\(content) in \(line)")
         }
         XCTAssertTrue(line.contains("decision=unknown")); XCTAssertTrue(line.contains("hold=0"))

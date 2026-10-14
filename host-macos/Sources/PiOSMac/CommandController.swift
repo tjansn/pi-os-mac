@@ -2244,7 +2244,8 @@ public enum SpokenPick: Equatable {
                                     finishMs: ms(take.releasedAt, take.finishedAt), finalMs: take.final?.finalMs ?? [:],
                                     cutModules: take.cut, hypotheses: take.hypotheses, decisionMs: ms(take.finishedAt, take.decidedAt),
                                     hiddenMs: ms(take.decidedAt, take.hiddenAt), decision: take.decision ?? "unknown",
-                                    source: take.source, recognizer: take.recognizer, via: take.via, reason: take.reason, finals: take.finals))
+                                    source: take.source, recognizer: take.recognizer, via: take.via, reason: take.reason, finals: take.finals,
+                                    microphone: take.final?.microphone, microphonePick: take.final?.microphonePick))
     }
     /// The final about to be sent is in: the line's `finish` is key-up → the final that decides.
     private func stageArrived(primary: Bool, takeId: String) {
