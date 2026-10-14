@@ -195,8 +195,10 @@ The installed build is **stale**: it still runs one SpeechTranscriber locale and
   revision `7dd20fe6b1797d35f5e3307e8b1732d9a178edfe`, 21 files (483,105,645 bytes) with sizes and SHA-256 pinned in
   code (`SpeechModelDescriptor.parakeetV3` equals `ParakeetModel.descriptor`). Staged download, every file verified,
   one rename into `<support>/models/parakeet-tdt-v3/` (0600/0700, excluded from backups); cancel and delete clean up.
-  The download and every load take a non-blocking flock on the local-inference lock (`deferredByLock` while held;
-  a deferred download keeps waiting instead of falling back to "Download"); per-take inference takes none.
+  The download and every load take a non-blocking flock on the store's injected lock (`deferredByLock` while held;
+  a deferred download keeps waiting instead of falling back to "Download"); per-take inference takes none. The app
+  injects `NoInferenceLock` (Tom, 2026-10-14): the resident Qwen service holds the `_LOCAL_AI` lock for its whole run,
+  which had kept Parakeet unloaded since 2026-10-10; the bench and the speech tests still honour that lock.
   `prepare()` never downloads.
 - **App wiring** (`Application.swift`): one store in the harness's support directory (a fixture's
   `PI_OS_SUPPORT_DIR` in installed-test runs); `prepare()` detached at utility priority at launch with voice on, on

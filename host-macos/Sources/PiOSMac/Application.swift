@@ -462,8 +462,8 @@ import PiOSCore
         }
     }
     /// Loads the installed multilingual model at utility priority, off the hotkey path: at launch, when voice is switched
-    /// on (or another Voice setting changes) and when Settings → Voice opens. Never downloads; a held local-AI benchmark
-    /// lock defers it (`retryDeferredSpeechModels`).
+    /// on (or another Voice setting changes) and when Settings → Voice opens. Never downloads. The app's store waits for
+    /// no lock (`NoInferenceLock`); a store that injects one is retried after takes (`retryDeferredSpeechModels`).
     private func prepareSpeechModels() {
         guard let speechModels, voiceSettings.enabled, voiceSystem.engineAvailable else { return }
         Task.detached(priority: .utility) { await speechModels.prepare() }

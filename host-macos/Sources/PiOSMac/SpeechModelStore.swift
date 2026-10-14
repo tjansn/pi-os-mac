@@ -7,8 +7,9 @@ import PiOSCore
 // Core ML conversion, fetched once from a pinned Hugging Face revision after the user's consent in Settings, verified
 // file by file against pinned sizes and SHA-256 digests, and moved into `<support>/models/parakeet-tdt-v3/` in one rename.
 // The download and every model load (the first one compiles for the Neural Engine) take a NON-BLOCKING flock on the
-// local-inference lock: when it is held the step is deferred (`.deferredByLock`) and Apple recognition is used meanwhile.
-// Per-take inference never takes the lock (push-to-talk cannot wait).
+// injected lock: when it is held the step is deferred (`.deferredByLock`) and Apple recognition is used meanwhile. The
+// app's store coordinates with nothing (`NoInferenceLock`, Tom 2026-10-14); the bench and tests inject the `_LOCAL_AI`
+// lock or a fake. Per-take inference never takes a lock (push-to-talk cannot wait).
 // Files are 0600 in 0700 directories, excluded from backups. Privacy: nothing here logs; errors are fixed, content-free
 // messages; no audio or text ever passes through this file.
 
@@ -131,6 +132,13 @@ public struct FileInferenceLock: InferenceLocking {
             close(descriptor)
         }
     }
+}
+
+/// The app's: the model runs on the Neural Engine and CPU, not the GPU the `_LOCAL_AI` lock coordinates, and the resident
+/// Qwen service holds that lock for its whole run, so waiting for it meant Apple recognition only (Tom, 2026-10-14).
+public struct NoInferenceLock: InferenceLocking {
+    public init() {}
+    public func tryAcquire() -> InferenceLockHold? { InferenceLockHold() }
 }
 
 /// For a process that already holds the local-inference lock around its whole run (the bench, the opt-in test):
@@ -280,11 +288,13 @@ public final class SpeechModelStore: SpeechModelStoring, @unchecked Sendable {
     private var model: SpeechDecoding?
     private var lastProgressStep = -1
 
-    /// The app's store: `<support>/models/parakeet-tdt-v3/`, Hugging Face over URLSession, the `_LOCAL_AI` lock, FluidAudio.
+    /// The app's store: `<support>/models/parakeet-tdt-v3/`, Hugging Face over URLSession, no lock, FluidAudio.
     public convenience init(support: URL) {
         self.init(support: support, descriptor: ParakeetModel.descriptor, files: ParakeetModel.files,
-                  transport: URLSessionModelTransport(), inferenceLock: FileInferenceLock.standard, loader: ParakeetModelLoader())
+                  transport: URLSessionModelTransport(), inferenceLock: Self.appInferenceLock, loader: ParakeetModelLoader())
     }
+
+    static let appInferenceLock: InferenceLocking = NoInferenceLock()
 
     /// Tests and the bench inject a fake transport, lock and loader (or a local mirror as `baseURL`).
     public init(support: URL, descriptor: SpeechModelDescriptor, files: [SpeechModelFile], transport: SpeechModelTransport,

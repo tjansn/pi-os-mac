@@ -1101,9 +1101,10 @@ pinned in `SpeechModelDescriptor.parakeetV3` with every file's size and SHA-256 
 alone (Swift `SpeechModelStoring`, `SpeechModelDescriptor`, `SpeechModelState` in `VoiceTypes.swift`). Files
 go to `<support>/models/<directoryName>/`. Settings → Voice → Recognition shows the state —
 `notDownloaded`, `downloading(progress)`, `compiling` (first load and Neural Engine compile), `ready`,
-`failed`, `deferredByLock` — and downloads only after a consent sheet. The download and every model load
-(the first one compiles for the Neural Engine) take a non-blocking lock on the local-inference coordination
-file and are deferred while it is held; per-take inference takes no lock. Loading happens at launch, when
+`failed`, `deferredByLock` — and downloads only after a consent sheet. The app's download and model loads
+do not wait for the local-inference coordination file (the model runs on the Neural Engine; the resident
+Qwen service holds that lock for its whole run), so `deferredByLock` is left to stores that inject a lock;
+per-take inference takes no lock. Loading happens at launch, when
 voice is enabled, when Settings → Voice opens and after a take while it was deferred, never on the hotkey
 path; until the model is ready voice uses Apple recognition only. Nothing about it crosses the Node
 protocol except the hypotheses' `source` (`parakeet-v3`).

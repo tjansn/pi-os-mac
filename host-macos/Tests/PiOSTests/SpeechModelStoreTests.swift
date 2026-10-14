@@ -422,6 +422,9 @@ final class SpeechModelStoreTests: XCTestCase {
         let started = Date()
         XCTAssertNil(FileInferenceLock(path: path).tryAcquire(), "held elsewhere: deferred")
         XCTAssertLessThan(Date().timeIntervalSince(started), 0.5, "never blocks")
+        // The app's store loads anyway: the resident Qwen service holds the real lock for its whole run (Tom, 2026-10-14).
+        XCTAssertNotNil(SpeechModelStore.appInferenceLock.tryAcquire())
+        XCTAssertNotNil(NoInferenceLock().tryAcquire())
         flock(other, LOCK_UN); close(other)
         let hold = try XCTUnwrap(FileInferenceLock(path: path).tryAcquire())
         let probe = open(path, O_RDONLY)
