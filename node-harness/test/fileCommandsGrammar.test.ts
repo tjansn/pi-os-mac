@@ -171,6 +171,8 @@ test("file-command grammar: policy first — today's handling for the Trash, com
     ["rm -r ~/x", "en-US"], ["lösche /tmp/x", "de-DE"],
     // Compounds.
     ["lösche test und dann öffne Safari", "de-DE"], ["delete test and then open Notes", "en-US"], ["kopiere test und verschiebe Radfotos", "de-DE"],
+    // A comma before "and" may end a list of names, never hide a second command.
+    ["delete test, and open Safari", "en-US"], ["delete Plan, and then Notes", "en-US"], ["lösche test, und dann Safari", "de-DE"],
     // Text and in-app edits, UI objects, the clipboard.
     ["delete the last sentence", "en-US"], ["Lösche den letzten Satz.", "de-DE"], ["Entferne das Wort.", "de-DE"], ["remove the second paragraph", "en-US"],
     ["copy the link", "en-US"], ["copy test to clipboard", "en-US"], ["kopiere test in die Zwischenablage", "de-DE"], ["move the window to the left", "en-US"],

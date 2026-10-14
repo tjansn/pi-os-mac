@@ -202,12 +202,19 @@ const WRAPPING_QUOTES = /^["'](.+)["']$/su;
 const PREPOSITION_WORD = new RegExp(`${WORD_START}(?:in|im|aus|from|on|auf|von|vom|nach|to|at|bei|unter|under|inside|innerhalb)${WORD_END}`, "u");
 
 /**
+ * A comma before "and" that ends a list of names ("Plan, Notes, and Budget", as dictation writes it). A second command
+ * still shows as one by its verb or a "then" ("delete test, and open Safari", "delete test, and then Notes").
+ */
+const LIST_COMMA = /,\s*(?=(?:and|und)\s)/gu;
+
+/**
  * The file command an utterance asks for, or null. `n` is the normalized request (normalize.ts); `voice` also parses
  * the spoken command core.
  */
 export function matchFileCommand(n: Normalized, options: FileCommandOptions = {}): FileCommand | null {
   if (!n.lower || n.lower.length > 300) return null;
-  if (isCompound(n) || isBareEdit(n) || TRASH.test(n.lower) || UNINSTALL.test(n.lower)) return null;
+  if (isCompound({ ...n, lower: n.lower.replace(LIST_COMMA, " ") })) return null;
+  if (isBareEdit(n) || TRASH.test(n.lower) || UNINSTALL.test(n.lower)) return null;
   const forms: Form[] = [{ lower: n.lower, cased: n.text.length === n.lower.length ? n.text : n.lower }];
   if (options.voice) {
     // The core first, as the spoken open grammar does: on the raw text a filler or wrapper would end up in the name
