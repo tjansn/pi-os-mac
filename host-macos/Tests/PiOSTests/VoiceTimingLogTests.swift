@@ -15,14 +15,15 @@ final class VoiceTimingLogTests: XCTestCase {
     func testALineHasEveryStageAndNothingElse() {
         let entry = VoiceTimingEntry(holdMs: 1_200, firstPartialMs: 640, finishMs: 47, finalMs: ["apple-dt/en-US": 41, "apple-dt/de-DE": 57],
                                      cutModules: 1, hypotheses: 4, decisionMs: 2, hiddenMs: 401, decision: "act", source: "grammar",
-                                     recognizer: "apple-dt/de-DE", via: "sound", reason: nil, finals: 1, microphone: "usb", microphonePick: "auto")
+                                     recognizer: "apple-dt/de-DE", via: "sound", reason: nil, finals: 1, microphone: "usb", microphonePick: "auto",
+                                     microphoneWaitMs: 85)
         let line = entry.line(at: Date(timeIntervalSince1970: 1_791_000_000))
         XCTAssertEqual(line, "at=2026-10-03T04:00:00.000Z decision=act hold=1200 first_partial=640 finish=47 "
                        + "final=apple-dt/de-DE:57,apple-dt/en-US:41 cut=1 hypotheses=4 finals=1 decide=2 hidden=401 source=grammar "
-                       + "recognizer=apple-dt/de-DE via=sound reason=- mic=usb mic_pick=auto")
+                       + "recognizer=apple-dt/de-DE via=sound reason=- mic=usb mic_pick=auto mic_wait=85")
         let empty = VoiceTimingEntry(decision: "empty").line(at: Date(timeIntervalSince1970: 0))
         XCTAssertTrue(empty.contains("hold=- first_partial=- finish=- final=- cut=0 hypotheses=0 finals=0"), empty)
-        XCTAssertTrue(empty.hasSuffix(" mic=- mic_pick=-"), empty)
+        XCTAssertTrue(empty.hasSuffix(" mic=- mic_pick=- mic_wait=-"), empty)
     }
 
     func testContentCanNeverReachTheLine() {

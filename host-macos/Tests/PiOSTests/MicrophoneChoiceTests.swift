@@ -98,6 +98,49 @@ final class MicrophoneChoiceTests: XCTestCase {
         XCTAssertEqual(MicrophoneDevices.transport(0), .other)
     }
 
+    func testADirectMicrophoneHandsOverFiftyMillisecondChunks() {
+        XCTAssertEqual(DirectMicrophone.chunkFrames(sampleRate: 48_000), 2_400)
+        XCTAssertEqual(DirectMicrophone.chunkFrames(sampleRate: 16_000), 800)
+        XCTAssertEqual(DirectMicrophone.chunkFrames(sampleRate: 44_100), 2_205)
+    }
+
+    func testADeviceThatIsNotThereIsAnErrorNotACrash() {
+        // Configures a HAL unit only; nothing starts, so no microphone opens.
+        XCTAssertThrowsError(try DirectMicrophone(device: 0x7FFF_FFF0, delivery: DispatchQueue(label: "test.direct")))
+    }
+
+    /// Opt-in (`PI_OS_MICROPHONE_OPEN_PROBE=1`): OPENS the microphone Automatic picks (directly, as a take would when it
+    /// overrides the system's input) for half a second and prints how long the first buffer took. The audio is dropped.
+    func testProbeOpenThisMacsMicrophone() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["PI_OS_MICROPHONE_OPEN_PROBE"] == "1")
+        let pick = MicrophoneDevices.snapshot().pick(.automatic)
+        let device = try XCTUnwrap(pick.device, "nothing to open")
+        let first = expectation(description: "first buffer")
+        let seen = Seen()
+        let started = ProcessInfo.processInfo.systemUptime
+        let microphone = try DirectMicrophone(device: device.id, delivery: DispatchQueue(label: "probe.direct"))
+        try microphone.start { buffer in
+            if seen.mark(frames: Int(buffer.frameLength)) { first.fulfill() }
+        }
+        wait(for: [first], timeout: 3)
+        let waited = Int(((ProcessInfo.processInfo.systemUptime - started) * 1000).rounded())
+        Thread.sleep(forTimeInterval: 0.5)
+        microphone.stop()
+        print("microphone-open-probe device=\(device.transport.rawValue) overrides=\(pick.overrides) first_buffer_ms=\(waited)",
+              "format=\(Int(microphone.format.sampleRate))Hz/\(microphone.format.channelCount)ch frames=\(seen.frames)")
+    }
+
+    private final class Seen: @unchecked Sendable {
+        private let lock = NSLock()
+        private(set) var frames = 0
+        /// True for the first buffer.
+        func mark(frames count: Int) -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            frames += count
+            return frames == count
+        }
+    }
+
     /// Opt-in (`PI_OS_MICROPHONE_PROBE=1`): what Automatic picks on this Mac now. Reads CoreAudio only; opens no microphone.
     func testProbeThisMac() throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["PI_OS_MICROPHONE_PROBE"] == "1")

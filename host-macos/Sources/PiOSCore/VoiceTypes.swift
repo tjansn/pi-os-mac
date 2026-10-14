@@ -400,10 +400,12 @@ public struct VoiceTiming: Codable, Equatable, Sendable {
     /// The microphone the take recorded from: its `MicrophoneTransport` and why it was picked (`MicrophonePick.Reason`).
     public var microphone: String?
     public var microphonePick: String?
+    /// Capture start → the microphone's first sample: the lead-in the take lost.
+    public var microphoneWaitMs: Int?
     public init(holdMs: Int? = nil, firstPartialMs: Int? = nil, finalMs: [String: Int] = [:], microphone: String? = nil,
-                microphonePick: String? = nil) {
+                microphonePick: String? = nil, microphoneWaitMs: Int? = nil) {
         self.holdMs = holdMs; self.firstPartialMs = firstPartialMs; self.finalMs = finalMs
-        self.microphone = microphone; self.microphonePick = microphonePick
+        self.microphone = microphone; self.microphonePick = microphonePick; self.microphoneWaitMs = microphoneWaitMs
     }
 }
 

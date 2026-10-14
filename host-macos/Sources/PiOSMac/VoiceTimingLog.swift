@@ -45,15 +45,17 @@ public struct VoiceTimingEntry: Equatable, Sendable {
     /// The microphone's `MicrophoneTransport` (`usb`, `builtin`, `bluetooth`, …) and why it was picked (`auto`, `chosen`, …).
     public var microphone: String?
     public var microphonePick: String?
+    /// Capture start → the microphone's first sample (the lead-in the take lost).
+    public var microphoneWaitMs: Int?
 
     public init(holdMs: Int? = nil, firstPartialMs: Int? = nil, finishMs: Int? = nil, finalMs: [String: Int] = [:], cutModules: Int = 0,
                 hypotheses: Int = 0, decisionMs: Int? = nil, hiddenMs: Int? = nil, decision: String, source: String? = nil,
                 recognizer: String? = nil, via: String? = nil, reason: String? = nil, finals: Int = 0, microphone: String? = nil,
-                microphonePick: String? = nil) {
+                microphonePick: String? = nil, microphoneWaitMs: Int? = nil) {
         self.holdMs = holdMs; self.firstPartialMs = firstPartialMs; self.finishMs = finishMs; self.finalMs = finalMs
         self.cutModules = cutModules; self.hypotheses = hypotheses; self.decisionMs = decisionMs; self.hiddenMs = hiddenMs
         self.decision = decision; self.source = source; self.recognizer = recognizer; self.via = via; self.reason = reason
-        self.finals = finals; self.microphone = microphone; self.microphonePick = microphonePick
+        self.finals = finals; self.microphone = microphone; self.microphonePick = microphonePick; self.microphoneWaitMs = microphoneWaitMs
     }
 
     /// The log line (no trailing newline). Every word is a closed-vocabulary token or a number.
@@ -74,6 +76,7 @@ public struct VoiceTimingEntry: Equatable, Sendable {
         parts.append("reason=" + (reason.flatMap(Self.token) ?? "-"))
         parts.append("mic=" + (microphone.flatMap(Self.token) ?? "-"))
         parts.append("mic_pick=" + (microphonePick.flatMap(Self.token) ?? "-"))
+        parts.append("mic_wait=" + ms(microphoneWaitMs))
         return parts.joined(separator: " ")
     }
 

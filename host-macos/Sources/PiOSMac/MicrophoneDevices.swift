@@ -1,5 +1,3 @@
-import AudioToolbox
-import AVFoundation
 import CoreAudio
 import Foundation
 import IOKit
@@ -40,22 +38,6 @@ enum MicrophoneDevices {
     /// Settings → Voice → Microphone input (read from the defaults directly, so the capture queue can ask).
     static func preference(defaults: UserDefaults = .standard) -> MicrophonePreference {
         MicrophonePreference(stored: defaults.string(forKey: MicrophonePreference.defaultsKey))
-    }
-
-    /// Makes `engine`'s input node record from `device`. Before the node's format is read and the engine prepared.
-    static func use(_ device: AudioDeviceID, on engine: AVAudioEngine) -> Bool {
-        guard let unit = engine.inputNode.audioUnit else { return false }
-        var id = device
-        return AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &id,
-                                    UInt32(MemoryLayout<AudioDeviceID>.size)) == noErr
-    }
-
-    /// The device's current sample rate; nil when CoreAudio does not say.
-    static func nominalSampleRate(_ id: AudioDeviceID) -> Double? {
-        var address = global(kAudioDevicePropertyNominalSampleRate)
-        var value: Float64 = 0
-        var size = UInt32(MemoryLayout<Float64>.size)
-        return AudioObjectGetPropertyData(id, &address, 0, nil, &size, &value) == noErr && value > 0 ? value : nil
     }
 
     static func transport(_ raw: UInt32) -> MicrophoneTransport {

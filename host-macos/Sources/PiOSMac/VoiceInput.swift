@@ -727,12 +727,13 @@ public enum VoiceAvailability {
         return stamped(collector.final(outcome, audio: take.capture.takeAudio()), take)
     }
 
-    /// The final with the take's microphone, for the timing log's `mic=` and `mic_pick=`.
+    /// The final with the take's microphone, for the timing log's `mic=`, `mic_pick=` and `mic_wait=`.
     private func stamped(_ final: VoiceFinal, _ take: Take) -> VoiceFinal {
         guard let microphone = take.capture.microphoneInUse else { return final }
         var final = final
         final.timing.microphone = microphone.transport.rawValue
         final.timing.microphonePick = microphone.reason.rawValue
+        final.timing.microphoneWaitMs = take.capture.microphoneWaitMs
         return final
     }
 
@@ -917,6 +918,10 @@ final class MicrophoneCapture: @unchecked Sendable {
     let queue = DispatchQueue(label: "dev.pi-os.voice.capture", qos: .userInitiated)
     // Confined to `queue`. Created by `start()` only, so a capture that never starts never touches audio.
     private var engine: AVAudioEngine?
+    /// A picked microphone other than the system's input, opened without AVAudioEngine.
+    private var direct: DirectMicrophone?
+    /// The direct microphone's buffers, in order across a restart.
+    private let delivery = DispatchQueue(label: "dev.pi-os.voice.delivery", qos: .userInteractive)
     private var restartPolicy = CaptureRestartPolicy()
     private var running = false
     private var tapInstalled = false
@@ -932,6 +937,9 @@ final class MicrophoneCapture: @unchecked Sendable {
     private var lastLevel = 0.0
     private var deliveredFrames: AVAudioFramePosition = 0
     private var microphoneUsed: (transport: MicrophoneTransport, reason: MicrophonePick.Reason)?
+    /// `start()` and the microphone's first sample (system uptime), for the timing log's `mic_wait=`.
+    private var startedAt: TimeInterval?
+    private var firstAudioAt: TimeInterval?
     private let teeFormat: AVAudioFormat
     private var teeConverter: AVAudioConverter?
     private var teeBegan = false
@@ -972,6 +980,7 @@ final class MicrophoneCapture: @unchecked Sendable {
     func start() {
         lock.lock(); beginTeeLocked(); lock.unlock()
         guard microphone else { return }
+        lock.lock(); startedAt = ProcessInfo.processInfo.systemUptime; lock.unlock()
         queue.async { [self] in
             // A take discarded before this block ran (a very quick tap) never opens the microphone.
             guard !isEnding else { return }
@@ -997,31 +1006,40 @@ final class MicrophoneCapture: @unchecked Sendable {
         if pick.device == nil, pick.lidClosed { throw VoiceError.unavailable(MicrophoneText.lidClosed) }
         let system = microphones.devices.first { $0.id == microphones.systemDefault }
         guard let device = pick.device, pick.overrides else {
-            return try startEngine(on: nil, using: pick.device ?? system, reason: pick.reason)
+            return try startEngine(using: pick.device ?? system, reason: pick.reason)
         }
         do {
-            try startEngine(on: device.id, using: device, reason: pick.reason)
+            try startDirect(device, reason: pick.reason)
         } catch {
-            // An engine that does not start on the picked device records from the system's input, as before.
+            // A picked device that does not start: the system's input, as before.
             stopEngine()
-            try startEngine(on: nil, using: system, reason: .failed)
+            try startEngine(using: system, reason: .failed)
         }
     }
 
-    /// One engine on `device` (nil: the system's input); `using` and `reason` are what the timing log reports.
-    private func startEngine(on device: AudioDeviceID?, using: MicrophoneDevice?, reason: MicrophonePick.Reason) throws {
+    /// The picked device opened directly (DirectMicrophone), never through AVAudioEngine's default device.
+    private func startDirect(_ device: MicrophoneDevice, reason: MicrophonePick.Reason) throws {
+        let microphone = try DirectMicrophone(device: device.id, delivery: delivery)
+        direct = microphone
+        lock.lock(); microphoneUsed = (device.transport, reason); lock.unlock()
+        // A late change from a microphone a restart already replaced is not a second change.
+        microphone.onChange = { [weak self, weak microphone] in
+            self?.queue.async { [weak self] in
+                guard let self, let microphone, direct === microphone else { return }
+                configurationChanged()
+            }
+        }
+        try microphone.start { [weak self] buffer in self?.ingest(buffer, owned: true) }
+    }
+
+    /// One engine on the system's input; `using` and `reason` are what the timing log reports.
+    private func startEngine(using: MicrophoneDevice?, reason: MicrophonePick.Reason) throws {
         let engine = AVAudioEngine()
         self.engine = engine
-        if let device, !MicrophoneDevices.use(device, on: engine) { throw VoiceError.unavailable(MicrophoneText.unavailable) }
         lock.lock(); microphoneUsed = using.map { ($0.transport, reason) }; lock.unlock()
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else {
-            throw VoiceError.unavailable(MicrophoneText.unavailable)
-        }
-        // A tap on a format the device does not deliver raises instead of throwing: on a picked device the node must
-        // report the device's own rate, else the caller records from the system's input.
-        if let device, let rate = MicrophoneDevices.nominalSampleRate(device), abs(rate - format.sampleRate) > 1 {
             throw VoiceError.unavailable(MicrophoneText.unavailable)
         }
         // Observed before start(), so a change between start() and registration is not missed.
@@ -1073,6 +1091,13 @@ final class MicrophoneCapture: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }; return microphoneUsed
     }
 
+    /// `start()` → the microphone's first sample: the lead-in a take loses. Nil before any audio.
+    var microphoneWaitMs: Int? {
+        lock.lock(); defer { lock.unlock() }
+        guard let startedAt, let firstAudioAt else { return nil }
+        return Int((max(0, firstAudioAt - startedAt) * 1000).rounded())
+    }
+
     /// The stream finished: the take's audio (`takeAudio()`) is complete.
     var isFinished: Bool { lock.lock(); defer { lock.unlock() }; return finished }
 
@@ -1091,6 +1116,7 @@ final class MicrophoneCapture: @unchecked Sendable {
 
     /// Queue-confined. Touches the input node only if this take installed a tap.
     private func stopEngine() {
+        direct?.stop(); direct = nil
         if let observer { NotificationCenter.default.removeObserver(observer); self.observer = nil }
         if tapInstalled { engine?.inputNode.removeTap(onBus: 0); tapInstalled = false }
         if running { engine?.stop(); running = false }
@@ -1118,8 +1144,13 @@ final class MicrophoneCapture: @unchecked Sendable {
     /// engine-owned ones are copied before being held or handed to the analyzer.
     func ingest(_ buffer: AVAudioPCMBuffer, owned: Bool) {
         let rms = Self.rms(buffer)
+        let now = ProcessInfo.processInfo.systemUptime
         lock.lock()
         guard !ending else { lock.unlock(); return }
+        if firstAudioAt == nil, buffer.frameLength > 0 {
+            // The buffer's first sample, not its arrival: a tap buffer or a direct chunk arrives once it is full.
+            firstAudioAt = now - Double(buffer.frameLength) / max(1, buffer.format.sampleRate)
+        }
         if analyzerFormat == nil {
             if pendingSeconds < Self.maximumPendingSeconds, let kept = owned ? buffer : Self.copy(buffer) {
                 pending.append(kept)
@@ -1128,7 +1159,6 @@ final class MicrophoneCapture: @unchecked Sendable {
         } else {
             convertLocked(buffer, owned: owned)
         }
-        let now = ProcessInfo.processInfo.systemUptime
         let report = now - lastLevel >= 0.05
         if report { lastLevel = now }
         lock.unlock()

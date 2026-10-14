@@ -232,6 +232,7 @@ final class VoiceCaptureTests: XCTestCase {
         let result = try XCTUnwrap(drained, "the stream finished while the engine queue was still held")
         XCTAssertEqual(Double(result.frames), 3_200, accuracy: 64)
         XCTAssertEqual(capture.deliveredSeconds, 0.2, accuracy: 0.005)
+        XCTAssertNil(capture.microphoneWaitMs, "no microphone opened: no lead-in to report")
     }
 
     func testTheTeeSeesEveryChunkAs16kMonoAndTheTakeIsKept() async throws {
