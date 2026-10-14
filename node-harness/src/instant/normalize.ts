@@ -132,7 +132,7 @@ const DE_PARTICLES = /^(öffne|oeffne|starte|start|mach|mache|hol|hole|zeig|zeig
  * ASR punctuation inside a command ("Open, Pages."). A comma between digits is a decimal or group separator
  * and stays; so do a URL's "://", a port or clock colon ("example.com:8080", "10:30") and a "?" inside a URL.
  */
-const INNER_PUNCTUATION = /[;!…]+|:(?!\/\/|\d)|\?(?!\w)|(?<!\d),|,(?!\d)/g;
+export const INNER_PUNCTUATION = /[;!…]+|:(?!\/\/|\d)|\?(?!\w)|(?<!\d),|,(?!\d)/g;
 
 /**
  * The command core of a spoken request (DESIGN4 §5.1): up to three rounds of leading fillers, request

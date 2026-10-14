@@ -145,6 +145,11 @@ test("file-command grammar: the spoken core drops fillers and wrappers before th
   assert.deepEqual(parse("Okay, lösche Test.", "de-DE", true), { op: "delete", name: "Test" });
   assert.deepEqual(parse("ich will Radfotos löschen", "de-DE", true), { op: "delete", name: "Radfotos" });
   assert.deepEqual(parse("um, delete test for me", "en-US", true), { op: "delete", name: "test" });
+  // The core keeps the case and the commas that part several names; an ASR comma after the verb still reads as none.
+  assert.deepEqual(parse("Äh, lösche Rechnung, Angebot und Notizen.", "de-DE", true),
+    { op: "delete", name: "Rechnung, Angebot und Notizen", names: ["Rechnung", "Angebot", "Notizen"] });
+  assert.deepEqual(parse("Lösche, Rechnung und Angebot.", "de-DE", true), { op: "delete", name: "Rechnung und Angebot", names: ["Rechnung", "Angebot"] });
+  assert.deepEqual(parse("Kopiere, Plan nach Dokumente", "de-DE", true), { op: "copy", splits: [{ name: "Plan", dest: "Dokumente" }] });
   // Typed text gets no core: a subject at the head of a verb-final form is no name.
   assert.equal(parse("ich will Radfotos löschen", "de-DE"), null);
 });

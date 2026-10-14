@@ -1,4 +1,4 @@
-import { normalize, spokenCore, type Normalized } from "../normalize.js";
+import { INNER_PUNCTUATION, normalize, spokenCore, type Normalized } from "../normalize.js";
 import { isBareEdit, isCompound, isDeictic, isInAppObject } from "./policy.js";
 
 /**
@@ -213,7 +213,7 @@ export function matchFileCommand(n: Normalized, options: FileCommandOptions = {}
     // The core first, as the spoken open grammar does: on the raw text a filler or wrapper would end up in the name
     // ("äh, test löschen").
     const core = spokenCore(n.lower);
-    if (core && core !== n.lower) forms.unshift({ lower: core, cased: casedCore(n, core) });
+    if (core && core !== n.lower) forms.unshift(...coreForms(n, core));
   }
   for (const form of forms) {
     const command = undoForm(form) ?? deleteForm(form) ?? createForm(form) ?? copyMoveForm(form) ?? renameForm(form) ?? closeForm(form);
@@ -252,11 +252,29 @@ export function phraseLike(name: string): boolean {
   return PREPOSITION_WORD.test(name.toLowerCase());
 }
 
-/** The original-case characters of the spoken core (the whole text's when the core is not a substring of it). */
-function casedCore(n: Normalized, core: string): string {
-  if (n.text.length !== n.lower.length) return core;
-  const at = n.lower.indexOf(core);
-  return at >= 0 ? n.text.slice(at, at + core.length) : core;
+/**
+ * The spoken core's forms, in their original case: first the stretch of the text whose words are the core's, its
+ * commas kept ("Äh, lösche Rechnung, Angebot und Notizen" → "lösche Rechnung, Angebot und Notizen": several names stay
+ * several), then that stretch without them, as the core reads (an ASR comma after the verb: "Lösche, test."). When the
+ * core changed a word ("deleting", "öffne mir mal"), the core itself.
+ */
+function coreForms(n: Normalized, core: string): Form[] {
+  const plain = (text: string) => text.replace(INNER_PUNCTUATION, " ").replace(/\s+-\s+/g, " ").replace(/\s+/g, " ").trim();
+  if (n.text.length === n.lower.length) {
+    // spokenCore's word breaks, blanked in place so every word keeps its offset in the text.
+    const blank = (m: string) => " ".repeat(m.length);
+    const words = [...n.lower.replace(INNER_PUNCTUATION, blank).replace(/\s+-\s+/g, blank).matchAll(/\S+/gu)];
+    const want = core.split(" ");
+    for (let i = 0; i + want.length <= words.length; i++) {
+      if (!want.every((word, k) => words[i + k]![0] === word)) continue;
+      const last = words[i + want.length - 1]!;
+      const start = words[i]!.index, end = last.index + last[0].length;
+      const said = { lower: n.lower.slice(start, end), cased: n.text.slice(start, end) };
+      const bare = { lower: plain(said.lower), cased: plain(said.cased) };
+      return said.lower === bare.lower ? [said] : [said, bare];
+    }
+  }
+  return [{ lower: core, cased: core }];
 }
 
 function group(form: Form, m: RegExpExecArray, index: number): string {
