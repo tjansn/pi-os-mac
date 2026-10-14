@@ -73,13 +73,15 @@ const ROWS: readonly (readonly [text: string, locale: string, expected: FileComm
   ["delete test from my Archive folder", "en-US", { op: "delete", name: "test", place: "Archive", whole: "test from my Archive folder" }],
   ["erstelle Ordner Belege in Projekte", "de-DE", { op: "create", name: "Belege", kind: "folder", place: "Projekte" }],
   // several names (DESIGN8 B1): delete, copy and move; the whole object stays the name
-  ["lösche a und b", "de-DE", { op: "delete", name: "a und b", names: ["a", "b"] }],
+  ["lösche test und tiest", "de-DE", { op: "delete", name: "test und tiest", names: ["test", "tiest"] }],
   ["lösche Rechnung, Angebot und Notizen", "de-DE", { op: "delete", name: "Rechnung, Angebot und Notizen", names: ["Rechnung", "Angebot", "Notizen"] }],
-  ["delete a, b, and c", "en-US", { op: "delete", name: "a, b, and c", names: ["a", "b", "c"] }],
-  ["lösche a und b in Downloads", "de-DE", { op: "delete", name: "a und b", names: ["a", "b"], place: "Downloads", whole: "a und b in Downloads" }],
-  ["copy a and b to Dokumente", "en-US", { op: "copy", splits: [{ name: "a and b", names: ["a", "b"], dest: "Dokumente" }] }],
-  ["dupliziere a und b", "de-DE", { op: "duplicate", name: "a und b" }],
-  ["lösche a und a", "de-DE", { op: "delete", name: "a und a" }],
+  ["delete Plan, Notes, and Budget", "en-US", { op: "delete", name: "Plan, Notes, and Budget", names: ["Plan", "Notes", "Budget"] }],
+  ["lösche test und tiest in Downloads", "de-DE", { op: "delete", name: "test und tiest", names: ["test", "tiest"], place: "Downloads", whole: "test und tiest in Downloads" }],
+  ["copy Plan and Notes to Dokumente", "en-US", { op: "copy", splits: [{ name: "Plan and Notes", names: ["Plan", "Notes"], dest: "Dokumente" }] }],
+  ["dupliziere test und tiest", "de-DE", { op: "duplicate", name: "test und tiest" }],
+  ["lösche test und Test", "de-DE", { op: "delete", name: "test und Test" }],
+  // an article alone is never a name, in a list too: one name
+  ["lösche a und b", "de-DE", { op: "delete", name: "a und b" }],
   // undo (DESIGN8 C1): the whole line
   ["rückgängig", "de-DE", { op: "undo" }],
   ["Mach das rückgängig.", "de-DE", { op: "undo" }],

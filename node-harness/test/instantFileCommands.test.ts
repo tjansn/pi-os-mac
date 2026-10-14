@@ -63,7 +63,7 @@ interface Make {
   active?: () => boolean;
   /** No fileCommands dependency at all (today's lane). */
   lane?: boolean;
-  /** The lane's disk reads (default: the real fs, which finds nothing under /Users/fixture). */
+  /** The lane's disk reads (default: none, so every folder keeps what the host shows; never this machine's disk). */
   listFolder?: FileCommandDeps["listFolder"];
   deps?: Partial<InstantDispatcherDeps>;
 }
@@ -82,7 +82,7 @@ function make(visible: VisibleItemsResult | null, options: Make = {}) {
         active: () => { reads++; return (options.active ?? (() => true))(); },
         store: ops, guard: GUARD,
         isDirectory: async (path: string) => path === "/Users/fixture/Projects",
-        ...(options.listFolder ? { listFolder: options.listFolder } : {}),
+        listFolder: options.listFolder ?? (async () => null),
       },
     }),
     ...options.deps,
@@ -832,22 +832,23 @@ test("a said place never reaches the folder the window shows, nor one of its anc
 });
 
 test("several names: one op for all after the whole name; any name that names nothing stages nothing", async () => {
-  const fs = disk({ "/Users/fixture/Desktop": ["a.txt", "b.txt", "Ordner A/", "Fotos/", "Fotos und Videos/"] });
+  const fs = disk({ "/Users/fixture/Desktop": ["Rechnung.txt", "Angebot.txt", "Ordner A/", "Fotos/", "Fotos und Videos/"] });
   const { dispatcher, ops } = make(desktopOf([]), { listFolder: fs.listFolder });
-  const files = asAct(await dispatcher.dispatch(typed("lösche a und b", { accept: ["confirm"] })));
-  assert.deepEqual([files.title, files.confirm], ["„a.txt und b.txt“ endgültig löschen?", true]);
-  assert.deepEqual(argvOf(ops, "take-typed"), [["/bin/rm", "--", "/Users/fixture/Desktop/a.txt", "/Users/fixture/Desktop/b.txt"]]);
-  const mixed = asAct(await dispatcher.dispatch(typed("lösche a und Ordner A", { takeId: "take-mixed" })));
-  assert.deepEqual([mixed.title, mixed.confirm], ["Löschen: a.txt und Ordner A", false]);
-  assert.deepEqual(argvOf(ops, "take-mixed"), [["/bin/rm", "-r", "--", "/Users/fixture/Desktop/a.txt", "/Users/fixture/Desktop/Ordner A"]]);
-  assert.equal(asAnswer(await dispatcher.dispatch(typed("lösche a und c", { takeId: "take-c" }))).title, "„c“ gibt es hier nicht – nichts gelöscht.");
+  const files = asAct(await dispatcher.dispatch(typed("lösche Rechnung und Angebot", { accept: ["confirm"] })));
+  assert.deepEqual([files.title, files.confirm], ["„Rechnung.txt und Angebot.txt“ endgültig löschen?", true]);
+  assert.deepEqual(argvOf(ops, "take-typed"), [["/bin/rm", "--", "/Users/fixture/Desktop/Rechnung.txt", "/Users/fixture/Desktop/Angebot.txt"]]);
+  const mixed = asAct(await dispatcher.dispatch(typed("lösche Rechnung und Ordner A", { takeId: "take-mixed" })));
+  assert.deepEqual([mixed.title, mixed.confirm], ["Löschen: Rechnung.txt und Ordner A", false]);
+  assert.deepEqual(argvOf(ops, "take-mixed"), [["/bin/rm", "-r", "--", "/Users/fixture/Desktop/Rechnung.txt", "/Users/fixture/Desktop/Ordner A"]]);
+  assert.equal(asAnswer(await dispatcher.dispatch(typed("lösche Rechnung und Notizen", { takeId: "take-c" }))).title, "„Notizen“ gibt es hier nicht – nichts gelöscht.");
   assert.equal(ops.forTake("take-c").length, 0);
   // A folder called "Fotos und Videos" is the one meant.
   asAct(await dispatcher.dispatch(typed("lösche Fotos und Videos", { takeId: "take-whole" })));
   assert.deepEqual(argvOf(ops, "take-whole"), [["/bin/rm", "-r", "--", "/Users/fixture/Desktop/Fotos und Videos"]]);
-  asAct(await dispatcher.dispatch(typed("kopiere a und b nach Dokumente", { takeId: "take-copy" })));
-  assert.deepEqual(argvOf(ops, "take-copy"), [["/bin/cp", "-R", "-n", "--", "/Users/fixture/Desktop/a.txt", "/Users/fixture/Desktop/b.txt", "/Users/fixture/Documents"]]);
-  assert.equal(asAnswer(await dispatcher.dispatch(typed("verschiebe a und b hierher", { takeId: "take-here" }))).title, "„a.txt“ liegt schon in Schreibtisch.");
+  asAct(await dispatcher.dispatch(typed("kopiere Rechnung und Angebot nach Dokumente", { takeId: "take-copy" })));
+  assert.deepEqual(argvOf(ops, "take-copy"), [["/bin/cp", "-R", "-n", "--", "/Users/fixture/Desktop/Rechnung.txt", "/Users/fixture/Desktop/Angebot.txt", "/Users/fixture/Documents"]]);
+  assert.equal(asAnswer(await dispatcher.dispatch(typed("verschiebe Rechnung und Angebot hierher", { takeId: "take-here" }))).title,
+    "„Rechnung.txt“ liegt schon in Schreibtisch.");
 });
 
 test("undo: the last op pi-os ran, always behind one Return; nothing to undo, an app in front or a pi thread is not pi-os's", async () => {

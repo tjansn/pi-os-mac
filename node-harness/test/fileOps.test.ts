@@ -94,7 +94,7 @@ test("plans: argv with absolute binaries, `--` always, never -f or -p; dcg revie
     assert.ok(!plan.argv.some((arg) => arg === "-f" || arg === "-p" || arg === "-rf"));
     assert.ok(plan.argv[0]!.startsWith("/"));
   }
-  assert.deepEqual(Object.values(BINARIES), ["/bin/rm", "/bin/mkdir", "/usr/bin/touch", "/bin/cp", "/bin/mv"]);
+  assert.deepEqual(Object.values(BINARIES), ["/bin/rm", "/bin/rmdir", "/bin/mkdir", "/usr/bin/touch", "/bin/cp", "/bin/mv"]);
   // A folder delete: dcg's own dialog confirms rm -r; a file or symlink delete needs pi-os's one Return.
   assert.equal(needsOwnConfirm(deletePlan(item, "/x", words)), false);
   assert.equal(needsOwnConfirm(deletePlan(file, "/x", words)), true);
